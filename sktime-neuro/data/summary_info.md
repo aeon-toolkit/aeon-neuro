@@ -94,7 +94,3 @@ above. This needs clarification.
 
 [SelfRegulationSCP2](http://bbci.de/competition/ii/tuebingen_desc_i.html)
 
-
-### All results, (default train split,  default classifier settings)
-
-### All results, (averaged over 30 resamples, default classifier settings)
