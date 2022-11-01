@@ -1,24 +1,7 @@
 # EEG Problems
 
-[Blink](https://github.com/Kelvin9811/EEG-Blink-dataset)
 
-[EyesOpenShut](https://archive.ics.uci.edu/ml/machine-learning-databases/00264/)
-
-[FaceDetection (MEG)](https://www.kaggle.com/c/decoding-the-human-brain/data)
-
-[FingerMovements](http://www.bbci.de/competition/ii/berlin_desc.html)
-
-[HandMovementDirection](http://bbci.de/competition/iv/)
-
-[MindReading (MEG)](https://www.researchgate.net/publication/239918465_ICANNPASCAL2_Challenge_MEG_Mind_Reading_--_Overview_and_Results)
-
-[MotorImagery](http://bbci.de/competition/iii/desc_I.html)
-
-[SelfRegulationSCP1](http://bbci.de/competition/ii/tuebingen_desc_i.html)
-
-[SelfRegulationSCP2](http://bbci.de/competition/ii/tuebingen_desc_i.html)
-
-## Data Characteristics
+## EEG Data Characteristics
 | Problem               | train cases | test cases | dimensions | length  | num classes  |
 |---                    |---    |---    |---    |---    |---|
 | Blink                 | 500   | 450   | 4   | 510   |  2 |
@@ -61,7 +44,7 @@ This generates a result file called testResample0.csv. Some exploratory results:
 
 ### Best classifier accuracies (default train split,  default classifier settings)
 
-| Problem             |	Default	   | Best Acc  | Best Classifier  |
+| Problem             |	Majority Class	   | Best Acc  | Best Classifier  |
 |---                  |---              |---        |---                 |
 | Blink		          |   |  1.000000	| Arsenal/RocketClassifier       |
 | EyesOpenShut		  |    |   0.523810	| DrCIF/MUSE/RocketClassifier    |
@@ -86,6 +69,31 @@ This generates a result file called testResample0.csv. Some exploratory results:
 | MotorImagery		  |  | 0.5423 | 	TemporalDictionaryEnsemble | 
 | SelfRegulationSCP1  |  | 0.9110 | 	Multi-ROCKET | 
 | SelfRegulationSCP2  |  |	0.5531 | 	MUSE | 
+
+### Results discussion
+[Blink](https://github.com/Kelvin9811/EEG-Blink-dataset)
+
+[EyesOpenShut](https://archive.ics.uci.edu/ml/machine-learning-databases/00264/)
+
+[FaceDetection (MEG)](https://www.kaggle.com/c/decoding-the-human-brain/data)
+The [leaderboard](https://www.kaggle.
+com/competitions/decoding-the-human-brain/leaderboard) shows a best accuracy of 0.
+75501, although it is not clear if the results are directly comparable to those 
+above. This needs clarification. 
+
+
+[FingerMovements](http://www.bbci.de/competition/ii/berlin_desc.html)
+
+[HandMovementDirection](http://bbci.de/competition/iv/)
+
+[MindReading (MEG)](https://www.researchgate.net/publication/239918465_ICANNPASCAL2_Challenge_MEG_Mind_Reading_--_Overview_and_Results)
+
+[MotorImagery](http://bbci.de/competition/iii/desc_I.html)
+
+[SelfRegulationSCP1](http://bbci.de/competition/ii/tuebingen_desc_i.html)
+
+[SelfRegulationSCP2](http://bbci.de/competition/ii/tuebingen_desc_i.html)
+
 
 ### All results, (default train split,  default classifier settings)
 
