@@ -130,4 +130,7 @@ dmypy.json
 
 #IDE
 .idea/
-sktime-neuro/data/FaceDetection/FaceDetection.txt
+sktime-neuro/data/FaceDetection/
+sktime-neuro/data/MindReading/
+sktime-neuro/data/MotorImagery/
+
