@@ -1,0 +1,49 @@
+http://bbci.de/competition/iv/
+Dataset 3: ‹hand movement direction in MEG›
+provided by the Brain Machine Interfacing Initiative, Albert-Ludwigs-University Freiburg, the Bernstein Center for Computational Neuroscience Freiburg and the Institute of Medical Psychology and Behavioral Neurobiology, University of Tübingen (Stephan Waldert, Carsten Mehring, HubertPreissl, Christoph Braun) 
+
+In short: 2 subjects were recorded moving a joystick with their hand and wrist only in one of four directions (right, up, down, left) of their choice after hearing a prompt, using Magnetoencephalography (MEG). The task is to classify the direction of movement from the MEG data. 
+The train/test split given corresponds to the exact split provided in the original competition, with the trails for the two subjects merged, however. Data remains split by subject in the folders Subject1 and Subject2. 
+
+From the file 'desc_3.pdf'; a description of the data from the original formatters at the above website
+
+'Title: Directionally modulated MEG activity
+
+Short description:
+The data set contains directionally modulated MEG activity that was recorded while
+subjects performed wrist movements in four different directions.
+
+Detailed Description:
+Brain activity during wrist movements was recorded with MEG at 625 Hz from two
+healthy, right-handed subjects. The subject sat relaxed in an MEG chair, the elbow
+rested on a pillow to prevent upper arm and shoulder movements, and the head was
+stabilized by small pillows. The task was to move a joystick from a center position
+toward one of four targets located radially at 90° intervals (four-class center-out
+paradigm) using exclusively the right hand and wrist. Movement amplitude was 4.5 cm.
+In each trial, the target was self-chosen by the subject. Targets were arranged in the
+form of a rhombus in the horizontal plane with corners pointing left, right, away from
+and toward the subject's body.
+Visual trigger signals were presented on a screen to start a trial or to indicate possible
+time violations. A trial started with the joystick in the center position and the appearance
+of a gray circle. After a variable delay (1-2 s), the disappearance of the circle indicated
+the “go” signal (cued movements). Then, within 0.75 s the subject had to start the
+movement and reach the target. For a trial to be valid, the subject also had to rest at the
+target for at least 1 s. These time constraints allowed for temporal consistency across
+trails and the hold period at the target prevented interference of in- and outward
+movements. A red cross was presented continuously for fixation.
+The trials were cut to contain data from 0.4 s before to 0.6 s after movement onset and
+the signals were band pass filtered (0.5 to 100 Hz) and resampled at 400 Hz, whereas in
+Waldert et al. (JNeurosci 28(4), 2008) we showed that especially the low-frequency
+activity (<8 Hz) contains information about movement direction. The data are composed
+of signals from ten MEG channels which were located above the motor areas. We will
+evaluate the competitor's submissions with respect to the percentage of correct
+classifications (decoding accuracy). Please note that classification using cross-validation
+on the provided training data does not necessarily yield the average decoding accuracy
+reported in our original study because of the reduced number of channels (approx. one
+quarter), inter-subject variability and the reduced number of trials in the training set due
+to separation of data into training and test set. The data are provided as mat-files
+(Matlab), detailed description is provided along with the files. Predicted class labels for
+the test sets must be submitted as a single mat-file containing two variables (vectors):
+PredictedLabelsS1 and PredictedLabelsS2, e.g. PredictedLabelsS1=[3 2 4 1 ...]. The
+name of this mat-file must identify the competitor.'
+
