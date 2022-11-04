@@ -1,0 +1,7 @@
+EEG dataset based on classifying between short and long blinks. Each of the subjects was asked to blink for a duration of 2 seconds, as either a short or long blink.
+Each sample is 510 values long, with 4 EEG channels, representing 2 seconds sampled at 255Hz. The data were collected in 20 trials of six patients,
+with 50 blinks per experiment. One of the long blink data files in the original repo (https://github.com/Kelvin9811/EEG-Blink-dataset) was a duplicate, so we have removed this.
+leaving 950 cases. The first five long and short blink trials are used for the train data (250 long blink, 250 short blink). The remaining 200 long blink and 250 short blink constitute the test data set.
+
+The data was used in the following publication.
+https://ieeexplore.ieee.org/abstract/document/9590711
