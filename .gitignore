@@ -132,6 +132,6 @@ dmypy.json
 .idea/
 
 # Big datasets
-sktime_neuro/data/FaceDetection/
-sktime_neuro/data/MindReading/
-sktime_neuro/data/MotorImagery/
+tsmlpy_neuro/data/FaceDetection/
+tsmlpy_neuro/data/MindReading/
+tsmlpy_neuro/data/MotorImagery/
