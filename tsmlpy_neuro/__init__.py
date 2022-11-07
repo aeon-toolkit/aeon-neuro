@@ -1,2 +1,2 @@
 # -*- coding: utf-8 -*-
-"""sktime-neuro"""
+"""tsml-neuro"""
