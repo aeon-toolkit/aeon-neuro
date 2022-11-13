@@ -1,6 +1,17 @@
 # -*- coding: utf-8 -*-
 import mne
 import numpy as np
+import json
+
+def load_auxiliary_info(path,dataset_name):
+    full_path = path+dataset_name+".json"
+    try:
+        f = open(full_path)
+        aux_data = json.load(f)
+        return aux_data
+    except:
+        print("Auxiliary file not found at: "+full_path)
+
 
 
 def load_brainvision_to_numpy(path, remove_non_EEG=True):
