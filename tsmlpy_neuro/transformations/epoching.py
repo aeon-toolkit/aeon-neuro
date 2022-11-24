@@ -14,3 +14,13 @@ def epoch_series_by_time(series,sfreq,epoch_size):
         epoched_data.append(epoch)
         index+=instances_per_epoch
     return np.asarray(epoched_data)
+
+def epoch_dataset(X,y,sfreq,epoch_size):
+    epoched_data=[]
+    new_labels=[]
+    for i in range(len(X)):
+        new_data = epoch_series_by_time(X[i],sfreq,epoch_size)
+        for j in new_data:
+            epoched_data.append(new_data[j])
+            new_labels.append(y[i])
+    return np.asarray(epoched_data),np.asarray(new_labels)
