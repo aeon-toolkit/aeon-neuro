@@ -23,8 +23,8 @@ Benchmark classification experiments, results generated with code like this
         data_dir = "C:/temp/" # Location of data in ts format data_dir/<dataset>/
         resample = 0        # 0 indicates default train test
         cls_name = "RocketClassifier" # name used for results name
-        from sktime.classification.kernel_based import RocketClassifier
-        from sktime.benchmarking.experiments import \
+        from aeon.classification.kernel_based import RocketClassifier
+        from aeon.benchmarking.experiments import \
             load_and_run_classification_experiment
         classifier = RocketClassifier()
         load_and_run_classification_experiment(
@@ -56,7 +56,7 @@ This generates a result file called testResample0.csv. Some exploratory results:
 | SelfRegulationSCP1	|	| 0.897611	| FreshPRINCE |
 | SelfRegulationSCP2	|	| 0.538889	| KNeighborsTimeSeriesClassifier/TDE |
 
-### Best sktime classifier accuracies (30 resamples, default classifier settings)
+### Best aeon classifier accuracies (30 resamples, default classifier settings)
 
 | Problem             |	Majority Class	   | Best Acc  | Best Classifier  |
 |---                  |---         |---        |---                 |
