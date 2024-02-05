@@ -5,6 +5,7 @@ __pycache__/
 
 # C extensions
 *.so
+*.c
 
 # Distribution / packaging
 .Python
@@ -20,12 +21,10 @@ parts/
 sdist/
 var/
 wheels/
-pip-wheel-metadata/
 share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-MANIFEST
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -36,6 +35,7 @@ MANIFEST
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
+pip-wheel-metadata/
 
 # Unit test / coverage reports
 htmlcov/
@@ -44,10 +44,8 @@ htmlcov/
 .coverage
 .coverage.*
 .cache
-nosetests.xml
 coverage.xml
 *.cover
-*.py,cover
 .hypothesis/
 .pytest_cache/
 
@@ -59,7 +57,6 @@ coverage.xml
 *.log
 local_settings.py
 db.sqlite3
-db.sqlite3-journal
 
 # Flask stuff:
 instance/
@@ -70,6 +67,8 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/api_reference/auto_generated/
+docs/estimator_overview_table.md
 
 # PyBuilder
 target/
@@ -84,19 +83,8 @@ ipython_config.py
 # pyenv
 .python-version
 
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
-
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow
-__pypackages__/
-
-# Celery stuff
+# celery beat schedule file
 celerybeat-schedule
-celerybeat.pid
 
 # SageMath parsed files
 *.sage.py
@@ -109,13 +97,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
+aeon-dev/
 
 # mkdocs documentation
 /site
@@ -127,9 +109,53 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+.pyre_configuration
 
-#IDE
-.idea/
+# Pytype type checker
+.pytype/
+
+# IDE files
+*.prefs
+.pydevproject
+.idea
+.vscode
+.spyderproject
+.spyproject
+.ropeproject
+
+# scikit-learn specific
+doc/_build/
+doc/auto_examples/
+doc/modules/generated/
+doc/datasets/generated/
+
+# vim swap files
+*.swp
+
+# autogen stuff
+/documentation/source/autogen
+
+# macOS files
+.DS_Store
+
+# dask-worker-space
+dask-worker-space
+
+# documentation build files
+build_doc_site/
+
+# dev files
+envs/
+*.html
+
+# example mlflow runs
+examples/local/
+
+# local files
+local_code/
+local/
+local_code.py
+local.py
 
 # Big datasets
 aeon_neuro/data/FaceDetection/
