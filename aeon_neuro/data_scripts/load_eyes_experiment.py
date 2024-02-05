@@ -1,6 +1,6 @@
 import numpy as np
 import mne
-from sktime.datasets._data_io import write_ndarray_to_tsfile
+from aeon.datasets._data_io import write_ndarray_to_tsfile
 
 #Loads each baseline EEG datafile for the VIPA study
 #Splits into eyes closed and eyes open portions
