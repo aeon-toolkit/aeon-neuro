@@ -1,6 +1,6 @@
 import mne
 import numpy as np
-from sktime.datasets._data_io import write_ndarray_to_tsfile
+from aeon.datasets._data_io import write_ndarray_to_tsfile
 datapath = "D:/PhD Files/matchingpennies/raw/"
 writeloc = "D:/PhD Files/matchingpennies/"
 shortest = np.Inf

@@ -5,7 +5,7 @@ some functions to find out things about the data.
 """
 import time
 
-from sktime.datasets import load_UCR_UEA_dataset
+from aeon.datasets import load_UCR_UEA_dataset
 
 __author__ = ["TonyBagnall"]
 
@@ -28,7 +28,7 @@ def time_all_dataloading(return_type="nested_univ"):
         start = int(round(time.time() * 1000))
         X, y = load_UCR_UEA_dataset(
             name=d,
-            extract_path="C:\Code\sktime-neuro\sktime-neuro" "\data",
+            extract_path="C:\Code\aeon-neuro\aeon-neuro" "\data",
             return_type=return_type,
         )
         load_time = int(round(time.time() * 1000)) - start

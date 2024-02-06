@@ -1,5 +1,5 @@
-from sktime.datasets._data_io import load_from_tsfile
-from sktime.datasets._data_io import write_ndarray_to_tsfile
+from aeon.datasets._data_io import load_from_tsfile
+from aeon.datasets._data_io import write_ndarray_to_tsfile
 from tsmlpy_neuro.transformations import epoching
 from tsmlpy_neuro.transformations import downsample
 import numpy as np
