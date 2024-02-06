@@ -53,6 +53,7 @@ all_extras = [
 ]
 dev = [
     "aeon[dev]",
+    "pytest-rerunfailures",
 ]
 binder = [
     "aeon[binder]",
