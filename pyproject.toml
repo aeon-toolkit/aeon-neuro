@@ -73,7 +73,7 @@ file = "LICENSE"
 zip-safe = true
 
 [tool.setuptools.package-data]
-aeon-neuro = [
+aeon_neuro = [
     "*.csv",
     "*.csv.gz",
     "*.arff",
