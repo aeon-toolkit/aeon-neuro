@@ -6,8 +6,8 @@
 
 A package for ECG and EEG time series analysis built on the `aeon` toolkit.
 
-`aeon-neuro` is a companion package to the `aeon` toolkit. The main project webpage 
-and documentation is available at https://aeon-toolkit.org and the source code at 
+`aeon-neuro` is a companion package to the `aeon` toolkit. The main project webpage
+and documentation is available at https://aeon-toolkit.org and the source code at
 https://github.com/aeon-toolkit/aeon.
 
 | Overview      |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |

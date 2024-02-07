@@ -40,5 +40,3 @@ http://bbci.de/competition/ii/results/index.html
 best has an error rate of 11.3% on the test data (presumably 33 incorrect).
 Reference:
 Birbaumer, N., Flor, H., Ghanayim, N., Hinterberger, T., Iverson, I., Taub, E., Kotchoubey, B., Kübler, A., & Perelmouter, J, A Brain-Controlled Spelling Device for the Completely Paralyzed, Nature, 398, 297-298.
-
-
