@@ -47,7 +47,10 @@ def time_all_dataloading(return_type="nested_univ"):
     return times
 
 
-times = time_all_dataloading()
-times2 = time_all_dataloading(return_type="numpy3d")
-for d in datasets:
-    print(d, " pandas load time = ", times[d] / 1000, " numpy load time = ", times2[d])
+if __name__ == "__main__":
+    times = time_all_dataloading()
+    times2 = time_all_dataloading(return_type="numpy3d")
+    for d in datasets:
+        print(
+            d, " pandas load time = ", times[d] / 1000, " numpy load time = ", times2[d]
+        )
