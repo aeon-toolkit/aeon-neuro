@@ -104,7 +104,7 @@ convention = "numpy"
 
 [tool.pytest.ini_options]
 # ignore certain folders and pytest warnings
-testpaths = "aeon"
+testpaths = "aeon_neuro"
 addopts = '''
     --doctest-modules
     --durations 20
