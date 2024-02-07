@@ -1,5 +1,5 @@
 import mne
-from tsmlpy_neuro.utils.data_io import load_auxiliary_info
+from aeon_neuro.utils.data_io import load_auxiliary_info
 import pyprep
 import numpy as np
 

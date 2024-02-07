@@ -3,9 +3,8 @@
 
 some functions to find out things about the data.
 """
-import time
 
-from aeon.datasets import load_UCR_UEA_dataset
+import time
 
 __author__ = ["TonyBagnall"]
 
