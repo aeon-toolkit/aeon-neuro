@@ -1,6 +1,7 @@
 import mne
 import numpy as np
-from aeon.datasets._data_io import write_ndarray_to_tsfile
+from aeon.datasets import write_to_tsfile
+
 datapath = "D:/PhD Files/matchingpennies/raw/"
 writeloc = "D:/PhD Files/matchingpennies/"
 shortest = np.Inf
@@ -30,4 +31,4 @@ for subject in subjects:
 for i in range(len(dataset)):
     dataset[i] = dataset[i][:,:shortest]
 
-write_ndarray_to_tsfile(np.asarray(dataset),writeloc,"matchingpennies",classNames,np.asarray(labels))
+write_to_tsfile(np.asarray(dataset),writeloc,"matchingpennies",classNames,np.asarray(labels))

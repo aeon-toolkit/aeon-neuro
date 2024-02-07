@@ -1,7 +1,8 @@
 
-from tsmlpy_neuro.transformations import bandpower
+from aeon_neuro.transformations import bandpower
 import numpy as np
 import copy
+
 class BandpowerEnsemble():
     def __init__(self,fs,classifier):
         self.extractors = []

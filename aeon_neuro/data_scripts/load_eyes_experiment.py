@@ -1,6 +1,6 @@
 import numpy as np
 import mne
-from aeon.datasets._data_io import write_ndarray_to_tsfile
+from aeon.datasets import write_to_tsfile
 
 #Loads each baseline EEG datafile for the VIPA study
 #Splits into eyes closed and eyes open portions
@@ -82,4 +82,4 @@ for i in range(len(data)):
 
 #print(np.shape(np.asarray(data)))
 #print(classes)
-write_ndarray_to_tsfile(np.asarray(data),output_location,"VIPA_Study",classNames,np.asarray(classes))
+write_to_tsfile(np.asarray(data),output_location,"VIPA_Study",classNames,np.asarray(classes))
