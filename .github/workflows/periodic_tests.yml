@@ -116,3 +116,5 @@ jobs:
         run: python -m pytest --cov=aeon_neuro --cov-report=xml
 
       - uses: codecov/codecov-action@v4
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
