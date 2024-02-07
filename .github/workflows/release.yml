@@ -68,10 +68,10 @@ jobs:
 
       - if: runner.os == 'Windows'
         name: Windows wheel filename
-        run: echo "WHEELNAME=$(ls ./dist/aeon-*-none-any.whl)" >> $env:GITHUB_ENV
+        run: echo "WHEELNAME=$(ls ./dist/aeon_neuro-*-none-any.whl)" >> $env:GITHUB_ENV
       - if: runner.os != 'Windows'
         name: Unix wheel filename
-        run: echo "WHEELNAME=$(ls ./dist/aeon-*-none-any.whl)" >> $GITHUB_ENV
+        run: echo "WHEELNAME=$(ls ./dist/aeon_neuro-*-none-any.whl)" >> $GITHUB_ENV
 
       - if: runner.os == 'Windows'
         name: Windows install

@@ -53,6 +53,7 @@ all_extras = [
 ]
 dev = [
     "aeon[dev]",
+    "pytest-rerunfailures",
 ]
 binder = [
     "aeon[binder]",
@@ -73,7 +74,7 @@ file = "LICENSE"
 zip-safe = true
 
 [tool.setuptools.package-data]
-aeon-neuro = [
+aeon_neuro = [
     "*.csv",
     "*.csv.gz",
     "*.arff",
@@ -103,7 +104,7 @@ convention = "numpy"
 
 [tool.pytest.ini_options]
 # ignore certain folders and pytest warnings
-testpaths = "aeon"
+testpaths = "aeon_neuro"
 addopts = '''
     --doctest-modules
     --durations 20

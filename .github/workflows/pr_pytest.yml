@@ -44,14 +44,9 @@ jobs:
         run: python -m pip list
 
       - name: Run tests
-        # run the full test suit if a PR has the 'full pytest actions' label
-        run: python -m pytest --prtesting ${{ github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'full pytest actions') }}
+        run: python -m pytest
 
   codecov:
-    # run the code coverage job if a PR has the 'codecov actions' label
-    if: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'codecov actions') }}
-
-    needs: test-nosoftdeps
     runs-on: ubuntu-22.04
 
     steps:
@@ -75,6 +70,6 @@ jobs:
         run: python -m pip list
 
       - name: Run tests
-        run: python -m pytest --cov=aeon --cov-report=xml  --timeout 1800
+        run: python -m pytest --cov=aeon_neuro --cov-report=xml
 
       - uses: codecov/codecov-action@v4
