@@ -39,10 +39,11 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
 ]
-requires-python = ">=3.8,<3.12"
+requires-python = ">=3.8,<3.13"
 dependencies = [
-    "aeon<=0.8.0",
+    "aeon<0.8.0",
     "mne",
     "pyprep",
 ]
@@ -53,7 +54,6 @@ all_extras = [
 ]
 dev = [
     "aeon[dev]",
-    "pytest-rerunfailures",
 ]
 binder = [
     "aeon[binder]",
@@ -110,7 +110,8 @@ addopts = '''
     --durations 20
     --timeout 600
     --showlocals
-    --numprocesses auto
+    --numprocesses logical
+    --dist worksteal
     --reruns 2
     --only-rerun "crashed while running"
 '''
