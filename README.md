@@ -4,7 +4,14 @@
 
 # ⌛ Welcome to aeon-neuro
 
-A package for ECG and EEG time series analysis built on the `aeon` toolkit.
+`aeon-neuro` is package that unifies techniques for the classification of EEG time
+series. Our goal is to present a simple and unified interface to a variety of EEG
+classification problems that combine techniques from a range of domains that learn
+from EEG signals.
+
+We aim to develop this package following the principles of open science, and
+reproducible research, as described in the [Turing Way](https://github.
+com/the-turing-way) and this package is based on [this template](https://github.com/the-turing-way/reproducible-project-template).
 
 `aeon-neuro` is a companion package to the `aeon` toolkit. The main project webpage
 and documentation is available at https://aeon-toolkit.org and the source code at
@@ -17,4 +24,5 @@ https://github.com/aeon-toolkit/aeon.
 | **Community** | [![!slack](https://img.shields.io/static/v1?logo=slack&label=Slack&message=chat&color=lightgreen)](https://join.slack.com/t/aeon-toolkit/shared_invite/zt-22vwvut29-HDpCu~7VBUozyfL_8j3dLA) [![!linkedin](https://img.shields.io/static/v1?logo=linkedin&label=LinkedIn&message=news&color=lightblue)](https://www.linkedin.com/company/aeon-toolkit/) [![!twitter](https://img.shields.io/static/v1?logo=twitter&label=Twitter&message=news&color=lightblue)](https://twitter.com/aeon_toolkit)                                                                                                                                                                                                                                                                                                                                                            |
 
 
-This work is supported by the UK Engineering and Physical Sciences Research Council (EPSRC) EP/W030756/1
+This work is supported by the UK Engineering and Physical Sciences Research Council
+(EPSRC) EP/W030756/2
