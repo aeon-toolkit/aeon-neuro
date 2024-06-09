@@ -10,8 +10,7 @@ classification problems that combine techniques from a range of domains that lea
 from EEG signals.
 
 We aim to develop this package following the principles of open science, and
-reproducible research, as described in the [Turing Way](https://github.
-com/the-turing-way) and this package is based on [this template](https://github.com/the-turing-way/reproducible-project-template).
+reproducible research, as described in the [Turing Way](https://github.com/the-turing-way) and this package is based on [this template](https://github.com/the-turing-way/reproducible-project-template).
 
 `aeon-neuro` is a companion package to the `aeon` toolkit. The main project webpage
 and documentation is available at https://aeon-toolkit.org and the source code at
