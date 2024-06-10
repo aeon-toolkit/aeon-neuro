@@ -1,4 +1,4 @@
-"""downsample_series by frequency."""
+"""Downsample series by frequency."""
 
 import numpy as np
 
