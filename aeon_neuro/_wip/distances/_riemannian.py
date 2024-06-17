@@ -1,5 +1,5 @@
 """Implement as a distance function here."""
-def reimannian_distance(
+def riemannian_distance(
     x: np.ndarray,
     y: np.ndarray,
 ) -> float:
