@@ -1,4 +1,8 @@
 """Implement as a distance function here."""
+
+import numpy as np
+
+
 def riemannian_distance(
     x: np.ndarray,
     y: np.ndarray,
@@ -14,4 +18,4 @@ def riemannian_distance(
         Second time series, either univariate, shape ``(n_timepoints,)``, or
         multivariate, shape ``(n_channels, n_timepoints)``.
     """
-    return x+y
+    return x + y
