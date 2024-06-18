@@ -1,6 +1,6 @@
 """Estimate power spectral density using Welch's method."""
 
-__maintainer__ = ["futuer"]
+__maintainer__ = [""]
 __all__ = ["PSDWelchTransformer"]
 
 import numpy as np
