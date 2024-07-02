@@ -4,9 +4,9 @@ import mne
 
 
 def load_example_dataset():
-    """
-    Returns two instances of raw EEG data.
-    The first being resting state eyes closed, the second resting state eyes open
+    """Get two instances of raw EEG data.
+
+    The first being resting state eyes closed, the second resting state eyes open.
 
     Returns
     -------
