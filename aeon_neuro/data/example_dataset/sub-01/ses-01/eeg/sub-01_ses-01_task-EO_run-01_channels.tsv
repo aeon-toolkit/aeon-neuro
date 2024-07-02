@@ -1,4 +1,4 @@
-﻿name	type	units	low_cutoff	high_cutoff	description	sampling_frequency	status	status_description
+name	type	units	low_cutoff	high_cutoff	description	sampling_frequency	status	status_description
 Fp1	EEG	V	0.0	500.0023144346504	ElectroEncephaloGram	1000.0046288693007	good	n/a
 Fz	EEG	V	0.0	500.0023144346504	ElectroEncephaloGram	1000.0046288693007	good	n/a
 F3	EEG	V	0.0	500.0023144346504	ElectroEncephaloGram	1000.0046288693007	good	n/a
