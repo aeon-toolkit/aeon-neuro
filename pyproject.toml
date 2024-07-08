@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aeon-neuro"
-version = "0.1.0"
+version = "0.0.1"
 description = "A package for ECG and EEG time series analysis built on the aeon toolkit."
 authors = [
     {name = "aeon developers", email = "contact@aeon-toolkit.org"},
