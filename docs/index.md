@@ -36,6 +36,7 @@ https://github.com/aeon-toolkit/aeon.
 :hidden:
 
 installation.md
+api_reference.md
 ```
 
 ```{toctree}
