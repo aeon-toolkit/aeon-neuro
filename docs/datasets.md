@@ -1,4 +1,4 @@
-# EEG Problems
+# EEG Datasets
 
 
 ## EEG Data Characteristics
