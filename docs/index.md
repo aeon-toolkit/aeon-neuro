@@ -53,6 +53,7 @@ api_reference.md
 :caption: Other
 :hidden:
 
+changelog.md
 datasets.md
 papers.md
 ```
