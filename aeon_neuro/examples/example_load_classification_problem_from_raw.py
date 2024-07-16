@@ -70,7 +70,7 @@ def load_basic_classification_problem():
     # Run minirocket on example dataset
     cls = RocketClassifier(rocket_transform="minirocket")
     cls.fit(X_train, y_train)
-    print(cls.score(X_test, y_test))
+    cls.score(X_test, y_test)
 
 
 if __name__ == "__main__":
