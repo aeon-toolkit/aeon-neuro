@@ -76,7 +76,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install aeon and dependencies
+      - name: Install aeon-neuro and dependencies
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 30
@@ -102,7 +102,7 @@ jobs:
       - name: Disable Numba JIT
         run: echo "NUMBA_DISABLE_JIT=1" >> $GITHUB_ENV
 
-      - name: Install aeon and dependencies
+      - name: Install aeon-neuro and dependencies
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 30
