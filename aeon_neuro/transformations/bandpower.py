@@ -1,89 +1,108 @@
 """Band power transformations."""
 
 import numpy as np
-from scipy.fft import rfft, rfftfreq
-from scipy.integrate import simps
+from aeon.transformations.series.base import BaseSeriesTransformer
+from scipy.integrate import simpson
+from scipy.signal import welch
 
 
-class BandpowerExtraction:
+class BandPowerSeriesTransformer(BaseSeriesTransformer):
     """Band power transformer.
 
-    EEG signals occupy the frequency range of 0 − 60Hz,
+    EEG signals occupy the frequency range of 0 - 60Hz,
     which is roughly divided into five constituent physiological EEG sub bands:
-    δ (0 − 4Hz), θ (4 − 7Hz), α (8 − 12Hz), β (13 − 30Hz), and γ (30 − 60Hz).
+    δ (0 - 4Hz), θ (4 - 7Hz), α (8 - 12Hz), β (13 - 30Hz), and γ (30 - 60Hz).
+    Power within each frequency band is estimated using Welch's method,
+    which averages over windowed FFTs.
 
     Parameters
     ----------
-    fs : int or float
-        Sampling frequency in Hz (samples per second).
-    band : str
-        The frequency band in {"delta", "theta", "alpha", "beta", "gamma"}.
-    window_width : int, optional
-        The width of the sliding window in number of samples, by default 1000.
-    window_space : int, optional
-        The space between the start of each window in number of samples, by default 5.
+    sfreq : int or float
+        Sampling frequency in Hz, by default 1.0.
+    n_per_seg : int, optional
+        Length of each Welch segment in number of timepoints, by default 256.
+    n_overlap : int, optional
+        Number of timepoints to overlap between segments, by default 0.
+    window : str, optional
+        Windowing function to use. See `scipy.signal.get_window()`
+        for a list of available windows, by default "hamming".
+    average : "mean" or "median", optional
+        Method to use when averaging Welch segments, by default "mean".
+    relative : bool, optional
+        If True, return the relative power (divide by total power across freq bands).
+        If False, return the absolute power in V^2/Hz, by default True.
     """
 
-    def __init__(self, fs, band, window_width=1000, window_space=5):
-        self.fs = fs
-        self.band = band
-        self.window_width = window_width
-        self.window_space = window_space
+    _tags = {
+        "capability:multivariate": True,
+        "fit_is_empty": True,
+    }
 
-    def transform(self, X, y=None):
-        """Transform the input collection to extract band power features.
+    freq_bands = {
+        "delta": (0, 4),
+        "theta": (4, 7),
+        "alpha": (8, 12),
+        "beta": (13, 30),
+        "gamma": (30, 60),
+    }
+
+    def __init__(
+        self,
+        sfreq=1.0,  # scipy default
+        n_per_seg=256,  # mne/scipy default, for window=str
+        n_overlap=0,  # mne default
+        window="hamming",  # mne default
+        average="mean",  # scipy/mne default
+        relative=True,
+    ):
+        super().__init__(axis=1)  # (n_channels, n_timepoints)
+        self.sfreq = sfreq
+        self.n_per_seg = n_per_seg
+        self.n_overlap = n_overlap
+        self.window = window
+        self.average = average
+        self.relative = relative
+
+    def _transform(self, X, y=None):
+        """Transform the input series to extract band power series.
 
         Parameters
         ----------
-        X : list or np.ndarray of shape (n_cases, n_channels, n_timepoints)
-            Input time series collection.
+        X : np.ndarray of shape (n_channels, n_timepoints)
+            Input time series.
         y : None
             Ignored for interface compatibility, by default None.
 
         Returns
         -------
-        np.ndarray of shape (n_cases, n_channels, n_windows)
-            The band power features for a given frequency band.
+        np.ndarray of shape (n_channels, 5_bands)
+            Power within δ, θ, α, β, and γ bands for each channel.
         """
-        max_freq, min_freq = selectBandFreqs(self.band)
-        n_instances, n_channels, n_timepoints = np.shape(X)
-        final_data = np.zeros(
-            (
-                n_instances,
-                n_channels,
-                int((n_timepoints - self.window_width) / self.window_space) + 1,
-            )
+        # next power of 2, for FFT efficiency
+        n_fft = int(2 ** np.ceil(np.log2(self.n_per_seg)))
+        freqs, powers = welch(
+            X,
+            fs=self.sfreq,
+            window=self.window,
+            nperseg=self.n_per_seg,
+            noverlap=self.n_overlap,
+            nfft=n_fft,
+            scaling="density",  # V^2/Hz
+            axis=-1,
+            average=self.average,
         )
-        for instance in range(n_instances):
-            for channel in range(n_channels):
-                for timepoint in range(
-                    1,
-                    n_timepoints - self.window_width,
-                    self.window_space,
-                ):
-                    w = X[instance][channel][timepoint : timepoint + self.window_width]
-                    coefficients = rfft(w)[1:]
-                    freqs = rfftfreq(self.window_width, 1 / self.fs)[1:]
-                    delta = np.logical_and(freqs >= min_freq, freqs <= max_freq)
-                    powers = np.abs(coefficients[delta])
-                    value = simps(powers, dx=freqs[1] - freqs[0])
-                    final_data[instance][channel][
-                        int(timepoint / self.window_space)
-                    ] = value
-        return final_data
 
+        freq_res = freqs[1] - freqs[0]
 
-def selectBandFreqs(band):
-    """Return (max, min) frequency for given frequency band."""
-    if band == "delta":
-        return 4, 0
-    elif band == "theta":
-        return 7, 4
-    elif band == "alpha":
-        return 12, 8
-    elif band == "beta":
-        return 30, 13
-    elif band == "gamma":
-        return 60, 30
-    else:
-        return 60, 0
+        band_powers = np.zeros(shape=(len(powers), len(self.freq_bands)))
+        for band_idx, (min_freq, max_freq) in enumerate(self.freq_bands.values()):
+            freq_mask = np.logical_and(freqs >= min_freq, freqs <= max_freq)
+            band_powers[:, band_idx] = simpson(
+                powers[:, freq_mask], dx=freq_res, axis=-1
+            )
+
+        if self.relative:
+            total_powers = band_powers.sum(axis=-1).reshape(-1, 1)
+            band_powers /= total_powers
+
+        return band_powers
