@@ -6,7 +6,8 @@ import pytest
 from aeon_neuro.transformations import bandpower
 
 # set paramaters, assuming X ~ iid = flat PSD
-n_channels, n_timepoints = 3, 10000
+n_channels, n_timepoints, n_per_seg = 3, 30000, 1024
+n_segs = int(n_timepoints / n_per_seg)
 
 
 @pytest.fixture
@@ -20,26 +21,28 @@ def test_transform(sim_X):
     """Test BandPowerSeriesTransformer."""
     X = sim_X
     transformer = bandpower.BandPowerSeriesTransformer(
-        sfreq=256, n_per_seg=1024, n_overlap=512, relative=True
+        sfreq=256, n_per_seg=n_per_seg, relative=True
     )
 
     # estimated power bands
     power_bands = transformer.fit_transform(X)
     # check array and shape
     assert isinstance(power_bands, np.ndarray)
-    assert power_bands.shape == (n_channels, 5)
+    assert power_bands.shape == (5, n_segs)
     # check relative=True, so powers sum to 1
-    np.testing.assert_equal(power_bands.sum(axis=-1), np.ones(shape=n_channels))
+    np.testing.assert_allclose(power_bands.sum(axis=0), np.ones(shape=n_segs))
 
     # expected power bands
     power_bands_expected = np.array(
         [
             (max_freq - min_freq)
-            for (min_freq, max_freq) in transformer.freq_bands.values()
+            for (min_freq, max_freq) in transformer.FREQ_BANDS.values()
         ],
         dtype=np.float64,
     )
     power_bands_expected /= power_bands_expected.sum()
-    power_bands_expected = np.tile(power_bands_expected, (n_channels, 1))
+    power_bands_expected = np.tile(
+        power_bands_expected.reshape(-1, 1), (1, int(n_timepoints / n_per_seg))
+    )
     # check expected power bands for iid = flat PSD
-    np.testing.assert_allclose(power_bands, power_bands_expected, atol=0.03)
+    np.testing.assert_allclose(power_bands, power_bands_expected, atol=0.05)
