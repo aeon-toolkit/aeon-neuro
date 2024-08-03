@@ -1,34 +1,57 @@
 """Downsample series by frequency."""
 
 import numpy as np
+from aeon.transformations.collection.base import BaseCollectionTransformer
 
 
-def downsample_series(X, sfreq, target_sample_rate):
-    """Downsample a time series.
+class DownsampleCollectionTransformer(BaseCollectionTransformer):
+    """Downsample the time dimension of a collection of time series.
 
     Parameters
     ----------
-    X : a numpy array of shape = [n_cases, n_channels, n_timepoints]
-        The input time series data to be downsampled.
-    sfreq : int
-        The original sampling frequency of the time series data.
-    target_sample_rate : int
-        The target sampling frequency after downsampling.
+    source_sfreq : int or float
+        The source/input sampling frequency in Hz.
+    target_sfreq : int or float
+        The target/output sampling frequency in Hz.
 
-    Returns
-    -------
-    downsampled : a numpy array of
-        shape = [n_cases, n_channels, updated_timepoints]
-        The downsampled time series data.
+    Raises
+    ------
+    ValueError
+        If source_sfreq > target_sfreq.
     """
-    new_ratio = int(sfreq / target_sample_rate)
-    n_cases, n_channels, n_timepoints = np.shape(X)
-    updated_timepoints = int(np.ceil(n_timepoints / new_ratio))
-    downsampled_data = np.zeros((n_cases, n_channels, updated_timepoints))
-    for i in range(n_cases):
-        for j in range(n_channels):
-            updated_index = 0
-            for k in range(0, n_timepoints, new_ratio):
-                downsampled_data[i][j][updated_index] = X[i][j][k]
-                updated_index += 1
-    return downsampled_data
+
+    _tags = {
+        "X_inner_type": ["np-list", "numpy3D"],
+        "capability:multivariate": True,
+        "capability:unequal_length": True,
+        "fit_is_empty": True,
+    }
+
+    def __init__(self, source_sfreq=2.0, target_sfreq=1.0):
+        super().__init__()
+        if source_sfreq > target_sfreq:
+            raise ValueError("source_sfreq must be <= target_sfreq")
+        self.source_sfreq = source_sfreq
+        self.target_sfreq = target_sfreq
+
+    def _transform(self, X, y=None):
+        """Transform the input collection to downsampled collection.
+
+        Parameters
+        ----------
+        X : list or np.ndarray of shape (n_cases, n_channels, n_timepoints)
+            Input time series collection where n_timepoints can vary over cases.
+        y : None
+            Ignored for interface compatibility, by default None
+
+        Returns
+        -------
+        list of 2D numpy arrays of shape [(n_channels, n_timepoints_downsampled), ...]
+        """
+        step = int(self.source_sfreq / self.target_sfreq)
+        X_downsampled = []
+        for x in X:
+            n_timepoints = x.shape[-1]
+            indices = np.arange(0, n_timepoints, step)
+            X_downsampled.append(x[:, indices])
+        return X_downsampled
