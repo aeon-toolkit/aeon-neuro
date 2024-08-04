@@ -17,7 +17,7 @@ class DownsampleCollectionTransformer(BaseCollectionTransformer):
     Raises
     ------
     ValueError
-        If source_sfreq > target_sfreq.
+        If source_sfreq < target_sfreq.
     """
 
     _tags = {
@@ -29,8 +29,8 @@ class DownsampleCollectionTransformer(BaseCollectionTransformer):
 
     def __init__(self, source_sfreq=2.0, target_sfreq=1.0):
         super().__init__()
-        if source_sfreq > target_sfreq:
-            raise ValueError("source_sfreq must be <= target_sfreq")
+        if source_sfreq < target_sfreq:
+            raise ValueError("source_sfreq must be >= target_sfreq")
         self.source_sfreq = source_sfreq
         self.target_sfreq = target_sfreq
 
