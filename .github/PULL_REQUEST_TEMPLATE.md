@@ -25,7 +25,7 @@ A clear and concise description of what you have implemented.
 
 <!--
 If your contribution does add a dependency, we may suggest adding it as an
-optional/soft dependency to keep external dependencies of the core aeon package
+optional/soft dependency to keep external dependencies of the core aeon-neuro package
 to a minimum.
 -->
 
@@ -54,7 +54,7 @@ Please go through the checklist below. Please feel free to remove points if they
 - [ ] I've added the estimator to the online API documentation.
 
 ##### For developers with write access
-- [ ] Optionally, I've updated aeon's [CODEOWNERS](https://github.com/aeon-toolkit/aeon-neuro/blob/main/CODEOWNERS) to receive notifications about future changes to these files.
+- [ ] Optionally, I've updated aeon-neuro's [CODEOWNERS](https://github.com/aeon-toolkit/aeon-neuro/blob/main/CODEOWNERS) to receive notifications about future changes to these files.
 
 
 <!--
