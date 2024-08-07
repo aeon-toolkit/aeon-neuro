@@ -1,52 +1,106 @@
+"""Band power transformations."""
+
 import numpy as np
-from scipy.fft import rfft, rfftfreq
-from scipy.integrate import simps
+from aeon.transformations.series.base import BaseSeriesTransformer
+from aeon.utils.validation import check_n_jobs
+from mne.time_frequency import psd_array_welch
+from scipy.integrate import simpson
 
 
-class BandpowerExtraction:
-    def __init__(self, fs, band, window_width=1000, window_space=5):
-        self.fs = fs
-        self.band = band
-        self.window_width = window_width
-        self.window_space = window_space
+class BandPowerSeriesTransformer(BaseSeriesTransformer):
+    """Band power transformer.
 
-    def transform(self, X, y=None):
-        max_freq, min_freq = selectBandFreqs(self.band)
-        n_instances, n_channels, n_timepoints = np.shape(X)
-        final_data = np.zeros(
-            (
-                n_instances,
-                n_channels,
-                int((n_timepoints - self.window_width) / self.window_space) + 1,
-            )
+    EEG signals occupy the frequency range of 0 - 60Hz,
+    which is roughly divided into five constituent physiological EEG sub bands:
+    δ (0 - 4Hz), θ (4 - 7Hz), α (8 - 12Hz), β (13 - 30Hz), and γ (30 - 60Hz).
+    Power within each frequency band is estimated over time using windowed FFTs,
+    then averaged across channels.
+
+    Parameters
+    ----------
+    sfreq : int or float
+        Sampling frequency in Hz, by default 1.0.
+    n_per_seg : int, optional
+        Length of each segment/window in number of timepoints, by default 256.
+    window : str, optional
+        Windowing function to use. See `scipy.signal.get_window()`
+        for a list of available windows, by default "hamming".
+    relative : bool, optional
+        If True, return the relative power (divide by total power across freq bands).
+        If False, return the absolute power in V^2/Hz, by default True.
+    n_jobs : int, optional
+        Number of jobs to calculate power spectral densities, by default 1.
+    """
+
+    _tags = {
+        "capability:multivariate": True,
+        "fit_is_empty": True,
+    }
+
+    FREQ_BANDS = {
+        "delta": (0, 4),
+        "theta": (4, 7),
+        "alpha": (8, 12),
+        "beta": (13, 30),
+        "gamma": (30, 60),
+    }
+
+    def __init__(
+        self,
+        sfreq=1.0,  # scipy default
+        n_per_seg=256,  # mne/scipy default, for window=str
+        window="hamming",  # mne default
+        relative=True,
+        n_jobs=1,
+    ):
+        super().__init__(axis=1)  # (n_channels, n_timepoints)
+        self.sfreq = sfreq
+        self.n_per_seg = n_per_seg
+        self.window = window
+        self.relative = relative
+        self.n_jobs = check_n_jobs(n_jobs)
+
+    def _transform(self, X, y=None):
+        """Transform the input series to extract band power series.
+
+        Parameters
+        ----------
+        X : np.ndarray of shape (n_channels, n_timepoints)
+            Input time series.
+        y : None
+            Ignored for interface compatibility, by default None.
+
+        Returns
+        -------
+        np.ndarray of shape (5_bands, int(n_timepoints/n_per_seg))
+            Power within δ, θ, α, β, and γ bands over time.
+        """
+        # next power of 2, for FFT efficiency
+        n_fft = int(2 ** np.ceil(np.log2(self.n_per_seg)))
+        powers, freqs = psd_array_welch(
+            X,
+            sfreq=self.sfreq,
+            fmin=self.FREQ_BANDS["delta"][0],
+            fmax=self.FREQ_BANDS["gamma"][1],
+            n_fft=n_fft,
+            n_overlap=0,
+            n_per_seg=self.n_per_seg,
+            n_jobs=self.n_jobs,
+            average=None,
+            window=self.window,
         )
-        for instance in range(n_instances):
-            for channel in range(n_channels):
-                for timepoint in range(
-                    1, n_timepoints - self.window_width, self.window_space
-                ):
-                    w = X[instance][channel][timepoint : timepoint + self.window_width]
-                    coefficients = rfft(w)[1:]
-                    freqs = rfftfreq(self.window_width, 1 / self.fs)[1:]
-                    delta = np.logical_and(freqs >= min_freq, freqs <= max_freq)
-                    powers = np.abs(coefficients[delta])
-                    value = simps(powers, dx=freqs[1] - freqs[0])
-                    final_data[instance][channel][
-                        int(timepoint / self.window_space)
-                    ] = value
-        return final_data
 
+        freq_res = freqs[1] - freqs[0]
 
-def selectBandFreqs(band):
-    if band == "delta":
-        return 4, 0
-    elif band == "theta":
-        return 8, 4
-    elif band == "alpha":
-        return 12, 8
-    elif band == "beta":
-        return 30, 12
-    elif band == "gamma":
-        return 100, 30
-    else:
-        return 100, 0
+        band_powers = np.zeros(shape=(len(self.FREQ_BANDS), powers.shape[-1]))
+        for band_idx, (min_freq, max_freq) in enumerate(self.FREQ_BANDS.values()):
+            freq_mask = np.logical_and(freqs >= min_freq, freqs <= max_freq)
+            # integrate over frequencies, average over channels
+            band_powers[band_idx, :] = simpson(
+                powers[:, freq_mask, :], dx=freq_res, axis=1
+            ).mean(axis=0)
+
+        if self.relative:
+            band_powers /= band_powers.sum(axis=0)
+
+        return band_powers
