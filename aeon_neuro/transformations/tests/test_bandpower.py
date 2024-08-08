@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from aeon_neuro.transformations import bandpower
+from aeon_neuro.transformations import BandPowerSeriesTransformer
 
 # set paramaters, assuming X ~ iid = flat PSD
 n_channels, n_timepoints, n_per_seg = 3, 30000, 1024
@@ -20,7 +20,7 @@ def sim_X():
 def test_transform(sim_X):
     """Test BandPowerSeriesTransformer."""
     X = sim_X
-    transformer = bandpower.BandPowerSeriesTransformer(
+    transformer = BandPowerSeriesTransformer(
         sfreq=256, n_per_seg=n_per_seg, relative=True
     )
 

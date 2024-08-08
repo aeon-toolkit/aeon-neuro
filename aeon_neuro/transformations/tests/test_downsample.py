@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from aeon_neuro.transformations import downsample
+from aeon_neuro.transformations import DownsampleCollectionTransformer
 
 # list of 2D numpy arrays, unequal lengths
 X = [
@@ -55,7 +55,7 @@ testdata = [
 @pytest.mark.parametrize("X, source_sfreq, target_sfreq, X_expected", testdata)
 def test_downsample_series(X, source_sfreq, target_sfreq, X_expected):
     """Test the downsampling of a time series."""
-    transformer = downsample.DownsampleCollectionTransformer(source_sfreq, target_sfreq)
+    transformer = DownsampleCollectionTransformer(source_sfreq, target_sfreq)
     X_transformed = transformer.fit_transform(X)
     assert isinstance(X_transformed, list)
     for idx in range(2):

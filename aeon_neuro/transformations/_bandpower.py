@@ -6,6 +6,8 @@ from aeon.utils.validation import check_n_jobs
 from mne.time_frequency import psd_array_welch
 from scipy.integrate import simpson
 
+__all__ = ["BandPowerSeriesTransformer"]
+
 
 class BandPowerSeriesTransformer(BaseSeriesTransformer):
     """Band power transformer.
