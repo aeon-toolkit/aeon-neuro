@@ -37,6 +37,7 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
     ------
     ValueError
         If sfreq is too low to capture power within each frequency band.
+        If n_per_seg is less than half the sampling frequency.
     """
 
     _tags = {
@@ -66,6 +67,9 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
             raise ValueError(
                 f"Sampling frequency (sfreq) must be at least {nyquist_freq} Hz."
             )
+        min_n = sfreq // 2
+        if n_per_seg < min_n:
+            raise ValueError(f"n_per_seg must be at least {min_n} for lowest freqs.")
         self.sfreq = sfreq
         self.n_per_seg = n_per_seg
         self.window = window
