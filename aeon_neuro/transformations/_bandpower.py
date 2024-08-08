@@ -21,7 +21,7 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
     Parameters
     ----------
     sfreq : int or float
-        Sampling frequency in Hz, by default 1.0.
+        Sampling frequency in Hz, by default 120.
     n_per_seg : int, optional
         Length of each segment/window in number of timepoints, by default 256.
     window : str, optional
@@ -32,6 +32,11 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
         If False, return the absolute power in V^2/Hz, by default True.
     n_jobs : int, optional
         Number of jobs to calculate power spectral densities, by default 1.
+
+    Raises
+    ------
+    ValueError
+        If sfreq is too low to capture power within each frequency band.
     """
 
     _tags = {
@@ -49,13 +54,18 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
 
     def __init__(
         self,
-        sfreq=1.0,  # scipy default
+        sfreq=120,  # 2x60Hz = 120Hz
         n_per_seg=256,  # mne/scipy default, for window=str
         window="hamming",  # mne default
         relative=True,
         n_jobs=1,
     ):
         super().__init__(axis=1)  # (n_channels, n_timepoints)
+        nyquist_freq = 2 * self.FREQ_BANDS["gamma"][1]
+        if sfreq < nyquist_freq:
+            raise ValueError(
+                f"Sampling frequency (sfreq) must be at least {nyquist_freq} Hz."
+            )
         self.sfreq = sfreq
         self.n_per_seg = n_per_seg
         self.window = window
