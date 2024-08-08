@@ -83,13 +83,15 @@ def load_basic_classification_problem():
 
 if __name__ == "__main__":
     X_train, y_train, X_test, y_test = load_basic_classification_problem()
-    from aeon.datasets import load_from_tsfile, write_to_tsfile
-
-    path = "../data/TestExample"
-
-    write_to_tsfile(X_train, path, y_train, "TestExample_TRAIN")
-    write_to_tsfile(X_test, path, y_test, "TestExample_TEST")
-    X, y = load_from_tsfile(path + "/TestExample_TRAIN.ts")
+    # import os
+    # import tempfile
+    # from aeon.datasets import load_from_tsfile, write_to_tsfile
+    # with tempfile.TemporaryDirectory() as tmp:
+    #     problem_name="TestExample_TRAIN"
+    #     write_to_tsfile(X=X_train, path=tmp, y=y_train, problem_name=problem_name)
+    #     load_path = os.path.join(tmp, problem_name)
+    #     newX, newy = load_from_tsfile(full_file_path_and_name=load_path)
+    #     assert X_train.shape == newX.shape
     rocket = RocketClassifier(num_kernels=1000)
     rocket.fit(X_train, y_train)
     y_pred = rocket.predict(X_test)
