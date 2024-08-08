@@ -1,14 +1,16 @@
+"""Preprocessing of VIPA dataset."""
+
 import numpy as np
 from aeon.datasets import load_from_tsfile, write_to_tsfile
 
-from aeon_neuro.transformations import downsample, epoching
+from aeon_neuro.transformations import DownsampleCollectionTransformer
 
 if __name__ == "__main__":
     dataloc = "D:/PhD Files/VIPA Study/transformed/VIPA_Study/VIPA_Study.ts"
     writeloc = "D:/PhD Files/VIPA Study/transformed/VIPA_Study/"
     data, y = load_from_tsfile(dataloc, return_type="numpy3D")
-    print(np.shape(data))
-    data = downsample.downsample_series(data, 500, 50)
+    transformer = DownsampleCollectionTransformer(source_sfreq=500, target_sfreq=50)
+    data = transformer.fit_transform(data)
     # newdata =[]
     # newlabels = []
     # classNames = ["closed","open"]
