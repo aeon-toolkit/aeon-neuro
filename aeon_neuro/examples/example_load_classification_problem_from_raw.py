@@ -8,11 +8,23 @@ from aeon.classification.convolution_based import RocketClassifier
 def load_basic_classification_problem():
     """Load data and format to classification problem.
 
+    Toy EEG recorded by Aiden Rushbrooke and stored in BIDS format to use as an example
+    for the aeon_neuro package.
+
     Loads the data, pre-processes, segments into instances and runs a basic classifier
 
-
+    Returns
+    -------
+    X_train : np.ndarray
+        First 20 recordings of shape (20,32,1000)
+    y_train : np.ndarray
+        Labels for the first 20 recordings
+    X_test : np.ndarray
+        Last 20 recordings of shape (20,32,1000)
+    y_test : np.ndarray
+        Labels for the last 20 recordings
     """
-    data_path = "./aeon_neuro/data/basic_classification_task"
+    data_path = "../../example_raw_eeg/basic_classification_task"
     tasks = ["task", "rest"]
     runs = ["01", "02", "03", "04", "05", "06"]
 
@@ -66,12 +78,19 @@ def load_basic_classification_problem():
 
     X_train, X_test = np.array(X_train), np.array(X_test)
     y_train, y_test = np.array(y_train), np.array(y_test)
-
-    # Run minirocket on example dataset
-    cls = RocketClassifier(rocket_transform="minirocket")
-    cls.fit(X_train, y_train)
-    cls.score(X_test, y_test)
+    return X_train, y_train, X_test, y_test
 
 
 if __name__ == "__main__":
-    load_basic_classification_problem()
+    X_train, y_train, X_test, y_test = load_basic_classification_problem()
+    from aeon.datasets import load_from_tsfile, write_to_tsfile
+
+    path = "../data/TestExample"
+
+    write_to_tsfile(X_train, path, y_train, "TestExample_TRAIN")
+    write_to_tsfile(X_test, path, y_test, "TestExample_TEST")
+    X, y = load_from_tsfile(path + "/TestExample_TRAIN.ts")
+    rocket = RocketClassifier(num_kernels=1000)
+    rocket.fit(X_train, y_train)
+    y_pred = rocket.predict(X_test)
+    print("Accuracy = ", np.mean(y_pred == y_test))  # noqa
