@@ -44,11 +44,13 @@ class DownsampleCollectionTransformer(BaseCollectionTransformer):
         X : list or np.ndarray of shape (n_cases, n_channels, n_timepoints)
             Input time series collection where n_timepoints can vary over cases.
         y : None
-            Ignored for interface compatibility, by default None
+            Ignored for interface compatibility, by default None.
 
         Returns
         -------
         list of 2D numpy arrays of shape [(n_channels, n_timepoints_downsampled), ...]
+        or np.ndarray of shape (n_cases, n_channels, n_timepoints_downsampled)
+            Downsampled time series collection.
         """
         step = int(self.source_sfreq / self.target_sfreq)
         X_downsampled = []
@@ -56,4 +58,8 @@ class DownsampleCollectionTransformer(BaseCollectionTransformer):
             n_timepoints = x.shape[-1]
             indices = np.arange(0, n_timepoints, step)
             X_downsampled.append(x[:, indices])
-        return X_downsampled
+
+        if isinstance(X, np.ndarray):
+            return np.asarray(X_downsampled)
+        else:
+            return X_downsampled
