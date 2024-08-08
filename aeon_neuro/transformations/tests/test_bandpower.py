@@ -46,3 +46,16 @@ def test_transform(sim_X):
     )
     # check expected power bands for iid = flat PSD
     np.testing.assert_allclose(power_bands, power_bands_expected, atol=0.05)
+
+
+def test_transform_nyquist():
+    """Test BandPowerSeriesTransformer above/below nyquist."""
+    rng = np.random.default_rng(seed=0)
+    X = rng.random((32, 1000))
+    transformer = BandPowerSeriesTransformer()  # sfreq = 120
+    transformer.fit_transform(X)
+
+    with pytest.raises(
+        ValueError, match="Sampling frequency .* must be at least .* Hz."
+    ):
+        transformer.set_params(sfreq=100)
