@@ -3,6 +3,8 @@
 import numpy as np
 from aeon.transformations.collection.base import BaseCollectionTransformer
 
+__all__ = ["DownsampleCollectionTransformer"]
+
 
 class DownsampleCollectionTransformer(BaseCollectionTransformer):
     """Downsample the time dimension of a collection of time series.

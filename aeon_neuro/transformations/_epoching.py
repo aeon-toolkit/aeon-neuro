@@ -3,6 +3,8 @@
 import numpy as np
 from aeon.transformations.series.base import BaseSeriesTransformer
 
+__all__ = ["EpochSeriesTransformer"]
+
 
 class EpochSeriesTransformer(BaseSeriesTransformer):
     """Epoch series transformer.
