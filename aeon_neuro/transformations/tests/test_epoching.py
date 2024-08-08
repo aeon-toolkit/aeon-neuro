@@ -2,7 +2,8 @@
 
 import numpy as np
 
-from aeon_neuro.transformations import epoching
+from aeon_neuro.transformations import EpochSeriesTransformer
+from aeon_neuro.transformations._epoching import epoch_dataset
 
 # set parameters
 n_cases, n_channels, n_timepoints, sfreq = 3, 2, 12, 1
@@ -32,7 +33,7 @@ y_expected = np.repeat(y, n_epochs)
 
 def test_epoch_series_by_percentage():
     """Test series-to-collection transformation."""
-    transformer = epoching.EpochSeriesTransformer(percent=percent)
+    transformer = EpochSeriesTransformer(percent=percent)
     X_series_transformed = transformer.fit_transform(X_series)
     assert isinstance(X_series_transformed, np.ndarray)
     np.testing.assert_array_equal(X_series_expected, X_series_transformed)
@@ -40,7 +41,7 @@ def test_epoch_series_by_percentage():
 
 def test_epoch_series_by_time():
     """Test series-to-collection transformation."""
-    transformer = epoching.EpochSeriesTransformer(sfreq=sfreq, epoch_size=epoch_size)
+    transformer = EpochSeriesTransformer(sfreq=sfreq, epoch_size=epoch_size)
     X_series_transformed = transformer.fit_transform(X_series)
     assert isinstance(X_series_transformed, np.ndarray)
     np.testing.assert_array_equal(X_series_expected, X_series_transformed)
@@ -48,8 +49,6 @@ def test_epoch_series_by_time():
 
 def test_epoch_dataset():
     """Test collection-to-collection transformation."""
-    X_transformed, y_transformed = epoching.epoch_dataset(
-        X_collection, y, sfreq, epoch_size
-    )
+    X_transformed, y_transformed = epoch_dataset(X_collection, y, sfreq, epoch_size)
     np.testing.assert_array_equal(X_transformed, X_collection_expected)
     np.testing.assert_array_equal(y_transformed, y_expected)
