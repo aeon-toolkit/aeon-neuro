@@ -104,6 +104,7 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
             n_jobs=self.n_jobs,
             average=None,
             window=self.window,
+            verbose="error",
         )
 
         freq_res = freqs[1] - freqs[0]
