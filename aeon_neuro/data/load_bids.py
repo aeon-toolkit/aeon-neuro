@@ -25,12 +25,6 @@ def load_basic_classification_problem(path="../"):
         Last 20 recordings of shape (240,32,1000)
     y_test : np.ndarray
         Labels for the last 20 recordings
-
-    Examples
-    --------
-    >>> X_train, y_train, X_test, y_test = load_basic_classification_problem()
-    >>> print(X_train.shape)
-    (240, 32, 1000)
     """
     data_path = path + "example_raw_eeg/basic_classification_task"
     tasks = ["task", "rest"]
