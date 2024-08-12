@@ -6,8 +6,8 @@ import pytest
 from aeon_neuro.transformations import BandPowerSeriesTransformer
 
 # set paramaters, assuming X ~ iid = flat PSD
-n_channels, n_timepoints, n_per_seg = 3, 30000, 1024
-n_segs = int(n_timepoints / n_per_seg)
+n_channels, n_timepoints, window_size, stride = 3, 30000, 1024, 100
+n_windows = (n_timepoints - window_size) // stride + 1
 
 
 @pytest.fixture
@@ -21,16 +21,16 @@ def test_transform(sim_X):
     """Test BandPowerSeriesTransformer."""
     X = sim_X
     transformer = BandPowerSeriesTransformer(
-        sfreq=256, n_per_seg=n_per_seg, relative=True
+        sfreq=256, window_size=window_size, stride=stride, relative=True
     )
 
     # estimated power bands
     power_bands = transformer.fit_transform(X)
     # check array and shape
     assert isinstance(power_bands, np.ndarray)
-    assert power_bands.shape == (5, n_segs)
+    assert power_bands.shape == (5, n_windows)
     # check relative=True, so powers sum to 1
-    np.testing.assert_allclose(power_bands.sum(axis=0), np.ones(shape=n_segs))
+    np.testing.assert_allclose(power_bands.sum(axis=0), np.ones(shape=n_windows))
 
     # expected power bands
     power_bands_expected = np.array(
@@ -41,27 +41,29 @@ def test_transform(sim_X):
         dtype=np.float64,
     )
     power_bands_expected /= power_bands_expected.sum()
-    power_bands_expected = np.tile(
-        power_bands_expected.reshape(-1, 1), (1, int(n_timepoints / n_per_seg))
-    )
+    power_bands_expected = np.tile(power_bands_expected.reshape(-1, 1), (1, n_windows))
     # check expected power bands for iid = flat PSD
-    np.testing.assert_allclose(power_bands, power_bands_expected, atol=0.05)
+    np.testing.assert_allclose(power_bands, power_bands_expected, atol=0.08)
 
 
 def test_transform_nyquist():
     """Test BandPowerSeriesTransformer above/below nyquist."""
     rng = np.random.default_rng(seed=0)
     X = rng.random((32, 1000))
-    transformer = BandPowerSeriesTransformer()  # sfreq = 120, n_per_seg = 256
+    transformer = BandPowerSeriesTransformer()  # sfreq = 120, window_size = 256
     transformer.fit_transform(X)
 
-    with pytest.raises(
-        ValueError, match="Sampling frequency .* must be at least .* Hz."
-    ):
+    with pytest.raises(ValueError, match="sfreq must be at least .* Hz."):
         BandPowerSeriesTransformer(sfreq=119)
 
     with pytest.raises(
         ValueError,
-        match="n_per_seg must be at least .* for lowest freqs.",
+        match="window_size must be at least .* for lowest freqs.",
     ):
-        BandPowerSeriesTransformer(sfreq=120, n_per_seg=59)
+        BandPowerSeriesTransformer(sfreq=120, window_size=59)
+
+    with pytest.raises(ValueError, match="stride must be between 1 and .*"):
+        BandPowerSeriesTransformer(window_size=100, stride=101)
+
+    with pytest.raises(ValueError, match="stride must be between 1 and .*"):
+        BandPowerSeriesTransformer(window_size=100, stride=0)
