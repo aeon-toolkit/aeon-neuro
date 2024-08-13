@@ -55,8 +55,47 @@ testdata = [
 @pytest.mark.parametrize("X, source_sfreq, target_sfreq, X_expected", testdata)
 def test_downsample_series(X, source_sfreq, target_sfreq, X_expected):
     """Test the downsampling of a time series."""
-    transformer = DownsampleCollectionTransformer(source_sfreq, target_sfreq)
-    X_transformed = transformer.fit_transform(X)
-    assert isinstance(X_transformed, list)
+    proportion = 1 - (target_sfreq / source_sfreq)
+    freq_downsample = DownsampleCollectionTransformer(
+        downsample_by="frequency", source_sfreq=source_sfreq, target_sfreq=target_sfreq
+    )
+    prop_downsample = DownsampleCollectionTransformer(
+        downsample_by="proportion", proportion=proportion
+    )
+    X_freq_downsample = freq_downsample.fit_transform(X)
+    X_prop_downsample = prop_downsample.fit_transform(X)
+    assert isinstance(X_freq_downsample, list)
+    assert isinstance(X_prop_downsample, list)
     for idx in range(2):
-        np.testing.assert_array_equal(X_transformed[idx], X_expected[idx])
+        np.testing.assert_array_equal(X_freq_downsample[idx], X_expected[idx])
+        np.testing.assert_array_equal(X_prop_downsample[idx], X_expected[idx])
+
+
+def test_value_errors():
+    """Test DowmsampleCollectionTransformer ValueErrors."""
+    # default initialization
+    rng = np.random.default_rng(seed=0)
+    X = rng.random((32, 1000))
+    transformer = DownsampleCollectionTransformer()
+    transformer.fit_transform(X)
+
+    # invalid initializations
+    with pytest.raises(
+        ValueError, match='downsample_by must be either "frequency" or "proportion"'
+    ):
+        DownsampleCollectionTransformer(downsample_by="invalid")
+
+    with pytest.raises(ValueError, match="source_sfreq must be > target_sfreq"):
+        DownsampleCollectionTransformer(
+            downsample_by="frequency", source_sfreq=1.0, target_sfreq=2.0
+        )
+
+    with pytest.raises(
+        ValueError, match="proportion must be provided and between 0-1."
+    ):
+        DownsampleCollectionTransformer(downsample_by="proportion", proportion=1)
+
+    with pytest.raises(
+        ValueError, match="proportion must be provided and between 0-1."
+    ):
+        DownsampleCollectionTransformer(downsample_by="proportion", proportion=0)
