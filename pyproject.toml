@@ -51,6 +51,7 @@ dependencies = [
 [project.optional-dependencies]
 all_extras = [
     "aeon[all_extras]",
+    "pyriemann>=0.6"
 ]
 dev = [
     "aeon[dev]",
