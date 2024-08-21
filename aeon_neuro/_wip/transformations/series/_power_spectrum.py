@@ -3,20 +3,22 @@
 from aeon.transformations.series.base import BaseSeriesTransformer
 
 
-
 class PowerSpectrumMatrix(BaseSeriesTransformer):
     """Implement here."""
+
     _tags = {
         "X_inner_type": "np.ndarray",
         "capability:multivariate": True,
         "fit_is_empty": True,
     }
+
     def __init__(
         self,
         n_lags=None,
     ):
         self.n_lags = n_lags
         super().__init__(axis=1)
+
     def _transform(self, X, y=None):
         """Transform X and return a transformed version.
 
