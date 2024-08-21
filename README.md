@@ -16,7 +16,7 @@ reproducible research, as described in the [Turing Way](https://github.com/the-t
 and documentation is available at https://aeon-toolkit.org and the source code at
 https://github.com/aeon-toolkit/aeon.
 
-The initial `aeon-neuro` release is `v0.0.2`.
+The `aeon-neuro` release is `v0.0.2`.
 
 Our webpage and documentation is available at https://aeon-neuro.readthedocs.io.
 
