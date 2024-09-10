@@ -1,10 +1,39 @@
-"""Power spectrum matrix transform, may call it something else."""
+"""Cross spectral matrix transformer."""
 
 from aeon.transformations.series.base import BaseSeriesTransformer
+from mne.time_frequency.csd import _csd_fourier, _vector_to_sym_mat
+from scipy.fft import rfftfreq
 
 
-class PowerSpectrumMatrix(BaseSeriesTransformer):
-    """Implement here."""
+class CrossSpectralMatrix(BaseSeriesTransformer):
+    """Cross spectral (density) matrix transformer.
+
+    A matrix representing the pairwise covariances between channels
+    in the frequency domain -- i.e. between power spectral densities.
+    Matrices are estimated per frequency using the short-time fourier algorithm,
+    then averages over the specified frequency range (by default 0-60Hz for EEG).
+
+    Parameters
+    ----------
+    sfreq : int or float, optional
+        Sampling frequency in Hz, by default 120.
+    fmin : int or float, optional
+        Minimum frequency of interest in Hz, by default 0.
+    fmax : int or float, optional
+        Maximum frequency of interest in Hz, by default 60.
+
+    Examples
+    --------
+    >>> from aeon_neuro._wip.transformations.series._power_spectrum import (
+    ...     CrossSpectralMatrix)
+    >>> import numpy as np
+    >>> n_channels, n_timepoints = 5, 360
+    >>> X = np.random.standard_normal(size=(n_channels, n_timepoints))
+    >>> transformer = CrossSpectralMatrix()
+    >>> X_transformed = transformer.fit_transform(X)
+    >>> X_transformed.shape == (n_channels, n_channels)
+    True
+    """
 
     _tags = {
         "X_inner_type": "np.ndarray",
@@ -12,12 +41,11 @@ class PowerSpectrumMatrix(BaseSeriesTransformer):
         "fit_is_empty": True,
     }
 
-    def __init__(
-        self,
-        n_lags=None,
-    ):
-        self.n_lags = n_lags
-        super().__init__(axis=1)
+    def __init__(self, sfreq=120, fmin=0, fmax=60):
+        self.sfreq = sfreq
+        self.fmin = fmin
+        self.fmax = fmax
+        super().__init__(axis=1)  # (n_channels, n_timepoints)
 
     def _transform(self, X, y=None):
         """Transform X and return a transformed version.
@@ -35,4 +63,24 @@ class PowerSpectrumMatrix(BaseSeriesTransformer):
         -------
         transformed version of X
         """
-        return X
+        # frequency mask
+        n_timepoints = X.shape[-1]
+        n_fft = n_timepoints
+        freq_fft = rfftfreq(n_fft, 1.0 / self.sfreq)
+        freq_mask = (freq_fft > 0) & (freq_fft >= self.fmin) & (freq_fft <= self.fmax)
+
+        if freq_mask.sum() == 0:
+            raise ValueError(
+                f"FFT cannot be computed for sfreq={self.sfreq} \
+                within the frequency range={self.fmin}-{self.fmax}. \
+                Please increase the frequency range."
+            )
+
+        # CSD matrix by frequency (stored as vectors)
+        X_vector = _csd_fourier(
+            X, sfreq=self.sfreq, n_times=n_timepoints, freq_mask=freq_mask, n_fft=n_fft
+        )
+        # average over frequencies
+        # convert vector to symmetric matrix of shape (n_channels, n_channels)
+        X_matrix = _vector_to_sym_mat(X_vector.mean(axis=1))
+        return X_matrix
