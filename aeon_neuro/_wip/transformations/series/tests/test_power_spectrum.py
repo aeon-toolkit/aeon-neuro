@@ -19,6 +19,11 @@ def test_transform():
     assert X_transformed.shape == (n_channels, n_channels)  # expected shape
     assert _is_hpd(X_transformed)  # Hermitian Positive Definite
 
+    # test positive semi-definite
+    X_transformed = transformer.set_params(magnitude=True).fit_transform(X)
+    evals = np.linalg.eigvals(X_transformed)
+    assert np.all(evals >= 0)
+
 
 def test_value_errors():
     """Test cross spectral matrix errors."""

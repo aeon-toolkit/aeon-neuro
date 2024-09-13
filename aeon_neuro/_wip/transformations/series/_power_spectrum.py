@@ -1,5 +1,6 @@
 """Cross spectral matrix transformer."""
 
+import numpy as np
 from aeon.transformations.series.base import BaseSeriesTransformer
 from mne.time_frequency.csd import _csd_fourier, _vector_to_sym_mat
 from scipy.fft import rfftfreq
@@ -11,6 +12,7 @@ class CrossSpectralMatrix(BaseSeriesTransformer):
     Estimate the pairwise cross spectral matrix between channels in the frequency
     domain -- i.e., between power spectral densities. The result is a hermitian
     positive definite (HPD) complex-valued matrix of shape (n_channels, n_channels).
+    The magnitude of the HPD matrix is real-valued.
     Matrices are computed as a function of frequency using the short-time fourier
     algorithm, then averaged over the specified frequency range
     (by default 0-60Hz for EEG).
@@ -23,6 +25,9 @@ class CrossSpectralMatrix(BaseSeriesTransformer):
         Minimum frequency of interest in Hz, by default 0.
     fmax : int or float, optional
         Maximum frequency of interest in Hz, by default 60.
+    magnitude : bool, optional
+        If True, return the magnitude of the cross spectral matrix (real-valued).
+        If False, return the complex-valued matrix, by default False.
 
     Examples
     --------
@@ -37,6 +42,9 @@ class CrossSpectralMatrix(BaseSeriesTransformer):
     True
     >>> np.iscomplexobj(X_transformed)
     True
+    >>> X_transformed = transformer.set_params(magnitude=True).fit_transform(X)
+    >>> np.iscomplexobj(X_transformed)
+    False
     """
 
     _tags = {
@@ -45,10 +53,11 @@ class CrossSpectralMatrix(BaseSeriesTransformer):
         "fit_is_empty": True,
     }
 
-    def __init__(self, sfreq=120, fmin=0, fmax=60):
+    def __init__(self, sfreq=120, fmin=0, fmax=60, magnitude=False):
         self.sfreq = sfreq
         self.fmin = fmin
         self.fmax = fmax
+        self.magnitude = magnitude
         super().__init__(axis=1)  # (n_channels, n_timepoints)
 
     def _transform(self, X, y=None):
@@ -87,4 +96,8 @@ class CrossSpectralMatrix(BaseSeriesTransformer):
         # average over frequencies
         # convert vector to symmetric matrix of shape (n_channels, n_channels)
         X_matrix = _vector_to_sym_mat(X_vector.mean(axis=1))
-        return X_matrix
+
+        if self.magnitude:
+            return np.abs(X_matrix)
+        else:
+            return X_matrix
