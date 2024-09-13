@@ -8,10 +8,12 @@ from scipy.fft import rfftfreq
 class CrossSpectralMatrix(BaseSeriesTransformer):
     """Cross spectral (density) matrix transformer.
 
-    A matrix representing the pairwise covariances between channels
-    in the frequency domain -- i.e. between power spectral densities.
-    Matrices are estimated per frequency using the short-time fourier algorithm,
-    then averages over the specified frequency range (by default 0-60Hz for EEG).
+    Estimate the pairwise cross spectral matrix between channels in the frequency
+    domain -- i.e., between power spectral densities. The result is a hermitian
+    positive definite (HPD) complex-valued matrix of shape (n_channels, n_channels).
+    Matrices are computed as a function of frequency using the short-time fourier
+    algorithm, then averaged over the specified frequency range
+    (by default 0-60Hz for EEG).
 
     Parameters
     ----------
@@ -32,6 +34,8 @@ class CrossSpectralMatrix(BaseSeriesTransformer):
     >>> transformer = CrossSpectralMatrix()
     >>> X_transformed = transformer.fit_transform(X)
     >>> X_transformed.shape == (n_channels, n_channels)
+    True
+    >>> np.iscomplexobj(X_transformed)
     True
     """
 
