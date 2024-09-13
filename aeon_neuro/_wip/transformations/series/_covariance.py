@@ -6,7 +6,7 @@ from aeon.transformations.series.base import BaseSeriesTransformer
 class CovarianceMatrix(BaseSeriesTransformer):
     """Covariance matrix transformer.
 
-    Estimate the (unbiased) pairwise covariance matrix between channels in the
+    Estimate the pairwise covariance matrix between channels in the
     time domain. The result is a positive semidefinite (PSD) real-valued matrix
     of shape (n_channels, n_channels).
 
@@ -61,4 +61,4 @@ class CovarianceMatrix(BaseSeriesTransformer):
         X_centered = X - X.mean(axis=1, keepdims=True)
         if self.correlation:
             X_centered /= X.std(axis=1, keepdims=True)
-        return (X_centered @ X_centered.T) / (n_timepoints - 1)
+        return (X_centered @ X_centered.T) / (n_timepoints)
