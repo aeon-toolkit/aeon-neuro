@@ -5,40 +5,6 @@ from pyriemann.utils.distance import distance_riemann
 from scipy.linalg import sqrtm
 
 
-def _is_hpd(matrix):
-    r"""Check if a matrix is Hermitian Positive Definite (HPD)."""
-    if not np.allclose(matrix, matrix.conj().T):
-        return False
-    try:
-        np.linalg.cholesky(matrix)
-        return True
-    except np.linalg.LinAlgError:
-        return False
-
-
-def _check_inputs(A, B, W=None):
-    if W is None:
-        if not A.shape == B.shape:
-            raise ValueError("Inputs must have equal dimensions")
-        if A.ndim != 2 or B.ndim != 2:
-            raise ValueError("Inputs must be 2D ndarrays")
-        if not _is_hpd(A):
-            raise ValueError("Matrix A must be Hermitian Positive Definite (HPD)")
-        if not _is_hpd(B):
-            raise ValueError("Matrix B must be Hermitian Positive Definite (HPD)")
-    else:
-        if not A.shape == B.shape == W.shape:
-            raise ValueError("Inputs must have equal dimensions")
-        if A.ndim != 2 or B.ndim != 2 or W.ndim != 2:
-            raise ValueError("Inputs must be 2D ndarrays")
-        if not _is_hpd(A):
-            raise ValueError("Matrix A must be Hermitian Positive Definite (HPD)")
-        if not _is_hpd(B):
-            raise ValueError("Matrix B must be Hermitian Positive Definite (HPD)")
-        if not _is_hpd(W):
-            raise ValueError("Matrix W must be Hermitian Positive Definite (HPD)")
-
-
 def riemannian_distance_1(
     A: np.ndarray,
     B: np.ndarray,
@@ -52,7 +18,7 @@ def riemannian_distance_1(
     :math:`\mathbf{A}` and :math:`\mathbf{B}` is [1]_:
 
     .. math::
-        d_{R1}(\mathbf{A}, \mathbf{B}) =
+        d_{R_1}(\mathbf{A}, \mathbf{B}) =
         \sqrt{\text{tr} \mathbf{A} +
         \text{tr} \mathbf{B} -
         2 \text{tr} \left[(\mathbf{A} \mathbf{B})^{1/2}\right]}
@@ -76,7 +42,6 @@ def riemannian_distance_1(
         Li, Y., & Wong, K.M. IEEE Journal of Selected Topics in Signal Processing,
         2013, 7, pp. 655-669
     """
-    _check_inputs(A, B)
     same_data = B is A
     if same_data:
         return 0
@@ -99,11 +64,11 @@ def riemannian_distance_2(
     :math:`\mathbf{A}` and :math:`\mathbf{B}` is [1]_:
 
     .. math::
-        d_{R2}(\mathbf{A}, \mathbf{B}) =
-        \sqrt{\text{tr} \mathbf{A} +
-        \text{tr} \mathbf{B} -
-        2 \text{tr} \left[\mathbf{A}^{1/2} \mathbf{B}^{1/2}\right]}
-
+        d_{R_2}(\mathbf{A}, \mathbf{B}) =
+            \sqrt{\text{tr} \mathbf{A} +
+            \text{tr} \mathbf{B} -
+            2 \text{tr} \left[\mathbf{A}^{1/2} \mathbf{B}^{1/2}\right]}
+            
     Parameters
     ----------
     A : np.ndarray
@@ -123,7 +88,6 @@ def riemannian_distance_2(
         Li, Y., & Wong, K.M. IEEE Journal of Selected Topics in Signal Processing,
         2013, 7, pp. 655-669
     """
-    _check_inputs(A, B)
     same_data = B is A
     if same_data:
         return 0
@@ -192,10 +156,10 @@ def weighted_riemannian_distance_1(
     :math:`\mathbf{A}` and :math:`\mathbf{B}` is [1]_:
 
     .. math::
-        d_{W1}(\mathbf{A}, \mathbf{B}, \mathbf{W}) =
-        \sqrt{\text{tr} \mathbf{W} \mathbf{A} +
-        \text{tr} \mathbf{W} \mathbf{B} -
-        2 \text{tr} \mathbf{A}^{1/2} \mathbf{W} \mathbf{B} \mathbf{W} \mathbf{A}^{1/2}}
+        d_{R_1w}(\mathbf{A}, \mathbf{B}, \mathbf{W_1}) =
+        \sqrt{\text{tr}\left[ \mathbf{W_1} \mathbf{A}\right] +
+        \text{tr}\left[ \mathbf{W_1} \mathbf{B}\right] -
+        2 \text{tr}\left[ (\mathbf{B}^{1/2} \mathbf{W_1} \mathbf{A} \mathbf{W_1} \mathbf{B}^{1/2})^{1/2}\right]}
 
     where :math:`\mathbf{W}` is the weight matrix of :math:`\mathbf{A}` and
     :math:`\mathbf{B}`.
@@ -221,7 +185,6 @@ def weighted_riemannian_distance_1(
         Li, Y., & Wong, K.M. IEEE Journal of Selected Topics in Signal Processing,
         2013, 7, pp. 655-669
     """
-    _check_inputs(A, B, W)
     same_data = B is A
     if same_data:
         return 0
@@ -250,11 +213,11 @@ def weighted_riemannian_distance_2(
     :math:`\mathbf{A}` and :math:`\mathbf{B}` is [1]_:
 
     .. math::
-        d_{W2}(\mathbf{A}, \mathbf{B}, \mathbf{W}) =
-        \sqrt{\text{tr} \mathbf{W} \mathbf{A} +
-        \text{tr} \mathbf{W} \mathbf{B} -
-        \text{tr} \mathbf{W} \mathbf{A}^{1/2} \mathbf{B}^{1/2} -
-        \text{tr} \mathbf{W} \mathbf{B}^{1/2} \mathbf{A}^{1/2}}
+        d_{R_2w}(\mathbf{A}, \mathbf{B}, \mathbf{W_2}) =
+        \sqrt{\text{tr}\left[ \mathbf{W_2} \mathbf{A}\right] +
+        \text{tr}\left[ \mathbf{W_2} \mathbf{B}\right] -
+        \text{tr}\left[ \mathbf{W_2} \mathbf{A}^{1/2} \mathbf{B}^{1/2}\right] -
+        \text{tr}\left[ \mathbf{W_2} \mathbf{B}^{1/2} \mathbf{A}^{1/2}\right]}
 
     where :math:`\mathbf{W}` is the weight matrix of :math:`\mathbf{A}` and
     :math:`\mathbf{B}`.
@@ -280,7 +243,6 @@ def weighted_riemannian_distance_2(
         Li, Y., & Wong, K.M. IEEE Journal of Selected Topics in Signal Processing,
         2013, 7, pp. 655-669
     """
-    _check_inputs(A, B, W)
     same_data = B is A
     if same_data:
         return 0
@@ -294,3 +256,77 @@ def weighted_riemannian_distance_2(
     d_W = np.sqrt(term1 + term2 - term3 - term4)
 
     return d_W
+
+
+def pairwise_weighted_riemannian_distance_1(
+    X: np.ndarray,
+    W: np.ndarray,
+    Y: np.ndarray = None,
+) -> np.ndarray:
+    r"""Compute the pairwise weighted Reimannian distance between two sets of SPD/HPD matrices.
+    
+    The first type of pairwise weighted Riemannian distance
+    
+    Parameters
+    ----------
+    X : np.ndarray
+        First set of SPD/HPD matrices, 3D ndarray.
+    W : np.ndarray
+        Weight matrix.
+    Y : np.ndarray, default None
+    
+    Returns
+    -------
+    distances : np.ndarray
+        Pairwise weighted Riemannian distances between X and Y or X itself.
+    """
+    if Y is None:
+        Y = X
+        
+    n_samples_X, n_samples_Y = X.shape[0], Y.shape[0]
+    distances = np.zeros((n_samples_X, n_samples_Y))
+    for i in range(n_samples_X):
+        for j in range(n_samples_Y):
+            d = 0
+            for k in range(X.shape[1]):
+                d += weighted_riemannian_distance_1(X[i, k], Y[j, k], W)
+            distances[i, j] = d
+            
+    return distances
+
+
+def pairwise_weighted_riemannian_distance_2(
+    X: np.ndarray,
+    W: np.ndarray,
+    Y: np.ndarray = None,
+) -> np.ndarray:
+    r"""Compute the pairwise weighted Reimannian distance between two sets of SPD/HPD matrices.
+    
+    The second type of pairwise weighted Riemannian distance
+    
+    Parameters
+    ----------
+    X : np.ndarray
+        First set of SPD/HPD matrices, 3D ndarray.
+    W : np.ndarray
+        Weight matrix.
+    Y : np.ndarray, default None
+    
+    Returns
+    -------
+    distances : np.ndarray
+        Pairwise weighted Riemannian distances between X and Y or X itself.
+    """
+    if Y is None:
+        Y = X
+        
+    n_samples_X, n_samples_Y = X.shape[0], Y.shape[0]
+    distances = np.zeros((n_samples_X, n_samples_Y))
+    for i in range(n_samples_X):
+        for j in range(n_samples_Y):
+            d = 0
+            for k in range(X.shape[1]):
+                d += weighted_riemannian_distance_2(X[i, k], Y[j, k], W)
+            distances[i, j] = d
+            
+    return distances
