@@ -1,4 +1,4 @@
-"""Transforms a collection of series into features using UMAP"""
+"""Transforms a collection of series into features using UMAP."""
 
 import numpy as np
 import umap
