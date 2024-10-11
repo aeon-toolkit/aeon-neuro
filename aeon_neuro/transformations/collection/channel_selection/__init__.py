@@ -5,4 +5,6 @@ __all__ = [
 ]
 
 
-from aeon_neuro.transformations.collections.channel_selection._umaptransformer import UMAPTransformer
+from aeon_neuro.transformations.collection.channel_selection._umaptransformer import (
+    UMAPTransformer,
+)

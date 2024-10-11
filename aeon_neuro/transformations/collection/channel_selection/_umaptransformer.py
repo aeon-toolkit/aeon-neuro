@@ -35,18 +35,12 @@ class UMAPTransformer(BaseCollectionTransformer):
         "fit_is_empty": True,
     }
 
-    def __init__(
-        self,
-        n_neighbours=3,
-        metric="cosine",
-        min_dist=0.1,
-        n_components=2
-    ):
-        
-        if min_dist<0 or min_dist>1:
+    def __init__(self, n_neighbours=3, metric="cosine", min_dist=0.1, n_components=2):
+
+        if min_dist < 0 or min_dist > 1:
             raise ValueError("min_dist must be between 0 and 1")
 
-        super().__init__() 
+        super().__init__()
         self.n_neighbours = n_neighbours
         self.metric = metric
         self.min_dist = min_dist
@@ -66,21 +60,19 @@ class UMAPTransformer(BaseCollectionTransformer):
         -------
         np.ndarray of shape (n_cases, n_components, n_timepoints)
         """
-        _,_,n_timepoints=np.shape(X)
-        X_t = np.transpose(X,(2,0,1))
-        relations = [{j: j for j in range(n_timepoints)} for _ in range(n_timepoints - 1)]
+        _, _, n_timepoints = np.shape(X)
+        X_t = np.transpose(X, (2, 0, 1))
+        relations = [
+            {j: j for j in range(n_timepoints)} for _ in range(n_timepoints - 1)
+        ]
 
         aligned_mapper = umap.AlignedUMAP(
             metric=self.metric,
             min_dist=self.min_dist,
             n_neighbors=self.n_neighbours,
-            n_components=self.n_components
+            n_components=self.n_components,
         ).fit(X_t, relations=relations)
 
-        X = np.transpose(aligned_mapper.embeddings_,(1,2,0))
-        
-        return X
-        
+        X = np.transpose(aligned_mapper.embeddings_, (1, 2, 0))
 
-        
-    
+        return X

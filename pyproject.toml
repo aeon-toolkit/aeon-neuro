@@ -46,6 +46,7 @@ dependencies = [
     "aeon<0.12.0",
     "mne",
     "pyprep",
+    "umap-learn",
 ]
 
 [project.optional-dependencies]
