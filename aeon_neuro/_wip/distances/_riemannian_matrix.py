@@ -258,6 +258,74 @@ def weighted_riemannian_distance_2(
     return d_W
 
 
+def pairwise_riemannian_distance_1(
+    X: np.ndarray,
+    Y: np.ndarray = None,
+) -> np.ndarray:
+    r"""Compute the pairwise Reimannian distance between two sets of SPD/HPD matrices.
+    
+    The first type of pairwise Riemannian distance
+    
+    Parameters
+    ----------
+    X : np.ndarray
+        First set of SPD/HPD matrices, 3D ndarray.
+    Y : np.ndarray, default None
+    
+    Returns
+    -------
+    distances : np.ndarray
+        Pairwise Riemannian distances between X and Y or X itself.
+    """
+    if Y is None:
+        Y = X
+        
+    n_samples_X, n_samples_Y = X.shape[0], Y.shape[0]
+    distances = np.zeros((n_samples_X, n_samples_Y))
+    for i in range(n_samples_X):
+        for j in range(n_samples_Y):
+            d = 0
+            for k in range(X.shape[1]):
+                d += weighted_riemannian_distance_1(X[i, k], Y[j, k])
+            distances[i, j] = d
+            
+    return distances
+
+
+def pairwise_riemannian_distance_2(
+    X: np.ndarray,
+    Y: np.ndarray = None,
+) -> np.ndarray:
+    r"""Compute the pairwise Reimannian distance between two sets of SPD/HPD matrices.
+    
+    The second type of pairwise Riemannian distance
+    
+    Parameters
+    ----------
+    X : np.ndarray
+        First set of SPD/HPD matrices, 3D ndarray.
+    Y : np.ndarray, default None
+    
+    Returns
+    -------
+    distances : np.ndarray
+        Pairwise Riemannian distances between X and Y or X itself.
+    """
+    if Y is None:
+        Y = X
+        
+    n_samples_X, n_samples_Y = X.shape[0], Y.shape[0]
+    distances = np.zeros((n_samples_X, n_samples_Y))
+    for i in range(n_samples_X):
+        for j in range(n_samples_Y):
+            d = 0
+            for k in range(X.shape[1]):
+                d += weighted_riemannian_distance_2(X[i, k], Y[j, k])
+            distances[i, j] = d
+            
+    return distances
+
+
 def pairwise_weighted_riemannian_distance_1(
     X: np.ndarray,
     W: np.ndarray,
