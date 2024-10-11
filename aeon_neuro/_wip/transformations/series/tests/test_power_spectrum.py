@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from aeon_neuro._wip.distances._riemannian_matrix import _is_hpd
+from aeon_neuro._wip.distances.tests.test_riemannian_matrix import _is_hpd
 from aeon_neuro._wip.transformations.series._power_spectrum import CrossSpectralMatrix
 
 n_channels, n_timepoints = 7, 12000
