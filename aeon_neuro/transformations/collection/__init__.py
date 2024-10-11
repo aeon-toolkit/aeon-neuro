@@ -1,1 +1,1 @@
-"Collection transformers."
+"""Collection transformers."""
