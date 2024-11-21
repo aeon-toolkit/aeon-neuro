@@ -1,9 +1,9 @@
+"""Tests for the Riemannian distance matrix."""
+
 import numpy as np
 import pytest
 
 from aeon_neuro._wip.distances._riemannian_matrix import (
-    _check_inputs,
-    _is_hpd,
     riemannian_distance_1,
     riemannian_distance_2,
     riemannian_distance_3,
@@ -18,6 +18,40 @@ B = np.array([[3, 0], [0, 3]])
 W = np.array([[1, 0], [0, 1]])
 
 C = np.array([[1, 2], [3, 4]])
+
+
+def _is_hpd(matrix):
+    r"""Check if a matrix is Hermitian Positive Definite (HPD)."""
+    if not np.allclose(matrix, matrix.conj().T):
+        return False
+    try:
+        np.linalg.cholesky(matrix)
+        return True
+    except np.linalg.LinAlgError:
+        return False
+
+
+def _check_inputs(A, B, W=None):
+    if W is None:
+        if not A.shape == B.shape:
+            raise ValueError("Inputs must have equal dimensions")
+        if A.ndim != 2 or B.ndim != 2:
+            raise ValueError("Inputs must be 2D ndarrays")
+        if not _is_hpd(A):
+            raise ValueError("Matrix A must be Hermitian Positive Definite (HPD)")
+        if not _is_hpd(B):
+            raise ValueError("Matrix B must be Hermitian Positive Definite (HPD)")
+    else:
+        if not A.shape == B.shape == W.shape:
+            raise ValueError("Inputs must have equal dimensions")
+        if A.ndim != 2 or B.ndim != 2 or W.ndim != 2:
+            raise ValueError("Inputs must be 2D ndarrays")
+        if not _is_hpd(A):
+            raise ValueError("Matrix A must be Hermitian Positive Definite (HPD)")
+        if not _is_hpd(B):
+            raise ValueError("Matrix B must be Hermitian Positive Definite (HPD)")
+        if not _is_hpd(W):
+            raise ValueError("Matrix W must be Hermitian Positive Definite (HPD)")
 
 
 def test_is_hpd():
