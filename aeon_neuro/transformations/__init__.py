@@ -7,6 +7,8 @@ __all__ = [
 ]
 
 
-from aeon_neuro.transformations._bandpower import BandPowerSeriesTransformer
-from aeon_neuro.transformations._downsample import DownsampleCollectionTransformer
-from aeon_neuro.transformations._epoching import EpochSeriesTransformer
+from aeon_neuro.transformations.series._bandpower import BandPowerSeriesTransformer
+from aeon_neuro.transformations.series._downsample import (
+    DownsampleCollectionTransformer,
+)
+from aeon_neuro.transformations.series._epoching import EpochSeriesTransformer

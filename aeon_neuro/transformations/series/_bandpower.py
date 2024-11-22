@@ -14,9 +14,13 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
 
     EEG signals occupy the frequency range of 0 - 60Hz,
     which is roughly divided into five constituent physiological EEG sub bands:
-    δ (0 - 4Hz), θ (4 - 7Hz), α (8 - 12Hz), β (13 - 30Hz), and γ (30 - 60Hz).
-    Power within each frequency band is estimated over time using windowed FFTs,
-    then averaged across channels.
+    delta (δ): 0 - 4Hz, theta (θ): 4 - 7Hz, alpha (α): 8 - 12Hz, beta (β): 13 - 30Hz
+    and gamma (γ): 30 - 60Hz.
+    Power within each frequency band is estimated over time using windowed FFTs
+
+    The transformer uses psd_array_welch from MNE to calculate power spectral
+    densities for each window for the given sampling frequency. Band powers are then
+    found through summing over band widths and channels.
 
     Parameters
     ----------
@@ -42,6 +46,14 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
         If `sfreq` is too low to capture the highest frequency band.
         If `window_size` is too small to capture the lowest frequency band.
         If `stride` is not between 1 and `window_size`.
+
+    Examples
+    --------
+    >>> from aeon.datasets import load_classification
+    X_train, y_train = load_classification(
+    name="KDD_MTSC", split="TRAIN", extract_path="../aeon_neuro/data/KDD_Example"
+    )
+
     """
 
     _tags = {
@@ -66,28 +78,13 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
         relative=True,
         n_jobs=1,
     ):
-        super().__init__(axis=1)  # (n_channels, n_timepoints)
-
-        # checks
-        nyquist_freq = 2 * self.FREQ_BANDS["gamma"][1]
-        if sfreq < nyquist_freq:
-            raise ValueError(f"sfreq must be at least {nyquist_freq} Hz.")
-
-        min_n = sfreq // 2
-        if window_size < min_n:
-            raise ValueError(f"window_size must be at least {min_n} for lowest freqs.")
-
-        if stride is None:
-            stride = window_size
-        elif not (1 <= stride <= window_size):
-            raise ValueError(f"stride must be between 1 and {window_size}.")
-
         self.sfreq = sfreq
         self.window_size = window_size
         self.window_function = window_function
         self.stride = stride
         self.relative = relative
-        self.n_jobs = check_n_jobs(n_jobs)
+        self.n_jobs = n_jobs
+        super().__init__(axis=1)  # (n_channels, n_timepoints)
 
     def _transform(self, X, y=None):
         """Transform the input series to extract band power series.
@@ -104,6 +101,22 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
         np.ndarray of shape (5_bands, (n_timepoints - window_size) // stride + 1)
             Power within δ, θ, α, β, and γ bands over time.
         """
+        # checks
+        self.n_jobs = check_n_jobs(self.n_jobs)
+        nyquist_freq = 2 * self.FREQ_BANDS["gamma"][1]
+        if self.sfreq < nyquist_freq:
+            raise ValueError(f"sfreq must be at least {nyquist_freq} Hz.")
+
+        min_n = self.sfreq // 2
+        if self.window_size < min_n:
+            raise ValueError(f"window_size must be at least {min_n} for lowest freqs.")
+
+        self.stride_ = self.stride
+        if self.stride is None:
+            self.stride_ = self.window_size
+        elif not (1 <= self.stride_ <= self.window_size):
+            raise ValueError(f"stride must be between 1 and {self.window_size}.")
+
         n_overlap = self.window_size - self.stride
         # next power of 2, for FFT efficiency
         n_fft = int(2 ** np.ceil(np.log2(self.window_size)))
