@@ -102,7 +102,7 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
             Power within δ, θ, α, β, and γ bands over time.
         """
         # checks
-        self.n_jobs = check_n_jobs(self.n_jobs)
+        n_jobs = check_n_jobs(self.n_jobs)
         nyquist_freq = 2 * self.FREQ_BANDS["gamma"][1]
         if self.sfreq < nyquist_freq:
             raise ValueError(f"sfreq must be at least {nyquist_freq} Hz.")
@@ -111,13 +111,13 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
         if self.window_size < min_n:
             raise ValueError(f"window_size must be at least {min_n} for lowest freqs.")
 
-        self.stride_ = self.stride
+        stride = self.stride
         if self.stride is None:
-            self.stride_ = self.window_size
-        elif not (1 <= self.stride_ <= self.window_size):
+            stride = self.window_size
+        elif not (1 <= stride <= self.window_size):
             raise ValueError(f"stride must be between 1 and {self.window_size}.")
 
-        n_overlap = self.window_size - self.stride
+        n_overlap = self.window_size - stride
         # next power of 2, for FFT efficiency
         n_fft = int(2 ** np.ceil(np.log2(self.window_size)))
         powers, freqs = psd_array_welch(
@@ -128,7 +128,7 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
             n_fft=n_fft,
             n_overlap=n_overlap,
             n_per_seg=self.window_size,
-            n_jobs=self.n_jobs,
+            n_jobs=n_jobs,
             average=None,
             window=self.window_function,
             verbose="error",
