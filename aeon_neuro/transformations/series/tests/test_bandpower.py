@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from aeon_neuro.transformations import BandPowerSeriesTransformer
+from aeon_neuro.transformations.series import BandPowerSeriesTransformer
 
 # set paramaters, assuming X ~ iid = flat PSD
 n_channels, n_timepoints, window_size, stride = 3, 30000, 1024, 100
