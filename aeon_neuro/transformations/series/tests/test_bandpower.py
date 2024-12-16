@@ -9,6 +9,7 @@ from aeon_neuro.transformations.series import BandPowerSeriesTransformer
 n_channels, n_timepoints, window_size, stride = 3, 30000, 1024, 100
 n_windows = (n_timepoints - window_size) // stride + 1
 
+
 def test_transform():
     """Test BandPowerSeriesTransformer."""
     rng = np.random.default_rng(seed=0)
