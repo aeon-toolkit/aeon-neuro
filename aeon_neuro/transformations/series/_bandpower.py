@@ -14,24 +14,39 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
 
     EEG signals occupy the frequency range of 0 - 60Hz,
     which is roughly divided into five constituent physiological EEG sub bands:
-    δ (0 - 4Hz), θ (4 - 7Hz), α (8 - 12Hz), β (13 - 30Hz), and γ (30 - 60Hz).
-    Power within each frequency band is estimated over time using windowed FFTs,
-    then averaged across channels.
+    delta (δ): 0 - 4Hz, theta (θ): 4 - 7Hz, alpha (α): 8 - 12Hz, beta (β): 13 - 30Hz
+    and gamma (γ): 30 - 60Hz.
+    Power within each frequency band is estimated over time using windowed FFTs
+
+    The transformer uses psd_array_welch from MNE to calculate power spectral
+    densities for each window for the given sampling frequency. Band powers are then
+    found through summing over band widths and channels.
 
     Parameters
     ----------
     sfreq : int or float
-        Sampling frequency in Hz, by default 1.0.
-    n_per_seg : int, optional
-        Length of each segment/window in number of timepoints, by default 256.
-    window : str, optional
+        Sampling frequency in Hz, by default 120.
+    window_size : int, optional
+        Size of each window in number of timepoints, by default 256.
+    window_function : str, optional
         Windowing function to use. See `scipy.signal.get_window()`
         for a list of available windows, by default "hamming".
+    stride : int, optional
+        Step size between successive windows in number of timepoints.
+        If None, `stride = window_size`, by default None.
     relative : bool, optional
         If True, return the relative power (divide by total power across freq bands).
         If False, return the absolute power in V^2/Hz, by default True.
     n_jobs : int, optional
         Number of jobs to calculate power spectral densities, by default 1.
+
+    Raises
+    ------
+    ValueError
+        If `sfreq` is too low to capture the highest frequency band.
+        If `window_size` is too small to capture the lowest frequency band.
+        If `stride` is not between 1 and `window_size`.
+
     """
 
     _tags = {
@@ -49,18 +64,20 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
 
     def __init__(
         self,
-        sfreq=1.0,  # scipy default
-        n_per_seg=256,  # mne/scipy default, for window=str
-        window="hamming",  # mne default
+        sfreq=120,  # 2x60Hz = 120Hz
+        window_size=256,
+        window_function="hamming",  # mne default
+        stride=None,
         relative=True,
         n_jobs=1,
     ):
-        super().__init__(axis=1)  # (n_channels, n_timepoints)
         self.sfreq = sfreq
-        self.n_per_seg = n_per_seg
-        self.window = window
+        self.window_size = window_size
+        self.window_function = window_function
+        self.stride = stride
         self.relative = relative
-        self.n_jobs = check_n_jobs(n_jobs)
+        self.n_jobs = n_jobs
+        super().__init__(axis=1)  # (n_channels, n_timepoints)
 
     def _transform(self, X, y=None):
         """Transform the input series to extract band power series.
@@ -74,22 +91,40 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
 
         Returns
         -------
-        np.ndarray of shape (5_bands, int(n_timepoints/n_per_seg))
+        np.ndarray of shape (5_bands, (n_timepoints - window_size) // stride + 1)
             Power within δ, θ, α, β, and γ bands over time.
         """
+        # checks
+        n_jobs = check_n_jobs(self.n_jobs)
+        nyquist_freq = 2 * self.FREQ_BANDS["gamma"][1]
+        if self.sfreq < nyquist_freq:
+            raise ValueError(f"sfreq must be at least {nyquist_freq} Hz.")
+
+        min_n = self.sfreq // 2
+        if self.window_size < min_n:
+            raise ValueError(f"window_size must be at least {min_n} for lowest freqs.")
+
+        stride = self.stride
+        if self.stride is None:
+            stride = self.window_size
+        elif not (1 <= stride <= self.window_size):
+            raise ValueError(f"stride must be between 1 and {self.window_size}.")
+
+        n_overlap = self.window_size - stride
         # next power of 2, for FFT efficiency
-        n_fft = int(2 ** np.ceil(np.log2(self.n_per_seg)))
+        n_fft = int(2 ** np.ceil(np.log2(self.window_size)))
         powers, freqs = psd_array_welch(
             X,
             sfreq=self.sfreq,
             fmin=self.FREQ_BANDS["delta"][0],
             fmax=self.FREQ_BANDS["gamma"][1],
             n_fft=n_fft,
-            n_overlap=0,
-            n_per_seg=self.n_per_seg,
-            n_jobs=self.n_jobs,
+            n_overlap=n_overlap,
+            n_per_seg=self.window_size,
+            n_jobs=n_jobs,
             average=None,
-            window=self.window,
+            window=self.window_function,
+            verbose="error",
         )
 
         freq_res = freqs[1] - freqs[0]

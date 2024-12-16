@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aeon-neuro"
-version = "0.0.1"
+version = "0.0.2"
 description = "A package for ECG and EEG time series analysis built on the aeon toolkit."
 authors = [
     {name = "aeon developers", email = "contact@aeon-toolkit.org"},
@@ -43,9 +43,10 @@ classifiers = [
 ]
 requires-python = ">=3.8,<3.13"
 dependencies = [
-    "aeon<0.11.0",
+    "aeon",
     "mne",
     "pyprep",
+    "umap-learn",
 ]
 
 [project.optional-dependencies]
