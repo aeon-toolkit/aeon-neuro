@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from aeon_neuro.transformations import DownsampleCollectionTransformer
+from aeon_neuro.transformations.collection import DownsampleCollectionTransformer
 
 # list of 2D numpy arrays, unequal lengths
 X = [
