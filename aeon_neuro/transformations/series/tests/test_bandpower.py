@@ -48,7 +48,7 @@ def test_transform_nyquist():
     transformer.fit_transform(X)
 
     with pytest.raises(ValueError, match="sfreq must be at least .* Hz."):
-        bp=BandPowerSeriesTransformer(sfreq=119)
+        bp = BandPowerSeriesTransformer(sfreq=119)
         bp.fit(X)
 
     with pytest.raises(
