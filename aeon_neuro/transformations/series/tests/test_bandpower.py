@@ -9,17 +9,10 @@ from aeon_neuro.transformations.series import BandPowerSeriesTransformer
 n_channels, n_timepoints, window_size, stride = 3, 30000, 1024, 100
 n_windows = (n_timepoints - window_size) // stride + 1
 
-
-@pytest.fixture
-def sim_X():
-    """Simulate X ~ iid = flat PSD."""
-    rng = np.random.default_rng(seed=0)
-    return rng.standard_normal(size=(n_channels, n_timepoints))  # axis=1
-
-
-def test_transform(sim_X):
+def test_transform():
     """Test BandPowerSeriesTransformer."""
-    X = sim_X
+    rng = np.random.default_rng(seed=0)
+    X = rng.standard_normal(size=(n_channels, n_timepoints))  # axis=1
     transformer = BandPowerSeriesTransformer(
         sfreq=256, window_size=window_size, stride=stride, relative=True
     )
@@ -60,10 +53,11 @@ def test_transform_nyquist():
         ValueError,
         match="window_size must be at least .* for lowest freqs.",
     ):
-        BandPowerSeriesTransformer(sfreq=120, window_size=59)
-
+        bp = BandPowerSeriesTransformer(sfreq=120, window_size=59)
+        bp.fit(X)
     with pytest.raises(ValueError, match="stride must be between 1 and .*"):
-        BandPowerSeriesTransformer(window_size=100, stride=101)
-
+        bp = BandPowerSeriesTransformer(window_size=100, stride=101)
+        bp.fit(X)
     with pytest.raises(ValueError, match="stride must be between 1 and .*"):
-        BandPowerSeriesTransformer(window_size=100, stride=0)
+        bp = BandPowerSeriesTransformer(window_size=100, stride=0)
+        bp.fit(X)

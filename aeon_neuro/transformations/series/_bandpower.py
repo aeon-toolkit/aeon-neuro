@@ -47,13 +47,6 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
         If `window_size` is too small to capture the lowest frequency band.
         If `stride` is not between 1 and `window_size`.
 
-    Examples
-    --------
-    >>> from aeon.datasets import load_classification
-    X_train, y_train = load_classification(
-    name="KDD_MTSC", split="TRAIN", extract_path="../aeon_neuro/data/KDD_Example"
-    )
-
     """
 
     _tags = {
