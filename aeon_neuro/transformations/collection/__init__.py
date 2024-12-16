@@ -5,6 +5,6 @@ __all__ = [
 ]
 
 
-from aeon_neuro.transformations.series._downsample import (
+from aeon_neuro.transformations.collection._downsample import (
     DownsampleCollectionTransformer,
 )
