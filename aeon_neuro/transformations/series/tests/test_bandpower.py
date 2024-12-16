@@ -49,17 +49,17 @@ def test_transform_nyquist():
 
     with pytest.raises(ValueError, match="sfreq must be at least .* Hz."):
         bp = BandPowerSeriesTransformer(sfreq=119)
-        bp.fit(X)
+        bp.fit_transform(X)
 
     with pytest.raises(
         ValueError,
         match="window_size must be at least .* for lowest freqs.",
     ):
         bp = BandPowerSeriesTransformer(sfreq=120, window_size=59)
-        bp.fit(X)
+        bp.fit_transform(X)
     with pytest.raises(ValueError, match="stride must be between 1 and .*"):
         bp = BandPowerSeriesTransformer(window_size=100, stride=101)
-        bp.fit(X)
+        bp.fit_transform(X)
     with pytest.raises(ValueError, match="stride must be between 1 and .*"):
         bp = BandPowerSeriesTransformer(window_size=100, stride=0)
-        bp.fit(X)
+        bp.fit_transform(X)

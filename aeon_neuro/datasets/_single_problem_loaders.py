@@ -89,11 +89,6 @@ def load_kdd_full_example(split=None, verbose=False):
         1D array of length XX or 300. The class labels for each time series instance
         in X.
 
-    Examples
-    --------
-    >>> from aeon_neuro.datasets import load_kdd_full_example
-    >>> X, y = load_kdd_full_example()
-
     Notes
     -----
     Number of time points:      150
