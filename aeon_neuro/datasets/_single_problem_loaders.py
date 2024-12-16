@@ -36,13 +36,6 @@ def load_kdd_example(split=None, return_metadata=False):
     y: np.ndarray
         The class labels for each EEG in X.
 
-    Examples
-    --------
-    >>> from aeon_neuro.datasets import load_kdd_example
-    >>> X, y = load_kdd_example()
-    >>> X.shape
-    (80, 4, 100)
-
     Notes
     -----
     Number of time points:  100
