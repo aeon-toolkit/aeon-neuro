@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "aeon-neuro"
 version = "0.0.2"
-description = "A package for ECG and EEG time series analysis built on the aeon toolkit."
+description = "A package for EEG classification built on the aeon toolkit."
 authors = [
     {name = "aeon developers", email = "contact@aeon-toolkit.org"},
 ]
@@ -17,9 +17,8 @@ keywords = [
     "data-science",
     "machine-learning",
     "time-series",
-    "time-series-analysis",
+    "time-series-machine-learning",
     "neuroscience",
-    "ECG",
     "EEG",
 ]
 classifiers = [
