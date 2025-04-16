@@ -108,6 +108,8 @@ def load_eeg_classification(
             # Check if in the zenodo list
             if name in dataset_map.keys():
                 id = dataset_map[name]
+                if id == 49:
+                    raise ValueError(error_str)
                 url_train = f"https://zenodo.org/record/{id}/files/{name}_TRAIN.ts"
                 url_test = f"https://zenodo.org/record/{id}/files/{name}_TEST.ts"
                 full_path = os.path.join(path, name)
