@@ -35,7 +35,7 @@ dataset_names = [
     "VIPA",
     "VisualSpeech",
 ]
-# Complete with zenodo number when available
+# Complete with zenodo number when available. Currently populated by random numbers
 dataset_map = {
     "Alzhiemers": 860283,
     "Blink": 856673,
