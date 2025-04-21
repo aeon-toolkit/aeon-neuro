@@ -11,43 +11,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # check-manifest:
-  #   runs-on: ubuntu-22.04
-
-  #   steps:
-  #     - uses: actions/checkout@v4
-
-  #     - uses: actions/setup-python@v5
-  #       with:
-  #         python-version: "3.10"
-
-  #     - uses: pre-commit/action@v3.0.1
-  #       with:
-  #         extra_args: check-manifest --hook-stage manual
-
-  # pre-commit:
-  #   runs-on: ubuntu-22.04
-
-  #   steps:
-  #     - uses: actions/checkout@v4
-
-  #     - uses: actions/setup-python@v5
-  #       with:
-  #         python-version: "3.10"
-
-  #     - uses: pre-commit/action@v3.0.1
-  #       with:
-  #         extra_args: --all-files
-
-  run-notebook-examples:
-    runs-on: ubuntu-22.04
+  check-manifest:
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
+
+      - uses: pre-commit/action@v3.0.1
+        with:
+          extra_args: check-manifest --hook-stage manual
+
+  pre-commit:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: pre-commit/action@v3.0.1
+        with:
+          extra_args: --all-files
+
+  run-notebook-examples:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
       - name: Install dependencies
         uses: nick-fields/retry@v3
@@ -57,7 +57,7 @@ jobs:
           command: python -m pip install .[all_extras,binder,dev]
 
       - name: Run example notebooks
-        run: build_tools/run_examples.sh
+        run: .github/utilities/run_examples.sh
         shell: bash
 
   pytest:
@@ -66,8 +66,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-22.04, macOS-12, windows-2022 ]
-        python-version: [ "3.8", "3.9", "3.10", "3.11" ]
+        os: [ ubuntu-24.04, macOS-14, windows-2022 ]
+        python-version: [ "3.9", "3.10", "3.11", "3.12", "3.13" ]
 
     steps:
       - uses: actions/checkout@v4
@@ -87,17 +87,17 @@ jobs:
         run: python -m pip list
 
       - name: Run tests
-        run: python -m pytest
+        run: python -m pytest -n logical
 
   codecov:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
       - name: Disable Numba JIT
         run: echo "NUMBA_DISABLE_JIT=1" >> $GITHUB_ENV
@@ -113,8 +113,8 @@ jobs:
         run: python -m pip list
 
       - name: Run tests
-        run: python -m pytest --cov=aeon_neuro --cov-report=xml
+        run: python -m pytest -n logical --cov=aeon_neuro --cov-report=xml --timeout 1800
 
-      - uses: codecov/codecov-action@v4
+      - uses: codecov/codecov-action@v5
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

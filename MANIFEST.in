@@ -1,5 +1,6 @@
 recursive-include aeon_neuro *.py
-recursive-include aeon_neuro/data *.ts *.txt *.gif *.json *.tsv *.eeg *.vhdr *.vmrk
+recursive-include aeon_neuro/datasets *.ts *.txt *.gif *.json *.tsv *.eeg *.vhdr *.vmrk
+recursive-include example_raw_eeg *.ts *.txt *.gif *.json *.tsv *.eeg *.vhdr *.vmrk
 include aeon_neuro/data/example_dataset/README
 include .coveragerc
 include LICENSE

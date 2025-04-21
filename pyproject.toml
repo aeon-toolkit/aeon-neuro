@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "aeon-neuro"
 version = "0.0.2"
-description = "A package for ECG and EEG time series analysis built on the aeon toolkit."
+description = "A package for EEG classification built on the aeon toolkit."
 authors = [
     {name = "aeon developers", email = "contact@aeon-toolkit.org"},
 ]
@@ -17,9 +17,8 @@ keywords = [
     "data-science",
     "machine-learning",
     "time-series",
-    "time-series-analysis",
+    "time-series-machine-learning",
     "neuroscience",
-    "ECG",
     "EEG",
 ]
 classifiers = [
@@ -35,13 +34,13 @@ classifiers = [
     "Operating System :: Unix",
     "Operating System :: MacOS",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
-requires-python = ">=3.8,<3.13"
+requires-python = ">=3.9,<3.14"
 dependencies = [
     "aeon",
     "mne",
@@ -112,7 +111,6 @@ addopts = '''
     --durations 20
     --timeout 600
     --showlocals
-    --numprocesses logical
     --dist worksteal
     --reruns 2
     --only-rerun "crashed while running"
