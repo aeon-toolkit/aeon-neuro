@@ -9,9 +9,6 @@ series. Our goal is to present a simple and unified interface to a variety of EE
 classification problems that combine techniques from a range of domains that learn
 from EEG signals.
 
-We aim to develop this package following the principles of open science, and
-reproducible research, as described in the [Turing Way](https://github.com/the-turing-way) and this package is based on [this template](https://github.com/the-turing-way/reproducible-project-template).
-
 `aeon-neuro` is a companion package to the `aeon` toolkit. The main project webpage
 and documentation is available at https://aeon-toolkit.org and the source code at
 https://github.com/aeon-toolkit/aeon.
@@ -45,7 +42,6 @@ pip install aeon-neuro[all_extras]
 
 Instructions for installation from the [GitHub source](https://github.com/aeon-toolkit/aeon-neuro) can be found [here](https://aeon-neuro.readthedocs.io/en/latest/installation.html#install-the-latest-development-version-using-pip).
 
-
 ## 💬 Where to ask questions
 
 | Type                                | Platforms                        |
@@ -60,7 +56,7 @@ Instructions for installation from the [GitHub source](https://github.com/aeon-t
 [GitHub Discussions]: https://github.com/aeon-toolkit/aeon-neuro/discussions
 [Slack]: https://join.slack.com/t/aeon-neuro/shared_invite/zt-2k4qs8mjb-ZZs~6P0MdF8kGf9cUQzKSg
 
-
 ## 💡 Acknowledgements
+
 This work is supported by the UK Engineering and Physical Sciences Research Council
 (EPSRC) EP/W030756/2
