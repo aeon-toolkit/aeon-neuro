@@ -98,7 +98,7 @@ def load_kdd_full_example(split=None, verbose=False):
     Number of classes:  X
     Details: TBC
     """
-    data_path = "../../example_raw_eeg/basic_classification_task"
+    data_path = "data/example_raw_eeg/basic_classification_task"
     tasks = ["task", "rest"]
     runs = ["01", "02", "03", "04", "05", "06"]
 

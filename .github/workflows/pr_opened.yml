@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: build_tools
+          sparse-checkout: .github/utilities
 
       - uses: actions/setup-python@v5
         with:
