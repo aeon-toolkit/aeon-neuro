@@ -42,13 +42,13 @@ datasets = {
 
 def download_dataset(dataset):#
     try:
-        zenodo_get.download(datasets[dataset],output_dir="aeon_neuro/data/"+dataset)
+        zenodo_get.download(datasets[dataset],output_dir="aeon_neuro/datasets/data/"+dataset)
         return True
     except:
         return False
 
 dataset="HandMovementDirection"
-classifier = "HC2" # Set desired classifier
+classifier = "MDM" # Set desired classifier
 
 data_path="aeon_neuro/datasets/data/"
 
