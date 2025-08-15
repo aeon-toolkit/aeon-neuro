@@ -1,9 +1,9 @@
 http://bbci.de/competition/iv/
 Dataset 3: ‹hand movement direction in MEG›
-provided by the Brain Machine Interfacing Initiative, Albert-Ludwigs-University Freiburg, the Bernstein Center for Computational Neuroscience Freiburg and the Institute of Medical Psychology and Behavioral Neurobiology, University of Tübingen (Stephan Waldert, Carsten Mehring, HubertPreissl, Christoph Braun)
+provided by the Brain Machine Interfacing Initiative, Albert-Ludwigs-University Freiburg, the Bernstein Center for Computational Neuroscience Freiburg and the Institute of Medical Psychology and Behavioral Neurobiology, University of Tübingen (Stephan Waldert, Carsten Mehring, HubertPreissl, Christoph Braun) 
 
-In short: 2 subjects were recorded moving a joystick with their hand and wrist only in one of four directions (right, up, down, left) of their choice after hearing a prompt, using Magnetoencephalography (MEG). The task is to classify the direction of movement from the MEG data.
-The train/test split given corresponds to the exact split provided in the original competition, with the trails for the two subjects merged, however. Data remains split by subject in the folders Subject1 and Subject2.
+In short: 2 subjects were recorded moving a joystick with their hand and wrist only in one of four directions (right, up, down, left) of their choice after hearing a prompt, using Magnetoencephalography (MEG). The task is to classify the direction of movement from the MEG data. 
+The train/test split given corresponds to the exact split provided in the original competition, with the trails for the two subjects merged, however. Data remains split by subject in the folders Subject1 and Subject2. 
 
 From the file 'desc_3.pdf'; a description of the data from the original formatters at the above website
 
@@ -46,3 +46,4 @@ to separation of data into training and test set. The data are provided as mat-f
 the test sets must be submitted as a single mat-file containing two variables (vectors):
 PredictedLabelsS1 and PredictedLabelsS2, e.g. PredictedLabelsS1=[3 2 4 1 ...]. The
 name of this mat-file must identify the competitor.'
+
