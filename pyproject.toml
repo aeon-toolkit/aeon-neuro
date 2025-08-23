@@ -52,6 +52,10 @@ dependencies = [
 all_extras = [
     "aeon[all_extras]",
 ]
+dl = [
+    "tensorflow>=2.14",
+    "keras>=3.6.0",
+]
 dev = [
     "aeon[dev]",
 ]
