@@ -50,16 +50,16 @@ dependencies = [
 
 [project.optional-dependencies]
 all_extras = [
-    "[all_extras]",
+    "aeon[all_extras]>=1.3.0",
 ]
 dev = [
-    "aeon[dev]",
+    "aeon[dev]>=1.3.0",
 ]
 binder = [
-    "aeon[binder]",
+    "aeon[binder]>=1.3.0",
 ]
 docs = [
-    "aeon[docs]",
+    "aeon[docs]>=1.3.0",
 ]
 
 [project.urls]
