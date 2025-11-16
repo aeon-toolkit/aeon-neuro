@@ -48,16 +48,16 @@ dependencies = [
 
 [project.optional-dependencies]
 all_extras = [
-    "aeon[all_extras]>=1.3.0",
+    "aeon[all_extras]",
 ]
 dev = [
-    "aeon[dev]>=1.3.0",
+    "aeon[dev]",
 ]
 binder = [
-    "aeon[binder]>=1.3.0",
+    "aeon[binder]",
 ]
 docs = [
-    "aeon[docs]>=1.3.0",
+    "aeon[docs]",
 ]
 
 [project.urls]
