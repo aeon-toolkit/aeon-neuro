@@ -32,15 +32,6 @@ def affine_invariant_distance(P, Q):
     -----
     Both `P` and `Q` must be symmetric positive definite. If matrices are close to
     singular, regularisation (e.g., adding epsilon * I) may be needed.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from scipy.linalg import sqrtm
-    >>> P = np.cov(np.random.randn(32, 100))
-    >>> Q = np.cov(np.random.randn(32, 100))
-    >>> affine_invariant_distance(P, Q)
-    1.54  # example output (will vary)
     """
     P_inv_sqrt = np.linalg.inv(sqrtm(P))
     middle = P_inv_sqrt @ Q @ P_inv_sqrt
@@ -79,15 +70,6 @@ def log_euclidean_distance(P, Q):
     -----
     The input matrices must be symmetric and positive definite.
     The matrix logarithm is computed using `scipy.linalg.logm`.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from scipy.linalg import logm
-    >>> P = np.cov(np.random.randn(32, 100))
-    >>> Q = np.cov(np.random.randn(32, 100))
-    >>> log_euclidean_distance(P, Q)
-    1.82  # example output (actual value will vary)
     """
     log_P = logm(P)
     log_Q = logm(Q)
