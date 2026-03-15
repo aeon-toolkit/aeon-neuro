@@ -14,4 +14,5 @@ api_reference/data_scripts
 api_reference/examples
 api_reference/transformations
 api_reference/utils
+api_reference/networks
 ```
