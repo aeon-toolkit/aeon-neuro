@@ -45,12 +45,13 @@ dependencies = [
     "pyprep",
     "pyriemann",
     "umap-learn",
+    "torch",
+    "braindecode",
 ]
 
 [project.optional-dependencies]
 all_extras = [
     "aeon[all_extras]",
-    "pyriemann",
 ]
 dl = [
     "tensorflow>=2.14",
