@@ -1,21 +1,21 @@
-"""Test EEGNet classifier."""
+"""Minimal testing for deep convnet."""
 
 import numpy as np
 from aeon.testing.data_generation import make_example_3d_numpy
 
-from aeon_neuro.classification._eegnet import EEGNetClassifier
+from aeon_neuro.classification.deep_learning._deepconvnet import DeepConvNetClassifier
 
 
-def test_eeg_net_classifier_multivariate_equal_length():
+def test_deep_conv_net_classifier_multivariate_equal_length():
     """Basic EEGNet test placeholder."""
     X, y = make_example_3d_numpy(
         n_cases=10,
         n_channels=3,
-        n_timepoints=256,
+        n_timepoints=200,
         random_state=0,
     )
 
-    clf = EEGNetClassifier(
+    clf = DeepConvNetClassifier(
         n_epochs=1,
         batch_size=4,
         random_state=0,
