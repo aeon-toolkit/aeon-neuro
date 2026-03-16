@@ -23,11 +23,19 @@ __all__ = [
     "InceptionTimeClassifier",
     "DeepConvNetClassifier",
     "EEGNetClassifier",
+    "RiemannianMDMClassifier",
+    "RiemannianKNNClassifier",
 ]
 
 from aeon.classification.convolution_based import MultiRocketHydraClassifier
 from aeon.classification.deep_learning import InceptionTimeClassifier
 from aeon.classification.hybrid import HIVECOTEV2
 
-from aeon_neuro.classification._deepconvnet import DeepConvNetClassifier
-from aeon_neuro.classification._eegnet import EEGNetClassifier
+from aeon_neuro.classification.deep_learning import (
+    DeepConvNetClassifier,
+    EEGNetClassifier,
+)
+from aeon_neuro.classification.distance_based import (
+    RiemannianKNNClassifier,
+    RiemannianMDMClassifier,
+)
