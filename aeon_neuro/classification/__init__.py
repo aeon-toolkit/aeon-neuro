@@ -25,10 +25,11 @@ __all__ = [
     "EEGNetClassifier",
     "RiemannianMDMClassifier",
     "RiemannianKNNClassifier",
+    "TimeCNNClassifier",
 ]
 
 from aeon.classification.convolution_based import MultiRocketHydraClassifier
-from aeon.classification.deep_learning import InceptionTimeClassifier
+from aeon.classification.deep_learning import InceptionTimeClassifier, TimeCNNClassifier
 from aeon.classification.hybrid import HIVECOTEV2
 
 from aeon_neuro.classification.deep_learning import (
