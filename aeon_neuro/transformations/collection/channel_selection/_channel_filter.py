@@ -19,14 +19,15 @@ class ChannelFilter(BaseChannelSelector):
 
     ChannelFilter ranks channels independently using a scoring function and
     selects a proportion of the highest-scoring channels. The scoring function
-    can be specified either by name or as a callable.
+    can be specified either by name or as a callable. An optional redundancy
+    pruning stage can be applied after ranking.
 
     Built-in scoring functions are:
 
-    - ``"variance"``: ranks channels by variance over all cases and time points.
-    - ``"class_mean"``: ranks channels by the sum of pairwise Euclidean
+    - ``"variance"``: rank channels by variance over all cases and time points.
+    - ``"class_mean"``: rank channels by the sum of pairwise Euclidean
       distances between class mean series.
-    - ``"mutual_information"``: ranks channels by mutual information between
+    - ``"mutual_information"``: rank channels by mutual information between
       class labels and summary features extracted from each channel.
 
     Parameters
@@ -34,8 +35,9 @@ class ChannelFilter(BaseChannelSelector):
     score_channel : str or callable, default="variance"
         Scoring function used to rank channels. If a string, must be one of
         ``"variance"``, ``"class_mean"``, or ``"mutual_information"``.
-        If a callable, it must have signature ``score_channel(X, y=None, **kwargs)``
-        and return a float, where `X` is a single-channel collection of shape
+        If a callable, it must have signature
+        ``score_channel(X, y=None, **kwargs)`` and return a float, where `X`
+        is a single-channel collection of shape
         ``(n_cases, 1, n_timepoints)``.
     proportion : float, default=0.4
         Proportion of channels to keep, rounded up to the nearest integer.
@@ -43,11 +45,23 @@ class ChannelFilter(BaseChannelSelector):
         Optional keyword arguments passed to the scoring function. For the
         built-in mutual information scorer, supported values include:
 
-        - ``summary`` : {"mean", "mean_std", "mean_std_energy"}, default="mean_std"
-          Summary features extracted from each channel before mutual information
-          is computed.
+        - ``summary`` : {"mean", "mean_std", "mean_std_energy"},
+          default="mean_std"
+          Summary features extracted from each channel before mutual
+          information is computed.
         - ``random_state`` : int or None, default=None
           Random state passed to ``sklearn.feature_selection.mutual_info_classif``.
+    redundancy_method : str or None, default=None
+        Optional redundancy pruning method applied after relevance ranking.
+        If None, no redundancy pruning is used. Current supported option is
+        ``"correlation"``.
+    redundancy_threshold : float, default=0.95
+        Threshold used by the redundancy pruning method. For
+        ``redundancy_method="correlation"``, a candidate channel is excluded
+        if its absolute Pearson correlation with any already selected channel
+        exceeds this threshold.
+    redundancy_params : dict or None, default=None
+        Optional keyword arguments passed to the redundancy pruning method.
 
     Attributes
     ----------
@@ -76,10 +90,16 @@ class ChannelFilter(BaseChannelSelector):
         score_channel: str | Callable = "variance",
         proportion: float = 0.4,
         score_params: dict | None = None,
+        redundancy_method: str | None = None,
+        redundancy_threshold: float = 0.95,
+        redundancy_params: dict | None = None,
     ):
         self.score_channel = score_channel
         self.proportion = proportion
         self.score_params = score_params
+        self.redundancy_method = redundancy_method
+        self.redundancy_threshold = redundancy_threshold
+        self.redundancy_params = redundancy_params
         super().__init__()
 
     def _fit(self, X: np.ndarray, y: np.ndarray | TypingList | None = None):
@@ -111,10 +131,17 @@ class ChannelFilter(BaseChannelSelector):
             scores[i] = scorer(Xi, y=y, **score_params)
 
         self.scores_ = scores
-
-        sorted_indices = np.argsort(-scores)
+        ranked_channels = np.argsort(-scores)
         n_keep = math.ceil(n_channels * self.proportion)
-        self.channels_selected_ = sorted_indices[:n_keep]
+
+        if self.redundancy_method is None:
+            self.channels_selected_ = ranked_channels[:n_keep]
+        else:
+            self.channels_selected_ = self._apply_redundancy_pruning(
+                X=X,
+                ranked_channels=ranked_channels,
+                n_keep=n_keep,
+            )
 
         return self
 
@@ -125,15 +152,36 @@ class ChannelFilter(BaseChannelSelector):
 
         if self.score_channel == "variance":
             return self._variance_score
-        elif self.score_channel == "class_mean":
+        if self.score_channel == "class_mean":
             return self._class_mean_score
-        elif self.score_channel == "mutual_information":
+        if self.score_channel == "mutual_information":
             return self._mutual_information_score
-        else:
-            raise ValueError(
-                "score_channel must be a callable or one of "
-                "{'variance', 'class_mean', 'mutual_information'}."
+
+        raise ValueError(
+            "score_channel must be a callable or one of "
+            "{'variance', 'class_mean', 'mutual_information'}."
+        )
+
+    def _apply_redundancy_pruning(
+        self,
+        X: np.ndarray,
+        ranked_channels: np.ndarray,
+        n_keep: int,
+    ) -> np.ndarray:
+        """Apply optional redundancy pruning to ranked channels."""
+        if self.redundancy_method == "correlation":
+            redundancy_params = (
+                {} if self.redundancy_params is None else self.redundancy_params
             )
+            return self._correlation_pruning(
+                X=X,
+                ranked_channels=ranked_channels,
+                n_keep=n_keep,
+                threshold=self.redundancy_threshold,
+                **redundancy_params,
+            )
+
+        raise ValueError("redundancy_method must be None or one of {'correlation'}.")
 
     @staticmethod
     def _variance_score(X: np.ndarray, y=None, **kwargs) -> float:
@@ -176,7 +224,8 @@ class ChannelFilter(BaseChannelSelector):
 
     @staticmethod
     def _channel_summary_features(
-        X: np.ndarray, summary: str = "mean_std"
+        X: np.ndarray,
+        summary: str = "mean_std",
     ) -> np.ndarray:
         """Extract summary features for a single channel."""
         mean = X.mean(axis=1)
@@ -185,14 +234,101 @@ class ChannelFilter(BaseChannelSelector):
 
         if summary == "mean":
             return mean[:, np.newaxis]
-        elif summary == "mean_std":
+        if summary == "mean_std":
             return np.column_stack((mean, std))
-        elif summary == "mean_std_energy":
+        if summary == "mean_std_energy":
             return np.column_stack((mean, std, energy))
-        else:
-            raise ValueError(
-                "summary must be one of {'mean', 'mean_std', 'mean_std_energy'}."
-            )
+
+        raise ValueError(
+            "summary must be one of {'mean', 'mean_std', 'mean_std_energy'}."
+        )
+
+    @staticmethod
+    def _correlation_pruning(
+        X: np.ndarray,
+        ranked_channels: np.ndarray,
+        n_keep: int,
+        threshold: float = 0.95,
+        method: str = "pearson",
+        fallback_fill: bool = True,
+        **kwargs,
+    ) -> np.ndarray:
+        """Greedily prune channels that are highly correlated.
+
+        Parameters
+        ----------
+        X : np.ndarray of shape (n_cases, n_channels, n_timepoints)
+            Training data.
+        ranked_channels : np.ndarray of shape (n_channels,)
+            Channel indices ranked from most to least relevant.
+        n_keep : int
+            Number of channels to retain.
+        threshold : float, default=0.95
+            Absolute correlation threshold above which a candidate channel is
+            treated as redundant.
+        method : str, default="pearson"
+            Correlation method. Currently only ``"pearson"`` is supported.
+        fallback_fill : bool, default=True
+            If True and fewer than `n_keep` channels survive pruning, fill the
+            remaining slots using the original ranking order.
+
+        Returns
+        -------
+        np.ndarray of shape (n_selected_channels,)
+            Selected channel indices.
+        """
+        if method != "pearson":
+            raise ValueError("Only method='pearson' is currently supported.")
+
+        if threshold < 0 or threshold > 1:
+            raise ValueError("redundancy_threshold must be in the range [0, 1].")
+
+        selected = []
+        flattened = X.reshape(X.shape[0], X.shape[1], -1)
+        channel_vectors = flattened.transpose(1, 0, 2).reshape(X.shape[1], -1)
+
+        for candidate in ranked_channels:
+            if len(selected) == 0:
+                selected.append(candidate)
+            else:
+                keep = True
+                candidate_vec = channel_vectors[candidate]
+
+                for chosen in selected:
+                    chosen_vec = channel_vectors[chosen]
+                    corr = ChannelFilter._safe_abs_pearson_corr(
+                        candidate_vec,
+                        chosen_vec,
+                    )
+                    if corr > threshold:
+                        keep = False
+                        break
+
+                if keep:
+                    selected.append(candidate)
+
+            if len(selected) == n_keep:
+                break
+
+        if fallback_fill and len(selected) < n_keep:
+            for candidate in ranked_channels:
+                if candidate not in selected:
+                    selected.append(candidate)
+                if len(selected) == n_keep:
+                    break
+
+        return np.asarray(selected, dtype=int)
+
+    @staticmethod
+    def _safe_abs_pearson_corr(x: np.ndarray, y: np.ndarray) -> float:
+        """Compute absolute Pearson correlation with constant-vector handling."""
+        x_std = np.std(x)
+        y_std = np.std(y)
+
+        if x_std == 0 or y_std == 0:
+            return 0.0
+
+        return float(abs(np.corrcoef(x, y)[0, 1]))
 
     @classmethod
     def _get_test_params(cls, parameter_set: str = "default") -> TypingDict[str, any]:
@@ -211,4 +347,6 @@ class ChannelFilter(BaseChannelSelector):
         return {
             "score_channel": "variance",
             "proportion": 0.4,
+            "redundancy_method": "correlation",
+            "redundancy_threshold": 0.95,
         }
