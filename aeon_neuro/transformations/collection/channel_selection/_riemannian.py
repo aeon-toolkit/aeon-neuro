@@ -5,10 +5,10 @@ from __future__ import annotations
 import numpy as np
 from aeon.transformations.collection.channel_selection.base import BaseChannelSelector
 
-__all__ = ["RiemannianChannelSelector"]
+__all__ = ["Riemannian"]
 
 
-class RiemannianChannelSelector(BaseChannelSelector):
+class Riemannian(BaseChannelSelector):
     """Select channels using Riemannian electrode selection.
 
     Wrapper around ``pyriemann.channelselection.ElectrodeSelection`` for aeon
