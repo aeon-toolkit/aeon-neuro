@@ -102,12 +102,6 @@ class RiemannianChannelSelector(BaseChannelSelector):
         """
         self._validate_params()
 
-        if y is None:
-            raise ValueError("RiemannianChannelSelector requires y in fit.")
-
-        X = np.asarray(X)
-        y = np.asarray(y)
-
         if X.ndim != 3:
             raise ValueError(
                 "X must be a 3D numpy array of shape "
@@ -150,44 +144,10 @@ class RiemannianChannelSelector(BaseChannelSelector):
 
         return self
 
-    def _transform(self, X, y=None):
-        """Transform X by subsetting the selected channels.
-
-        Parameters
-        ----------
-        X : np.ndarray of shape (n_cases, n_channels, n_timepoints)
-            Collection of equal-length time series.
-        y : None, default=None
-            Ignored. Included for interface compatibility.
-
-        Returns
-        -------
-        X_t : np.ndarray of shape (n_cases, n_selected_channels, n_timepoints)
-            Collection restricted to the selected channels.
-        """
-        X = np.asarray(X)
-
-        if X.ndim != 3:
-            raise ValueError(
-                "X must be a 3D numpy array of shape "
-                "(n_cases, n_channels, n_timepoints)."
-            )
-
-        if X.shape[1] != self.n_channels_in_:
-            raise ValueError(
-                "Number of channels in X does not match the data seen in fit. "
-                f"Expected {self.n_channels_in_}, got {X.shape[1]}."
-            )
-
-        return X[:, self.channels_selected_, :]
-
     def _validate_params(self):
         """Validate estimator parameters."""
         if not (0 < self.proportion <= 1):
             raise ValueError("proportion must be in the interval (0, 1].")
-
-        if not isinstance(self.n_jobs, int):
-            raise ValueError("n_jobs must be an integer.")
 
     @classmethod
     def get_test_params(cls, parameter_set="default"):
