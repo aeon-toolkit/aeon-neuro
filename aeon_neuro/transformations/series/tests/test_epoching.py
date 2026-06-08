@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from aeon_neuro.transformations import EpochSeriesTransformer
-from aeon_neuro.transformations._epoching import epoch_dataset
+from aeon_neuro.transformations.series import EpochSeriesTransformer
+from aeon_neuro.transformations.series._epoching import epoch_dataset
 
 # set parameters
 n_cases, n_channels, n_timepoints, sfreq = 3, 2, 12, 1
