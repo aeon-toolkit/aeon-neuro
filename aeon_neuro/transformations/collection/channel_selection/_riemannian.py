@@ -29,6 +29,10 @@ class Riemannian(BaseChannelSelector):
         Metric passed to ``pyriemann.channelselection.ElectrodeSelection``.
     estimator : str, default="scm"
         Covariance estimator passed to ``pyriemann.estimation.Covariances``.
+    regularization : float, default=1e-6
+        Relative diagonal loading applied to each covariance matrix. The value
+        added to the diagonal is ``regularization`` multiplied by the mean
+        variance of that matrix. Set to 0 to disable regularization.
     n_jobs : int, default=1
         Number of jobs passed to ``pyriemann.channelselection.ElectrodeSelection``.
 
@@ -77,11 +81,13 @@ class Riemannian(BaseChannelSelector):
         proportion: float = 0.25,
         metric: str = "riemann",
         estimator: str = "scm",
+        regularization: float = 1e-6,
         n_jobs: int = 1,
     ):
         self.proportion = proportion
         self.metric = metric
         self.estimator = estimator
+        self.regularization = regularization
         self.n_jobs = n_jobs
         super().__init__()
 
@@ -128,6 +134,15 @@ class Riemannian(BaseChannelSelector):
 
         cov = Covariances(estimator=self.estimator)
         covariances = cov.transform(X)
+        if self.regularization > 0:
+            mean_variances = np.trace(covariances, axis1=1, axis2=2) / n_channels
+            mean_variances = np.maximum(mean_variances, np.finfo(covariances.dtype).eps)
+            identity = np.eye(n_channels)
+            covariances = covariances + (
+                self.regularization
+                * mean_variances[:, np.newaxis, np.newaxis]
+                * identity
+            )
 
         selector = ElectrodeSelection(
             nelec=nelec,
@@ -148,6 +163,8 @@ class Riemannian(BaseChannelSelector):
         """Validate estimator parameters."""
         if not (0 < self.proportion <= 1):
             raise ValueError("proportion must be in the interval (0, 1].")
+        if self.regularization < 0:
+            raise ValueError("regularization must be greater than or equal to 0.")
 
     @classmethod
     def get_test_params(cls, parameter_set="default"):
@@ -165,5 +182,10 @@ class Riemannian(BaseChannelSelector):
         """
         return [
             {"proportion": 0.25},
-            {"proportion": 0.5, "metric": "riemann", "estimator": "oas"},
+            {
+                "proportion": 0.5,
+                "metric": "riemann",
+                "estimator": "oas",
+                "regularization": 1e-5,
+            },
         ]
