@@ -2,12 +2,16 @@
 
 __all__ = [
     "BPSO",
-    "Riemannian",
     "DetachRocket",
+    "DetachRocketChannelSelector",
+    "Riemannian",
 ]
 
-from aeon.transformations.collection.channel_selection._bpso import BPSO
-from aeon.transformations.collection.channel_selection._detach_rocket import (
+from aeon_neuro.transformations.collection.channel_selection._bpso import BPSO
+from aeon_neuro.transformations.collection.channel_selection._detach_rocket import (
     DetachRocket,
+    DetachRocketChannelSelector,
 )
-from aeon.transformations.collection.channel_selection._riemannian import Riemannian
+from aeon_neuro.transformations.collection.channel_selection._riemannian import (
+    Riemannian,
+)
