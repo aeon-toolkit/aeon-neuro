@@ -90,7 +90,7 @@ aeon_neuro = [
 ]
 
 [tool.setuptools.packages.find]
-exclude = ["tests", "tests.*"]
+exclude = ["experiments", "experiments.*", "tests", "tests.*"]
 
 [tool.check-manifest]
 ignore = [
