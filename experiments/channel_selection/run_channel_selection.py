@@ -3,6 +3,7 @@
 import sys
 from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from math import ceil
 from os import cpu_count
 from pathlib import Path
 from time import perf_counter
@@ -17,6 +18,9 @@ from aeon.transformations.collection.channel_selection import (
     TSelect,
 )
 
+from aeon_neuro.transformations.collection.channel_creation import (
+    CommonSpacialPatterns,
+)
 from aeon_neuro.transformations.collection.channel_selection import (
     DetachRocketChannelSelector,
     Riemannian,
@@ -31,17 +35,25 @@ except ModuleNotFoundError:
 
 # Algorithms are run in this order. Remove entries here to disable them.
 channel_selectors = [
-    "DetachRocket",
+    # "ECS",
+    # "ECP",
+    # "Random",
+    # "Riemannian",
+    # "ChannelScorer",
+    # "DetachRocket",
+    # "TSelect",
+    "CSP",
 ]
 
 SEED = 0
+CHANNEL_PROPORTION = 0.25
 SELECTOR_FACTORIES = {
     "ECS": ElbowClassSum,
     "ECP": ElbowClassPairwise,
     "TSelect": TSelect,
-    "Random": lambda: RandomChannelSelector(p=0.25, random_state=SEED),
+    "Random": lambda: RandomChannelSelector(p=CHANNEL_PROPORTION, random_state=SEED),
     "Riemannian": lambda: Riemannian(
-        proportion=0.25,
+        proportion=CHANNEL_PROPORTION,
         regularization=1e-6,
     ),
     "ChannelScorer": lambda: ChannelScorer(
@@ -52,10 +64,10 @@ SELECTOR_FACTORIES = {
         ),
         scoring_function=None,
         score_sign=None,
-        proportion=0.25,
+        proportion=CHANNEL_PROPORTION,
     ),
     "DetachRocket": lambda: DetachRocketChannelSelector(
-        proportion=0.25,
+        proportion=CHANNEL_PROPORTION,
         n_kernels=10000,
         n_jobs=1,
         random_state=SEED,
@@ -101,6 +113,18 @@ def _save_summary(summary_path, results):
     )
 
 
+def _make_transformer(selector_name, n_channels):
+    """Construct a selector or channel creator for one dataset."""
+    if selector_name == "CSP":
+        return CommonSpacialPatterns(
+            n_components=ceil(CHANNEL_PROPORTION * n_channels),
+            log=None,
+            transform_into="csp_space",
+            random_state=SEED,
+        )
+    return SELECTOR_FACTORIES[selector_name]()
+
+
 def _pending_datasets(datasets, selector_name, output_root, results):
     """Return datasets without complete output files."""
     pending = []
@@ -135,7 +159,7 @@ def run_channel_selector(
 
     X_train, y_train = load_from_ts_file(train_path)
     X_test, y_test = load_from_ts_file(test_path)
-    selector = SELECTOR_FACTORIES[selector_name]()
+    selector = _make_transformer(selector_name, X_train.shape[1])
 
     total_start = perf_counter()
 
@@ -152,7 +176,16 @@ def run_channel_selector(
     test_transform_seconds = perf_counter() - test_start
 
     total_seconds = perf_counter() - total_start
-    selected = [int(channel) for channel in selector.channels_selected_]
+    if hasattr(selector, "channels_selected_"):
+        selected = [int(channel) for channel in selector.channels_selected_]
+        output_description = (
+            f"{len(selected)} of {X_train.shape[1]} channels: {selected}"
+        )
+    else:
+        n_components = X_train_transformed.shape[1]
+        output_description = (
+            f"{n_components} components from {X_train.shape[1]} channels"
+        )
 
     output_dir = Path(output_root) / selector_name / dataset_name
     save_to_ts_file(
@@ -173,7 +206,7 @@ def run_channel_selector(
     )
 
     result = (
-        f"{dataset_name}: {len(selected)} of {X_train.shape[1]} channels: {selected}; "
+        f"{dataset_name}: {output_description}; "
         f"fit={fit_seconds:.6f}s; train_transform={train_transform_seconds:.6f}s; "
         f"test_transform={test_transform_seconds:.6f}s; total={total_seconds:.6f}s"
     )
@@ -193,7 +226,7 @@ def main():
     parser.add_argument(
         "--selectors",
         nargs="+",
-        choices=SELECTOR_FACTORIES,
+        choices=[*SELECTOR_FACTORIES, "CSP"],
         default=channel_selectors,
         help="Selectors to run (default: the channel_selectors list).",
     )

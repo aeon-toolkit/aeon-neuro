@@ -12,6 +12,12 @@ Control dataset-level concurrency with `--workers`:
 python experiments/channel_selection/run_channel_selection.py --workers 4
 ```
 
+Run CSP channel creation, retaining approximately 25% as spatial components:
+
+```powershell
+python experiments/channel_selection/run_channel_selection.py --selectors CSP
+```
+
 Summarise classification result coverage:
 
 ```powershell
