@@ -23,6 +23,8 @@ from aeon_neuro.transformations.collection.channel_creation import (
     CommonSpacialPatterns,
 )
 from aeon_neuro.transformations.collection.channel_selection import (
+    BPSO,
+    UMAP,
     DetachRocketChannelSelector,
     Riemannian,
 )
@@ -40,10 +42,12 @@ channel_selectors = [
     # "ECP",
     # "Random",
     # "Riemannian",
+    # "BPSO",
     # "ChannelScorer",
     "DetachRocket",
     # "TSelect",
     # "CSP",
+    # "UMAP",
 ]
 
 SEED = 0
@@ -56,6 +60,15 @@ SELECTOR_FACTORIES = {
     "Riemannian": lambda: Riemannian(
         proportion=CHANNEL_PROPORTION,
         regularization=1e-6,
+    ),
+    "BPSO": lambda: BPSO(
+        proportion=CHANNEL_PROPORTION,
+        estimator=MiniRocketClassifier(
+            n_kernels=2000,
+            n_jobs=1,
+            random_state=SEED,
+        ),
+        random_state=SEED,
     ),
     "ChannelScorer": lambda: ChannelScorer(
         estimator=MiniRocketClassifier(
@@ -116,11 +129,17 @@ def _save_summary(summary_path, results):
 
 def _make_transformer(selector_name, n_channels):
     """Construct a selector or channel creator for one dataset."""
+    n_components = ceil(CHANNEL_PROPORTION * n_channels)
     if selector_name == "CSP":
         return CommonSpacialPatterns(
-            n_components=ceil(CHANNEL_PROPORTION * n_channels),
+            n_components=n_components,
             log=None,
             transform_into="csp_space",
+            random_state=SEED,
+        )
+    if selector_name == "UMAP":
+        return UMAP(
+            n_components=n_components,
             random_state=SEED,
         )
     return SELECTOR_FACTORIES[selector_name]()
@@ -229,7 +248,7 @@ def main():
     parser.add_argument(
         "--selectors",
         nargs="+",
-        choices=[*SELECTOR_FACTORIES, "CSP"],
+        choices=[*SELECTOR_FACTORIES, "CSP", "UMAP"],
         default=channel_selectors,
         help="Selectors to run (default: the channel_selectors list).",
     )

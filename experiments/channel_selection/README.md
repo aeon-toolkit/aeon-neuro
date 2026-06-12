@@ -18,6 +18,18 @@ Run CSP channel creation, retaining approximately 25% as spatial components:
 python experiments/channel_selection/run_channel_selection.py --selectors CSP
 ```
 
+Run binary particle swarm optimisation channel selection:
+
+```powershell
+python experiments/channel_selection/run_channel_selection.py --selectors BPSO
+```
+
+Run UMAP channel creation, retaining approximately 25% as latent channels:
+
+```powershell
+python experiments/channel_selection/run_channel_selection.py --selectors UMAP
+```
+
 Summarise classification result coverage:
 
 ```powershell
