@@ -1,6 +1,7 @@
 """Run channel selection algorithms on the local EEG datasets."""
 
 import sys
+import warnings
 from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from math import ceil
@@ -40,9 +41,9 @@ channel_selectors = [
     # "Random",
     # "Riemannian",
     # "ChannelScorer",
-    # "DetachRocket",
+    "DetachRocket",
     # "TSelect",
-    "CSP",
+    # "CSP",
 ]
 
 SEED = 0
@@ -59,8 +60,8 @@ SELECTOR_FACTORIES = {
     "ChannelScorer": lambda: ChannelScorer(
         estimator=MiniRocketClassifier(
             n_kernels=2000,
-            max_dilations_per_kernel=32,
-            # random_state=SEED,
+            # max_dilations_per_kernel=32,
+            random_state=SEED,
         ),
         scoring_function=None,
         score_sign=None,
@@ -68,7 +69,7 @@ SELECTOR_FACTORIES = {
     ),
     "DetachRocket": lambda: DetachRocketChannelSelector(
         proportion=CHANNEL_PROPORTION,
-        n_kernels=10000,
+        n_kernels=2000,
         n_jobs=1,
         random_state=SEED,
     ),
@@ -163,17 +164,19 @@ def run_channel_selector(
 
     total_start = perf_counter()
 
-    fit_start = perf_counter()
-    selector.fit(X_train, y_train)
-    fit_seconds = perf_counter() - fit_start
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        fit_start = perf_counter()
+        selector.fit(X_train, y_train)
+        fit_seconds = perf_counter() - fit_start
 
-    train_start = perf_counter()
-    X_train_transformed = selector.transform(X_train)
-    train_transform_seconds = perf_counter() - train_start
+        train_start = perf_counter()
+        X_train_transformed = selector.transform(X_train)
+        train_transform_seconds = perf_counter() - train_start
 
-    test_start = perf_counter()
-    X_test_transformed = selector.transform(X_test)
-    test_transform_seconds = perf_counter() - test_start
+        test_start = perf_counter()
+        X_test_transformed = selector.transform(X_test)
+        test_transform_seconds = perf_counter() - test_start
 
     total_seconds = perf_counter() - total_start
     if hasattr(selector, "channels_selected_"):
