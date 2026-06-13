@@ -25,6 +25,7 @@ from aeon_neuro.transformations.collection.channel_creation import (
 from aeon_neuro.transformations.collection.channel_selection import (
     BPSO,
     UMAP,
+    CaseTimeReducer,
     DetachRocketChannelSelector,
     Riemannian,
 )
@@ -48,6 +49,7 @@ channel_selectors = [
     # "TSelect",
     # "CSP",
     # "UMAP",
+    # "CaseTimeReducer",
 ]
 
 SEED = 0
@@ -142,6 +144,12 @@ def _make_transformer(selector_name, n_channels):
             n_components=n_components,
             random_state=SEED,
         )
+    if selector_name == "CaseTimeReducer":
+        return CaseTimeReducer(
+            strategy="auto",
+            random_state=SEED,
+            n_jobs=1,
+        )
     return SELECTOR_FACTORIES[selector_name]()
 
 
@@ -190,7 +198,13 @@ def run_channel_selector(
         fit_seconds = perf_counter() - fit_start
 
         train_start = perf_counter()
-        X_train_transformed = selector.transform(X_train)
+        if isinstance(selector, CaseTimeReducer):
+            X_train_transformed, y_train_transformed = selector.resample_train(
+                X_train, y_train
+            )
+        else:
+            X_train_transformed = selector.transform(X_train)
+            y_train_transformed = y_train
         train_transform_seconds = perf_counter() - train_start
 
         test_start = perf_counter()
@@ -198,7 +212,14 @@ def run_channel_selector(
         test_transform_seconds = perf_counter() - test_start
 
     total_seconds = perf_counter() - total_start
-    if hasattr(selector, "channels_selected_"):
+    if isinstance(selector, CaseTimeReducer):
+        output_description = (
+            f"{X_train_transformed.shape[0]} of {X_train.shape[0]} train cases; "
+            f"{X_train_transformed.shape[2]} of {X_train.shape[2]} time points; "
+            f"candidate={selector.selected_candidate_['candidate']}; "
+            f"tuning_score={selector.selection_score_:.6f}"
+        )
+    elif hasattr(selector, "channels_selected_"):
         selected = [int(channel) for channel in selector.channels_selected_]
         output_description = (
             f"{len(selected)} of {X_train.shape[1]} channels: {selected}"
@@ -212,7 +233,7 @@ def run_channel_selector(
     output_dir = Path(output_root) / selector_name / dataset_name
     save_to_ts_file(
         X_train_transformed,
-        y_train,
+        y_train_transformed,
         label_type="classification",
         path=output_dir,
         problem_name=dataset_name,
@@ -248,7 +269,7 @@ def main():
     parser.add_argument(
         "--selectors",
         nargs="+",
-        choices=[*SELECTOR_FACTORIES, "CSP", "UMAP"],
+        choices=[*SELECTOR_FACTORIES, "CSP", "UMAP", "CaseTimeReducer"],
         default=channel_selectors,
         help="Selectors to run (default: the channel_selectors list).",
     )

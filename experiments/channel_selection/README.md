@@ -30,6 +30,16 @@ Run UMAP channel creation, retaining approximately 25% as latent channels:
 python experiments/channel_selection/run_channel_selection.py --selectors UMAP
 ```
 
+Run training-case or time-axis reduction using an IndividualTDE proxy:
+
+```powershell
+python experiments/channel_selection/run_channel_selection.py \
+  --selectors CaseTimeReducer
+```
+
+Case reduction is applied only to TRAIN. Any selected time reduction is applied
+to both TRAIN and TEST.
+
 Summarise classification result coverage:
 
 ```powershell
