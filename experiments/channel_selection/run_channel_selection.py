@@ -26,6 +26,9 @@ from aeon_neuro.transformations.collection.channel_selection import (
     BPSO,
     UMAP,
     CaseTimeReducer,
+    CLeVerCluster,
+    CLeVerHybrid,
+    CLeVerRank,
     DetachRocketChannelSelector,
     Riemannian,
 )
@@ -39,17 +42,21 @@ except ModuleNotFoundError:
 
 # Algorithms are run in this order. Remove entries here to disable them.
 channel_selectors = [
-    # "ECS",
-    # "ECP",
-    # "Random",
-    # "Riemannian",
-    # "BPSO",
-    # "ChannelScorer",
+    "ECS",
+    "ECP",
+    "Random",
+    "Riemannian",
+    "BPSO",
+    "ChannelScorer",
     "DetachRocket",
-    # "TSelect",
-    # "CSP",
-    # "UMAP",
-    # "CaseTimeReducer",
+    "TSelect",
+    "CSP",
+    "UMAP",
+    "CaseTimeReducer",
+    "UMAP",
+    "CLeVerRank",
+    "CLeVerCluster",
+    "CLeVerHybrid",
 ]
 
 SEED = 0
@@ -150,6 +157,18 @@ def _make_transformer(selector_name, n_channels):
             random_state=SEED,
             n_jobs=1,
         )
+    if selector_name == "CLeVerRank":
+        return CLeVerRank(n_channels=n_components)
+    if selector_name == "CLeVerCluster":
+        return CLeVerCluster(
+            n_channels=n_components,
+            random_state=SEED,
+        )
+    if selector_name == "CLeVerHybrid":
+        return CLeVerHybrid(
+            n_channels=n_components,
+            random_state=SEED,
+        )
     return SELECTOR_FACTORIES[selector_name]()
 
 
@@ -177,8 +196,10 @@ def run_channel_selector(
     selector_name,
     data_root=DEFAULT_DATA_ROOT,
     output_root=DEFAULT_OUTPUT_ROOT,
+    output_name=None,
 ):
     """Fit a selector on TRAIN, transform both splits, and save the results."""
+    output_name = selector_name if output_name is None else output_name
     train_path, test_path = _input_paths(dataset_name, data_root)
     missing_files = [path for path in (train_path, test_path) if not path.is_file()]
     if missing_files:
@@ -230,7 +251,7 @@ def run_channel_selector(
             f"{n_components} components from {X_train.shape[1]} channels"
         )
 
-    output_dir = Path(output_root) / selector_name / dataset_name
+    output_dir = Path(output_root) / output_name / dataset_name
     save_to_ts_file(
         X_train_transformed,
         y_train_transformed,
@@ -269,7 +290,15 @@ def main():
     parser.add_argument(
         "--selectors",
         nargs="+",
-        choices=[*SELECTOR_FACTORIES, "CSP", "UMAP", "CaseTimeReducer"],
+        choices=[
+            *SELECTOR_FACTORIES,
+            "CSP",
+            "UMAP",
+            "CaseTimeReducer",
+            "CLeVerRank",
+            "CLeVerCluster",
+            "CLeVerHybrid",
+        ],
         default=channel_selectors,
         help="Selectors to run (default: the channel_selectors list).",
     )
@@ -286,6 +315,14 @@ def main():
         help=rf"Transformed dataset root (default: {DEFAULT_OUTPUT_ROOT}).",
     )
     parser.add_argument(
+        "--output-name",
+        default=None,
+        help=(
+            "Output subdirectory name. Defaults to the selector name and may only "
+            "be used when running one selector."
+        ),
+    )
+    parser.add_argument(
         "--workers",
         type=int,
         default=DEFAULT_WORKERS,
@@ -294,9 +331,12 @@ def main():
     args = parser.parse_args()
     if args.workers < 1:
         parser.error("--workers must be at least 1")
+    if args.output_name is not None and len(args.selectors) != 1:
+        parser.error("--output-name may only be used with one selector")
 
     for selector_name in args.selectors:
-        summary_path = args.output_root / selector_name / SUMMARY_FILE_NAME
+        output_name = selector_name if args.output_name is None else args.output_name
+        summary_path = args.output_root / output_name / SUMMARY_FILE_NAME
         summary_path.parent.mkdir(parents=True, exist_ok=True)
         results = _load_summary(summary_path)
 
@@ -305,7 +345,7 @@ def main():
             flush=True,
         )
         pending = _pending_datasets(
-            args.datasets, selector_name, args.output_root, results
+            args.datasets, output_name, args.output_root, results
         )
         for dataset_name in pending:
             print(  # noqa: T201
@@ -319,6 +359,7 @@ def main():
                     selector_name,
                     args.data_root,
                     args.output_root,
+                    output_name,
                 ): dataset_name
                 for dataset_name in pending
             }
