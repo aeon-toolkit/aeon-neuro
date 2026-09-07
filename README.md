@@ -29,23 +29,23 @@ learning.
 Whether you are testing a new EEG method, benchmarking against strong baselines, or
 trying to reproduce published results, `aeon-neuro` aims to give you a cleaner starting
 point.
-Overview	
+Overview
 CI/CD	![github-actions-release](https://img.shields.io/github/actions/workflow/status/aeon-toolkit/aeon-neuro/release.yml?logo=github&label=build%20%28release%29) ![github-actions-main](https://img.shields.io/github/actions/workflow/status/aeon-toolkit/aeon-neuro/pr_pytest.yml?logo=github&branch=main&label=build%20%28main%29) ![github-actions-nightly](https://img.shields.io/github/actions/workflow/status/aeon-toolkit/aeon-neuro/periodic_tests.yml?logo=github&label=build%20%28nightly%29) ![docs-stable](https://img.shields.io/readthedocs/aeon-neuro/stable?logo=readthedocs&label=docs%20%28stable%29) ![docs-latest](https://img.shields.io/readthedocs/aeon-neuro/latest?logo=readthedocs&label=docs%20%28latest%29) ![codecov](https://img.shields.io/codecov/c/github/aeon-toolkit/aeon-neuro?label=codecov&logo=codecov)
 Code	![pypi](https://img.shields.io/pypi/v/aeon-neuro?logo=pypi&color=blue) ![conda](https://img.shields.io/conda/vn/conda-forge/aeon-neuro?logo=anaconda&color=blue) ![python-versions](https://img.shields.io/pypi/pyversions/aeon-neuro?logo=python) ![black](https://img.shields.io/badge/code%20style-black-000000.svg) ![license](https://img.shields.io/badge/license-BSD%203--Clause-green?logo=style)
 Community	![slack-neuro](https://img.shields.io/static/v1?logo=slack&label=Slack%20%28aeon-neuro%29&message=chat&color=lightgreen) ![slack-aeon](https://img.shields.io/static/v1?logo=slack&label=Slack%20%28aeon%29&message=chat&color=lightgreen) ![linkedin](https://img.shields.io/static/v1?logo=linkedin&label=LinkedIn&message=news&color=lightblue) ![twitter](https://img.shields.io/static/v1?logo=twitter&label=Twitter&message=news&color=lightblue)
 Why aeon-neuro?
-A unified interface for EEG classification  
+A unified interface for EEG classification
 Work with EEG classification problems through a consistent API instead of stitching
 together multiple incompatible workflows.
-Reproducible benchmarks  
+Reproducible benchmarks
 Run experiments on curated EEG classification problems with fixed train/test splits and
 shared evaluation protocols.
-Strong baselines out of the box  
+Strong baselines out of the box
 Compare against established methods from time series machine learning, deep learning,
 and related EEG workflows.
-Built with open science in mind  
+Built with open science in mind
 The package is developed to support transparent, reproducible, and extensible research.
-Part of the aeon ecosystem  
+Part of the aeon ecosystem
 `aeon-neuro` is a companion package to `aeon`, extending
 its time series machine learning foundations to EEG applications.
 What this project is for
