@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import numpy as np
 from aeon.transformations.collection.channel_selection.base import BaseChannelSelector
+from sklearn.metrics import accuracy_score
+import random
+from sklearn.model_selection import train_test_split
 
 __all__ = ["BPSO"]
 
@@ -88,7 +92,61 @@ class BPSO(BaseChannelSelector):
         NotImplementedError
             Always, since this is a placeholder.
         """
-        raise NotImplementedError("BPSOChannelSelector is not implemented yet.")
+
+        n_channels = X.shape[1]  
+        particles = np.random.randint(2, size=(self.n_particles, n_channels))
+        velocities = np.random.rand(self.n_particles, n_channels) 
+        pbest_positions = particles.copy()
+        pbest_scores = np.zeros(self.n_particles)  
+        gbest_position = None 
+        gbest_score = -float('inf')  
+        for iteration in range(self.max_iter):
+            for i in range( self.n_particles):
+
+                fitness = self.fitness_function(X, y, particles[i])
+                
+                if fitness > pbest_scores[i]:
+                    pbest_scores[i] = fitness
+                    pbest_positions[i] = particles[i].copy()
+                
+
+                if fitness > gbest_score:
+                    gbest_score = fitness
+                    gbest_position = particles[i].copy()
+
+            for i in range(self.n_particles):
+                r1, r2 = random.random(), random.random()
+                velocities[i] = (self.inertia * velocities[i]
+                                + self.cognitive * r1 * (pbest_positions[i] - particles[i])
+                                + self.social * r2 * (gbest_position - particles[i]))
+                
+
+                sigmoid = 1 / (1 + np.exp(-velocities[i]))
+                particles[i] = np.where(sigmoid > 0.5, 1, 0)  
+        self.channels_selected_=list(gbest_position)
+        return self
+
+    def fitness_function(self,X, y, selected_channels):
+        from aeon.classification.convolution_based import MiniRocketClassifier
+        classifier = MiniRocketClassifier()
+        X_selected = X[:, self.pick_channels_id(selected_channels)]
+        X_train, X_test, y_train, y_test = train_test_split(X_selected, y, test_size=0.50, random_state=23)
+        classifier.fit(X_train, y_train)
+        y_pred = classifier.predict(X_test)
+        
+        accuracy = accuracy_score(y_test, y_pred)
+        num_selected_channels = sum(selected_channels)
+        fitness = accuracy - 0.01 * num_selected_channels
+        return fitness
+    
+    def pick_channels_id(self,ids):
+        c = []
+        for i in range(len(ids)):
+            if ids[i]:
+                c.append(i)
+        return c
+
+
 
     @classmethod
     def get_test_params(cls, parameter_set="default"):
