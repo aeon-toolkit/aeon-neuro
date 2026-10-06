@@ -22,7 +22,7 @@ from aeon.transformations.collection.channel_selection import (
 )
 
 from aeon_neuro.transformations.collection.channel_creation import (
-    CommonSpacialPatterns,
+    CommonSpatialPatterns,
 )
 from aeon_neuro.transformations.collection.channel_selection import (
     BPSO,
@@ -121,7 +121,7 @@ def _make_transformer(algorithm, n_channels):
     if algorithm == "TSelect":
         return TSelect(random_state=SEED)
     if algorithm == "CSP":
-        return CommonSpacialPatterns(
+        return CommonSpatialPatterns(
             n_components=n_components,
             log=None,
             transform_into="csp_space",
