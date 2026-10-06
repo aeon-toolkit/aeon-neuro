@@ -2,7 +2,6 @@
 
 __all__ = [
     "BPSO",
-    "CaseTimeReducer",
     "CLeVerCluster",
     "CLeVerHybrid",
     "CLeVerRank",
@@ -25,9 +24,6 @@ from aeon_neuro.transformations.collection.channel_selection._detach_rocket impo
 )
 from aeon_neuro.transformations.collection.channel_selection._guarded_multiaxis import (
     GuardedMultiAxisReducer,
-)
-from aeon_neuro.transformations.collection.channel_selection._reducer import (
-    CaseTimeReducer,
 )
 from aeon_neuro.transformations.collection.channel_selection._riemannian import (
     Riemannian,
