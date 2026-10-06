@@ -18,6 +18,14 @@ LINE_PATTERN = re.compile(
     r"test_transform=(?P<test_transform>[\d.]+)s; "
     r"total=(?P<total>[\d.]+)s$"
 )
+COMPONENT_LINE_PATTERN = re.compile(
+    r"^(?P<dataset>[^:]+): "
+    r"(?P<n_selected>\d+) components from (?P<n_channels>\d+) channels; "
+    r"fit=(?P<fit>[\d.]+)s; "
+    r"train_transform=(?P<train_transform>[\d.]+)s; "
+    r"test_transform=(?P<test_transform>[\d.]+)s; "
+    r"total=(?P<total>[\d.]+)s$"
+)
 
 
 def parse_summary_file(path, selector):
@@ -30,13 +38,21 @@ def parse_summary_file(path, selector):
             continue
 
         match = LINE_PATTERN.fullmatch(line.strip())
+        output_type = "selected_channels"
+        if match is None:
+            match = COMPONENT_LINE_PATTERN.fullmatch(line.strip())
+            output_type = "created_components"
         if match is None:
             raise ValueError(f"Cannot parse {path}:{line_number}: {line}")
 
         values = match.groupdict()
-        channels = [int(channel) for channel in ast.literal_eval(values["channels"])]
         n_selected = int(values["n_selected"])
-        if len(channels) != n_selected:
+        channels = (
+            [int(channel) for channel in ast.literal_eval(values["channels"])]
+            if output_type == "selected_channels"
+            else []
+        )
+        if output_type == "selected_channels" and len(channels) != n_selected:
             raise ValueError(
                 f"{path}:{line_number} reports {n_selected} selected channels "
                 f"but lists {len(channels)}"
@@ -48,9 +64,14 @@ def parse_summary_file(path, selector):
             {
                 "selector": selector,
                 "dataset": values["dataset"],
+                "output_type": output_type,
                 "n_selected": n_selected,
                 "n_channels": int(values["n_channels"]),
-                "selected_fraction": n_selected / int(values["n_channels"]),
+                "selected_fraction": (
+                    n_selected / int(values["n_channels"])
+                    if output_type == "selected_channels"
+                    else ""
+                ),
                 "channels": channels,
                 "fit_seconds": float(values["fit"]),
                 "train_transform_seconds": train_transform,
@@ -88,21 +109,33 @@ def aggregate_selectors(records):
     for selector in sorted(grouped, key=str.casefold):
         selector_records = grouped[selector]
         count = len(selector_records)
+        channel_records = [
+            record
+            for record in selector_records
+            if record["output_type"] == "selected_channels"
+        ]
+        channel_count = len(channel_records)
         rows.append(
             {
                 "selector": selector,
                 "datasets": count,
-                "total_channels_selected": sum(
-                    record["n_selected"] for record in selector_records
+                "total_channels_selected": (
+                    sum(record["n_selected"] for record in channel_records)
+                    if channel_records
+                    else ""
                 ),
-                "mean_channels_selected": sum(
-                    record["n_selected"] for record in selector_records
-                )
-                / count,
-                "mean_selected_fraction": sum(
-                    record["selected_fraction"] for record in selector_records
-                )
-                / count,
+                "mean_channels_selected": (
+                    sum(record["n_selected"] for record in channel_records)
+                    / channel_count
+                    if channel_records
+                    else ""
+                ),
+                "mean_selected_fraction": (
+                    sum(record["selected_fraction"] for record in channel_records)
+                    / channel_count
+                    if channel_records
+                    else ""
+                ),
                 "total_fit_seconds": sum(
                     record["fit_seconds"] for record in selector_records
                 ),
@@ -125,7 +158,8 @@ def calculate_overlaps(records):
     """Calculate pairwise selected-channel intersections for each dataset."""
     by_dataset = defaultdict(dict)
     for record in records:
-        by_dataset[record["dataset"]][record["selector"]] = record
+        if record["output_type"] == "selected_channels":
+            by_dataset[record["dataset"]][record["selector"]] = record
 
     rows = []
     for dataset in sorted(by_dataset, key=str.casefold):
@@ -154,10 +188,18 @@ def calculate_overlaps(records):
 
 def overlap_matrices(records, overlap_rows):
     """Build pairwise count and proportional overlap cross-tabs."""
-    selectors = sorted({record["selector"] for record in records}, key=str.casefold)
+    selectors = sorted(
+        {
+            record["selector"]
+            for record in records
+            if record["output_type"] == "selected_channels"
+        },
+        key=str.casefold,
+    )
     selected_totals = defaultdict(int)
     for record in records:
-        selected_totals[record["selector"]] += record["n_selected"]
+        if record["output_type"] == "selected_channels":
+            selected_totals[record["selector"]] += record["n_selected"]
 
     overlap_values = defaultdict(list)
     jaccard_values = defaultdict(list)
@@ -285,9 +327,14 @@ def main():
     print(f"Output: {output_dir}")  # noqa: T201
     print("\nSelector totals:")  # noqa: T201
     for row in aggregate_rows:
+        channel_text = (
+            f"{row['total_channels_selected']} channels, "
+            if row["total_channels_selected"] != ""
+            else ""
+        )
         print(  # noqa: T201
             f"  {row['selector']}: {row['datasets']} datasets, "
-            f"{row['total_channels_selected']} channels, "
+            f"{channel_text}"
             f"fit={row['total_fit_seconds']:.3f}s, "
             f"transform={row['total_transform_seconds']:.3f}s, "
             f"fit+transform={row['total_fit_and_transform_seconds']:.3f}s"

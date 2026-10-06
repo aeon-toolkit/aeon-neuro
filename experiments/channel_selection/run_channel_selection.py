@@ -1,8 +1,10 @@
 """Run channel selection algorithms on the local EEG datasets."""
 
 import sys
+import warnings
 from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from math import ceil
 from os import cpu_count
 from pathlib import Path
 from time import perf_counter
@@ -17,7 +19,16 @@ from aeon.transformations.collection.channel_selection import (
     TSelect,
 )
 
+from aeon_neuro.transformations.collection.channel_creation import (
+    CommonSpacialPatterns,
+)
 from aeon_neuro.transformations.collection.channel_selection import (
+    BPSO,
+    UMAP,
+    CaseTimeReducer,
+    CLeVerCluster,
+    CLeVerHybrid,
+    CLeVerRank,
     DetachRocketChannelSelector,
     Riemannian,
 )
@@ -31,32 +42,56 @@ except ModuleNotFoundError:
 
 # Algorithms are run in this order. Remove entries here to disable them.
 channel_selectors = [
+    "ECS",
+    "ECP",
+    "Random",
+    "Riemannian",
+    "BPSO",
+    "ChannelScorer",
     "DetachRocket",
+    "TSelect",
+    "CSP",
+    "UMAP",
+    "CaseTimeReducer",
+    "UMAP",
+    "CLeVerRank",
+    "CLeVerCluster",
+    "CLeVerHybrid",
 ]
 
 SEED = 0
+CHANNEL_PROPORTION = 0.25
 SELECTOR_FACTORIES = {
     "ECS": ElbowClassSum,
     "ECP": ElbowClassPairwise,
     "TSelect": TSelect,
-    "Random": lambda: RandomChannelSelector(p=0.25, random_state=SEED),
+    "Random": lambda: RandomChannelSelector(p=CHANNEL_PROPORTION, random_state=SEED),
     "Riemannian": lambda: Riemannian(
-        proportion=0.25,
+        proportion=CHANNEL_PROPORTION,
         regularization=1e-6,
+    ),
+    "BPSO": lambda: BPSO(
+        proportion=CHANNEL_PROPORTION,
+        estimator=MiniRocketClassifier(
+            n_kernels=2000,
+            n_jobs=1,
+            random_state=SEED,
+        ),
+        random_state=SEED,
     ),
     "ChannelScorer": lambda: ChannelScorer(
         estimator=MiniRocketClassifier(
             n_kernels=2000,
-            max_dilations_per_kernel=32,
-            # random_state=SEED,
+            # max_dilations_per_kernel=32,
+            random_state=SEED,
         ),
         scoring_function=None,
         score_sign=None,
-        proportion=0.25,
+        proportion=CHANNEL_PROPORTION,
     ),
     "DetachRocket": lambda: DetachRocketChannelSelector(
-        proportion=0.25,
-        n_kernels=10000,
+        proportion=CHANNEL_PROPORTION,
+        n_kernels=2000,
         n_jobs=1,
         random_state=SEED,
     ),
@@ -101,6 +136,42 @@ def _save_summary(summary_path, results):
     )
 
 
+def _make_transformer(selector_name, n_channels):
+    """Construct a selector or channel creator for one dataset."""
+    n_components = ceil(CHANNEL_PROPORTION * n_channels)
+    if selector_name == "CSP":
+        return CommonSpacialPatterns(
+            n_components=n_components,
+            log=None,
+            transform_into="csp_space",
+            random_state=SEED,
+        )
+    if selector_name == "UMAP":
+        return UMAP(
+            n_components=n_components,
+            random_state=SEED,
+        )
+    if selector_name == "CaseTimeReducer":
+        return CaseTimeReducer(
+            strategy="auto",
+            random_state=SEED,
+            n_jobs=1,
+        )
+    if selector_name == "CLeVerRank":
+        return CLeVerRank(n_channels=n_components)
+    if selector_name == "CLeVerCluster":
+        return CLeVerCluster(
+            n_channels=n_components,
+            random_state=SEED,
+        )
+    if selector_name == "CLeVerHybrid":
+        return CLeVerHybrid(
+            n_channels=n_components,
+            random_state=SEED,
+        )
+    return SELECTOR_FACTORIES[selector_name]()
+
+
 def _pending_datasets(datasets, selector_name, output_root, results):
     """Return datasets without complete output files."""
     pending = []
@@ -125,8 +196,10 @@ def run_channel_selector(
     selector_name,
     data_root=DEFAULT_DATA_ROOT,
     output_root=DEFAULT_OUTPUT_ROOT,
+    output_name=None,
 ):
     """Fit a selector on TRAIN, transform both splits, and save the results."""
+    output_name = selector_name if output_name is None else output_name
     train_path, test_path = _input_paths(dataset_name, data_root)
     missing_files = [path for path in (train_path, test_path) if not path.is_file()]
     if missing_files:
@@ -135,29 +208,53 @@ def run_channel_selector(
 
     X_train, y_train = load_from_ts_file(train_path)
     X_test, y_test = load_from_ts_file(test_path)
-    selector = SELECTOR_FACTORIES[selector_name]()
+    selector = _make_transformer(selector_name, X_train.shape[1])
 
     total_start = perf_counter()
 
-    fit_start = perf_counter()
-    selector.fit(X_train, y_train)
-    fit_seconds = perf_counter() - fit_start
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        fit_start = perf_counter()
+        selector.fit(X_train, y_train)
+        fit_seconds = perf_counter() - fit_start
 
-    train_start = perf_counter()
-    X_train_transformed = selector.transform(X_train)
-    train_transform_seconds = perf_counter() - train_start
+        train_start = perf_counter()
+        if isinstance(selector, CaseTimeReducer):
+            X_train_transformed, y_train_transformed = selector.resample_train(
+                X_train, y_train
+            )
+        else:
+            X_train_transformed = selector.transform(X_train)
+            y_train_transformed = y_train
+        train_transform_seconds = perf_counter() - train_start
 
-    test_start = perf_counter()
-    X_test_transformed = selector.transform(X_test)
-    test_transform_seconds = perf_counter() - test_start
+        test_start = perf_counter()
+        X_test_transformed = selector.transform(X_test)
+        test_transform_seconds = perf_counter() - test_start
 
     total_seconds = perf_counter() - total_start
-    selected = [int(channel) for channel in selector.channels_selected_]
+    if isinstance(selector, CaseTimeReducer):
+        output_description = (
+            f"{X_train_transformed.shape[0]} of {X_train.shape[0]} train cases; "
+            f"{X_train_transformed.shape[2]} of {X_train.shape[2]} time points; "
+            f"candidate={selector.selected_candidate_['candidate']}; "
+            f"tuning_score={selector.selection_score_:.6f}"
+        )
+    elif hasattr(selector, "channels_selected_"):
+        selected = [int(channel) for channel in selector.channels_selected_]
+        output_description = (
+            f"{len(selected)} of {X_train.shape[1]} channels: {selected}"
+        )
+    else:
+        n_components = X_train_transformed.shape[1]
+        output_description = (
+            f"{n_components} components from {X_train.shape[1]} channels"
+        )
 
-    output_dir = Path(output_root) / selector_name / dataset_name
+    output_dir = Path(output_root) / output_name / dataset_name
     save_to_ts_file(
         X_train_transformed,
-        y_train,
+        y_train_transformed,
         label_type="classification",
         path=output_dir,
         problem_name=dataset_name,
@@ -173,7 +270,7 @@ def run_channel_selector(
     )
 
     result = (
-        f"{dataset_name}: {len(selected)} of {X_train.shape[1]} channels: {selected}; "
+        f"{dataset_name}: {output_description}; "
         f"fit={fit_seconds:.6f}s; train_transform={train_transform_seconds:.6f}s; "
         f"test_transform={test_transform_seconds:.6f}s; total={total_seconds:.6f}s"
     )
@@ -193,7 +290,15 @@ def main():
     parser.add_argument(
         "--selectors",
         nargs="+",
-        choices=SELECTOR_FACTORIES,
+        choices=[
+            *SELECTOR_FACTORIES,
+            "CSP",
+            "UMAP",
+            "CaseTimeReducer",
+            "CLeVerRank",
+            "CLeVerCluster",
+            "CLeVerHybrid",
+        ],
         default=channel_selectors,
         help="Selectors to run (default: the channel_selectors list).",
     )
@@ -210,6 +315,14 @@ def main():
         help=rf"Transformed dataset root (default: {DEFAULT_OUTPUT_ROOT}).",
     )
     parser.add_argument(
+        "--output-name",
+        default=None,
+        help=(
+            "Output subdirectory name. Defaults to the selector name and may only "
+            "be used when running one selector."
+        ),
+    )
+    parser.add_argument(
         "--workers",
         type=int,
         default=DEFAULT_WORKERS,
@@ -218,9 +331,12 @@ def main():
     args = parser.parse_args()
     if args.workers < 1:
         parser.error("--workers must be at least 1")
+    if args.output_name is not None and len(args.selectors) != 1:
+        parser.error("--output-name may only be used with one selector")
 
     for selector_name in args.selectors:
-        summary_path = args.output_root / selector_name / SUMMARY_FILE_NAME
+        output_name = selector_name if args.output_name is None else args.output_name
+        summary_path = args.output_root / output_name / SUMMARY_FILE_NAME
         summary_path.parent.mkdir(parents=True, exist_ok=True)
         results = _load_summary(summary_path)
 
@@ -229,7 +345,7 @@ def main():
             flush=True,
         )
         pending = _pending_datasets(
-            args.datasets, selector_name, args.output_root, results
+            args.datasets, output_name, args.output_root, results
         )
         for dataset_name in pending:
             print(  # noqa: T201
@@ -243,6 +359,7 @@ def main():
                     selector_name,
                     args.data_root,
                     args.output_root,
+                    output_name,
                 ): dataset_name
                 for dataset_name in pending
             }
