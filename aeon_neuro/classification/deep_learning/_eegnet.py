@@ -1,4 +1,4 @@
-"""aeon compatible wrapper for nraindecode EEGNet classifier."""
+"""aeon compatible wrapper for Braindecode EEGNet classifier."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ class EEGNetClassifier(BaseClassifier):
         Random seed.
 
     The remaining parameters mirror the main architectural parameters of
-    `braindecode.models.EEGNetv4`.
+    `braindecode.models.EEGNet`.
 
     final_conv_length : int or str, default="auto"
         Length of the final convolution layer.
@@ -255,10 +255,10 @@ class EEGNetClassifier(BaseClassifier):
         )
 
     def _build_network(self, n_channels: int, n_timepoints: int):
-        """Construct the Braindecode EEGNetv4 model."""
-        from braindecode.models import EEGNetv4
+        """Construct the Braindecode EEGNet model."""
+        from braindecode.models import EEGNet
 
-        return EEGNetv4(
+        return EEGNet(
             n_chans=n_channels,
             n_outputs=self.n_classes_,
             n_times=n_timepoints,
