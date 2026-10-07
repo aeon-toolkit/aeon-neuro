@@ -1,19 +1,38 @@
 """Read EEG recordings and auxiliary dataset information."""
 
 import json
+import warnings
 
 import mne
 import numpy as np
 
 
 def load_auxiliary_info(path, dataset_name):
+    """Read auxiliary JSON, warning and returning None if it cannot be loaded.
+
+    Parameters
+    ----------
+    path : str
+        Directory prefix, including its trailing separator.
+    dataset_name : str
+        Auxiliary filename without the .json extension.
+
+    Returns
+    -------
+    aux_data : object or None
+        Decoded JSON value, or None for file access or JSON decoding errors.
+    """
     full_path = path + dataset_name + ".json"
     try:
-        f = open(full_path)
-        aux_data = json.load(f)
-        return aux_data
-    except:
-        print("Auxiliary file not found at: " + full_path)
+        with open(full_path) as f:
+            return json.load(f)
+    except (OSError, ValueError) as error:
+        # Keep optional metadata failures non-fatal without swallowing interrupts.
+        warnings.warn(
+            f"Unable to load auxiliary information at {full_path}: {error}",
+            stacklevel=2,
+        )
+        return None
 
 
 def load_brainvision_to_mne(path, *, preload=False):
