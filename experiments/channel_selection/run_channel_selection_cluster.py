@@ -27,7 +27,6 @@ from aeon_neuro.transformations.collection.channel_creation import (
 from aeon_neuro.transformations.collection.channel_selection import (
     BPSO,
     UMAP,
-    CaseTimeReducer,
     CLeVerCluster,
     CLeVerHybrid,
     CLeVerRank,
@@ -64,7 +63,6 @@ ALGORITHMS = (
     "TSelect",
     "CSP",
     "UMAP",
-    "CaseTimeReducer",
     "CLeVerRank",
     "CLeVerCluster",
     "CLeVerHybrid",
@@ -132,12 +130,6 @@ def _make_transformer(algorithm, n_channels):
             n_components=n_components,
             random_state=SEED,
         )
-    if algorithm == "CaseTimeReducer":
-        return CaseTimeReducer(
-            strategy="auto",
-            random_state=SEED,
-            n_jobs=1,
-        )
     if algorithm == "CLeVerRank":
         return CLeVerRank(n_channels=n_components)
     if algorithm == "CLeVerCluster":
@@ -190,13 +182,7 @@ def run_job(algorithm, dataset, data_root, output_root, output_name=None):
         fit_seconds = perf_counter() - fit_start
 
         train_start = perf_counter()
-        if isinstance(transformer, CaseTimeReducer):
-            X_train_transformed, y_train_transformed = transformer.resample_train(
-                X_train, y_train
-            )
-        else:
-            X_train_transformed = transformer.transform(X_train)
-            y_train_transformed = y_train
+        X_train_transformed = transformer.transform(X_train)
         train_transform_seconds = perf_counter() - train_start
 
         test_start = perf_counter()
@@ -204,14 +190,7 @@ def run_job(algorithm, dataset, data_root, output_root, output_name=None):
         test_transform_seconds = perf_counter() - test_start
 
     total_seconds = perf_counter() - total_start
-    if isinstance(transformer, CaseTimeReducer):
-        output_description = (
-            f"{X_train_transformed.shape[0]} of {X_train.shape[0]} train cases; "
-            f"{X_train_transformed.shape[2]} of {X_train.shape[2]} time points; "
-            f"candidate={transformer.selected_candidate_['candidate']}; "
-            f"tuning_score={transformer.selection_score_:.6f}"
-        )
-    elif hasattr(transformer, "channels_selected_"):
+    if hasattr(transformer, "channels_selected_"):
         selected = [int(channel) for channel in transformer.channels_selected_]
         output_description = (
             f"{len(selected)} of {X_train.shape[1]} channels: {selected}"
@@ -225,7 +204,7 @@ def run_job(algorithm, dataset, data_root, output_root, output_name=None):
     output_dir = output_root / output_name / dataset
     save_to_ts_file(
         X_train_transformed,
-        y_train_transformed,
+        y_train,
         label_type="classification",
         path=output_dir,
         problem_name=dataset,
