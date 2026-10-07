@@ -80,26 +80,6 @@ pip install aeon-neuro[all_extras]
 ```
 To install the latest development version from GitHub, see the
 installation guide.
-
-### BrainVision ingestion
-
-Read a BrainVision header together with its linked signal and marker files:
-
-```python
-from aeon_neuro.utils.data_io import load_brainvision_to_mne
-
-raw = load_brainvision_to_mne("recording.vhdr")
-print(raw.ch_names, raw.info["sfreq"], raw.annotations)
-```
-
-The returned MNE Raw object retains all channels and annotations without filtering
-or epoching. Samples stay on disk by default, so the object can be passed to
-MNE-BIDS for writing a dataset with the required identifiers and metadata. Use
-`preload=True` when samples need to be loaded immediately. Existing BIDS sidecars
-are not read by this function, and channel types follow MNE's BrainVision reader.
-The existing `load_brainvision_to_numpy` function remains available for array-only
-callers, including its `remove_non_EEG` option.
-
 Documentation
 Project documentation: https://aeon-neuro.readthedocs.io
 aeon documentation: https://aeon-toolkit.org
