@@ -34,24 +34,30 @@ classifiers = [
     "Operating System :: Unix",
     "Operating System :: MacOS",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
-requires-python = ">=3.9,<3.14"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "aeon",
     "mne",
+    "mne-bids",
     "pyprep",
+    "pyriemann",
     "umap-learn",
+    "torch",
+    "braindecode",
 ]
 
 [project.optional-dependencies]
 all_extras = [
     "aeon[all_extras]",
     "pyriemann>=0.6"
+]
+dl = [
+    "tensorflow>=2.14",
+    "keras>=3.6.0",
 ]
 dev = [
     "aeon[dev]",
@@ -86,7 +92,7 @@ aeon_neuro = [
 ]
 
 [tool.setuptools.packages.find]
-exclude = ["tests", "tests.*"]
+exclude = ["experiments", "experiments.*", "tests", "tests.*"]
 
 [tool.check-manifest]
 ignore = [

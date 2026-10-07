@@ -15,9 +15,9 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -29,9 +29,9 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -43,9 +43,9 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -54,7 +54,7 @@ jobs:
         with:
           timeout_minutes: 30
           max_attempts: 3
-          command: python -m pip install .[all_extras,binder,dev]
+          command: python -m pip install .[all_extras,binder,dev] --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Run example notebooks
         run: .github/utilities/run_examples.sh
@@ -67,12 +67,12 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-24.04, macOS-14, windows-2022 ]
-        python-version: [ "3.9", "3.10", "3.11", "3.12", "3.13" ]
+        python-version: [ "3.11", "3.12", "3.13" ]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -81,7 +81,7 @@ jobs:
         with:
           timeout_minutes: 30
           max_attempts: 3
-          command: python -m pip install .[all_extras,dev]
+          command: python -m pip install .[all_extras,dev] --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Show dependencies
         run: python -m pip list
@@ -93,9 +93,9 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -107,7 +107,7 @@ jobs:
         with:
           timeout_minutes: 30
           max_attempts: 3
-          command: python -m pip install .[all_extras,dev]
+          command: python -m pip install .[all_extras,dev] --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Show dependencies
         run: python -m pip list
