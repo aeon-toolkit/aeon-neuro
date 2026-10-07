@@ -79,14 +79,14 @@ jobs:
         with:
           timeout_minutes: 30
           max_attempts: 3
-          command: python -m pip install "${env:WHEELNAME}[all_extras,dev]"
+          command: python -m pip install "${env:WHEELNAME}[all_extras,dev]" --extra-index-url https://download.pytorch.org/whl/cpu
       - if: runner.os != 'Windows'
         name: Unix install
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 30
           max_attempts: 3
-          command: python -m pip install "${{ env.WHEELNAME }}[all_extras,dev]"
+          command: python -m pip install "${{ env.WHEELNAME }}[all_extras,dev]" --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Tests
         run: python -m pytest

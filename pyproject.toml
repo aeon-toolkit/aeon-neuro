@@ -42,15 +42,17 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
     "aeon",
     "mne",
+    "mne-bids",
     "pyprep",
     "pyriemann",
     "umap-learn",
+    "torch",
+    "braindecode",
 ]
 
 [project.optional-dependencies]
 all_extras = [
     "aeon[all_extras]",
-    "pyriemann",
 ]
 dl = [
     "tensorflow>=2.14",
@@ -89,7 +91,7 @@ aeon_neuro = [
 ]
 
 [tool.setuptools.packages.find]
-exclude = ["tests", "tests.*"]
+exclude = ["experiments", "experiments.*", "tests", "tests.*"]
 
 [tool.check-manifest]
 ignore = [
