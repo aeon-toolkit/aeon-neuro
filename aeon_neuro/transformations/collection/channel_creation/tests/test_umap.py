@@ -23,9 +23,11 @@ def test_umap_transforms_train_and_test_to_latent_channels():
 def test_umap_rejects_different_channel_count():
     """Transform should reject data with a different number of channels."""
     rng = np.random.RandomState(1)
-    transformer = UMAPChannelCreator(n_neighbors=2, random_state=0).fit(rng.normal(size=(5, 3, 4)))
+    transformer = UMAPChannelCreator(n_neighbors=2, random_state=0).fit(
+        rng.normal(size=(5, 3, 4))
+    )
 
-    with pytest.raises(ValueError, match="Number of channels in X does not match the data seen in fit"):
+    with pytest.raises(ValueError, match="different number of channels"):
         transformer.transform(rng.normal(size=(2, 2, 4)))
 
 
