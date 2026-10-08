@@ -10,9 +10,9 @@ wrappers:
 1. Braindecode
     EEGNet
     DeepConvNet (DCN)
-2. pyrieman
+2. pyriemann
 Riemannian-MDM (RMD)
-3. MNE+sckitkit-learn
+3. MNE+scikit-learn
 
 
 """
