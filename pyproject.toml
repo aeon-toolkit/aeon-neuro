@@ -42,6 +42,7 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
     "aeon",
     "mne",
+    "mne-bids",
     "pyprep",
     "pyriemann",
     "umap-learn",
@@ -90,7 +91,7 @@ aeon_neuro = [
 ]
 
 [tool.setuptools.packages.find]
-exclude = ["tests", "tests.*"]
+exclude = ["experiments", "experiments.*", "tests", "tests.*"]
 
 [tool.check-manifest]
 ignore = [
