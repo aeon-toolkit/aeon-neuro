@@ -23,10 +23,10 @@ from aeon.transformations.collection.channel_selection import (
 
 from aeon_neuro.transformations.collection.channel_creation import (
     CommonSpacialPatterns,
+    UMAPChannelCreator,
 )
 from aeon_neuro.transformations.collection.channel_selection import (
     BPSO,
-    UMAP,
     CLeVerCluster,
     CLeVerHybrid,
     CLeVerRank,
@@ -126,7 +126,7 @@ def _make_transformer(algorithm, n_channels):
             random_state=SEED,
         )
     if algorithm == "UMAP":
-        return UMAP(
+        return UMAPChannelCreator(
             n_components=n_components,
             random_state=SEED,
         )

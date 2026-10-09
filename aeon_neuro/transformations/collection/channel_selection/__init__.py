@@ -7,9 +7,7 @@ __all__ = [
     "CLeVerRank",
     "DetachRocket",
     "DetachRocketChannelSelector",
-    "GuardedMultiAxisReducer",
     "Riemannian",
-    "UMAP",
 ]
 
 from aeon_neuro.transformations.collection.channel_selection._bpso import BPSO
@@ -22,10 +20,6 @@ from aeon_neuro.transformations.collection.channel_selection._detach_rocket impo
     DetachRocket,
     DetachRocketChannelSelector,
 )
-from aeon_neuro.transformations.collection.channel_selection._guarded_multiaxis import (
-    GuardedMultiAxisReducer,
-)
 from aeon_neuro.transformations.collection.channel_selection._riemannian import (
     Riemannian,
 )
-from aeon_neuro.transformations.collection.channel_selection._umap import UMAP
