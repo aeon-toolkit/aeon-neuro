@@ -20,7 +20,7 @@ from aeon.transformations.collection.channel_selection import (
 )
 
 from aeon_neuro.transformations.collection.channel_creation import (
-    CommonSpacialPatterns,
+    CommonSpatialPatterns,
     UMAPChannelCreator,
 )
 from aeon_neuro.transformations.collection.channel_selection import (
@@ -138,7 +138,7 @@ def _make_transformer(selector_name, n_channels):
     """Construct a selector or channel creator for one dataset."""
     n_components = ceil(CHANNEL_PROPORTION * n_channels)
     if selector_name == "CSP":
-        return CommonSpacialPatterns(
+        return CommonSpatialPatterns(
             n_components=n_components,
             log=None,
             transform_into="csp_space",

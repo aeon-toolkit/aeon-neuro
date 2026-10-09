@@ -1,4 +1,4 @@
-"""MNE CSP + scikit-learn SVM classifier wrapper for aeon."""
+"""CSP + scikit-learn SVM classifier for aeon."""
 
 from __future__ import annotations
 
@@ -7,13 +7,18 @@ __all__ = ["CSPSVMClassifier"]
 import numpy as np
 from aeon.classification import BaseClassifier
 
+from aeon_neuro.transformations.collection.channel_creation import (
+    CommonSpatialPatterns,
+)
+
 
 class CSPSVMClassifier(BaseClassifier):
     """Common Spatial Patterns plus SVM classifier.
 
-    This estimator applies MNE's Common Spatial Patterns (CSP) transform to
-    multivariate equal-length time series, then classifies the resulting features
-    with a scikit-learn support vector classifier.
+    This estimator applies the ``CommonSpatialPatterns`` transformer, which wraps
+    ``mne.decoding.CSP``, to multivariate equal-length time series, then
+    classifies the resulting average power features with a scikit-learn support
+    vector classifier.
 
     The input shape is aeon's standard collection format:
     (n_cases, n_channels, n_timepoints).
@@ -76,6 +81,7 @@ class CSPSVMClassifier(BaseClassifier):
 
     _tags = {
         "X_inner_type": "numpy3D",
+        "capability:univariate": False,
         "capability:multivariate": True,
         "capability:unequal_length": False,
         "algorithm_type": "feature",
@@ -127,13 +133,9 @@ class CSPSVMClassifier(BaseClassifier):
 
     def _fit(self, X: np.ndarray, y: np.ndarray):
         """Fit the CSP plus SVM classifier."""
-        from mne.decoding import CSP
-        from sklearn.pipeline import Pipeline
         from sklearn.svm import SVC
 
-        X = np.asarray(X, dtype=np.float64, order="C")
-
-        self.csp_ = CSP(
+        self.csp_ = CommonSpatialPatterns(
             n_components=self.n_components,
             reg=self.reg,
             log=self.log,
@@ -158,24 +160,16 @@ class CSPSVMClassifier(BaseClassifier):
             break_ties=self.break_ties,
             random_state=self.random_state,
         )
-        self.pipeline_ = Pipeline(
-            [
-                ("csp", self.csp_),
-                ("svc", self.svc_),
-            ]
-        )
-        self.pipeline_.fit(X, y)
+        self.svc_.fit(self._csp_features(X, y), y)
         return self
 
     def _predict(self, X: np.ndarray) -> np.ndarray:
         """Predict class labels for X."""
-        X = np.asarray(X, dtype=np.float64, order="C")
-        return np.asarray(self.pipeline_.predict(X))
+        return np.asarray(self.svc_.predict(self._csp_features(X)))
 
     def _predict_proba(self, X: np.ndarray) -> np.ndarray:
         """Predict class probabilities for X."""
-        X = np.asarray(X, dtype=np.float64, order="C")
-        probs = np.asarray(self.pipeline_.predict_proba(X), dtype=float)
+        probs = np.asarray(self.svc_.predict_proba(self._csp_features(X)), dtype=float)
 
         clf_classes = np.asarray(self.svc_.classes_)
         if np.array_equal(clf_classes, self.classes_):
@@ -185,6 +179,17 @@ class CSPSVMClassifier(BaseClassifier):
         for i, label in enumerate(clf_classes):
             aligned[:, self._class_dictionary[label]] = probs[:, i]
         return aligned
+
+    def _csp_features(self, X: np.ndarray, y: np.ndarray | None = None) -> np.ndarray:
+        """Return CSP average power features of shape (n_cases, n_components).
+
+        Fits the CSP transformer when ``y`` is given, otherwise uses the fitted one.
+        """
+        if y is not None:
+            Xt = self.csp_.fit_transform(X, y)
+        else:
+            Xt = self.csp_.transform(X)
+        return Xt[:, :, 0]
 
     @classmethod
     def _get_test_params(cls, parameter_set: str = "default"):
