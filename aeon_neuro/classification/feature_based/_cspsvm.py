@@ -1,5 +1,3 @@
-# aeon_neuro/classification/feature_based/_csp_svm.py
-
 """MNE CSP + scikit-learn SVM classifier wrapper for aeon."""
 
 from __future__ import annotations
@@ -81,7 +79,6 @@ class CSPSVMClassifier(BaseClassifier):
         "capability:multivariate": True,
         "capability:unequal_length": False,
         "algorithm_type": "feature",
-        "python_dependencies": ["mne", "sklearn"],
     }
 
     def __init__(
@@ -125,10 +122,6 @@ class CSPSVMClassifier(BaseClassifier):
         self.max_iter = max_iter
         self.break_ties = break_ties
         self.random_state = random_state
-
-        self.pipeline_ = None
-        self.csp_ = None
-        self.svc_ = None
 
         super().__init__()
 
@@ -194,7 +187,7 @@ class CSPSVMClassifier(BaseClassifier):
         return aligned
 
     @classmethod
-    def get_test_params(cls, parameter_set: str = "default"):
+    def _get_test_params(cls, parameter_set: str = "default"):
         """Return testing parameter settings for estimator checks."""
         return {
             "n_components": 2,
