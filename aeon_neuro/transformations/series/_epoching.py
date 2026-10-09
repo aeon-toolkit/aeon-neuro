@@ -18,7 +18,7 @@ class EpochSeriesTransformer(BaseSeriesTransformer):
         Sampling frequency in Hz, by default 1.0.
     epoch_size : int or float, optional
         Length of each epoch in milliseconds, by default None.
-    percent : _type_, optional
+    percent : float, optional
         Percent of the total length for each epoch, by default None.
 
     Raises
@@ -43,6 +43,8 @@ class EpochSeriesTransformer(BaseSeriesTransformer):
             raise ValueError(
                 "Only one of 'epoch_size' or 'percent' should be provided."
             )
+        if percent is not None and not 0 < percent <= 100:
+            raise ValueError("'percent' must be greater than 0 and no larger than 100.")
 
     def _transform(self, X, y=None):
         """Transform the input series to epoched collection.
@@ -61,10 +63,16 @@ class EpochSeriesTransformer(BaseSeriesTransformer):
         """
         n_channels, n_timepoints = X.shape
 
-        if self.epoch_size:
+        if self.epoch_size is not None:
             n_timepoints_per_epoch = int((self.epoch_size / 1000) * self.sfreq)
-        elif self.percent:
+        else:
             n_timepoints_per_epoch = int(n_timepoints * (self.percent / 100))
+
+        if not 1 <= n_timepoints_per_epoch <= n_timepoints:
+            raise ValueError(
+                "Epoch length must be between 1 and the series length. "
+                f"Got {n_timepoints_per_epoch} timepoints for a series of length {n_timepoints}."
+            )
 
         n_epochs = n_timepoints // n_timepoints_per_epoch
         X_transformed = np.zeros((n_epochs, n_channels, n_timepoints_per_epoch))

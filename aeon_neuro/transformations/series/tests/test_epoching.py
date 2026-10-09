@@ -1,6 +1,7 @@
 """Tests for epoching."""
 
 import numpy as np
+import pytest
 
 from aeon_neuro.transformations.series import EpochSeriesTransformer
 from aeon_neuro.transformations.series._epoching import epoch_dataset
@@ -52,3 +53,15 @@ def test_epoch_dataset():
     X_transformed, y_transformed = epoch_dataset(X_collection, y, sfreq, epoch_size)
     np.testing.assert_array_equal(X_transformed, X_collection_expected)
     np.testing.assert_array_equal(y_transformed, y_expected)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [{"epoch_size": 0}, {"epoch_size": 5000}, {"percent": 0}, {"percent": 150}],
+)
+def test_invalid_epoch_length_raises(kwargs):
+    """Test invalid epoch size and percent inputs."""
+    X = np.zeros((2, 50))
+
+    with pytest.raises(ValueError, match="epoch.*between 1.*series length|percent.*0.*100"):
+        EpochSeriesTransformer(sfreq=100, **kwargs).fit_transform(X)
