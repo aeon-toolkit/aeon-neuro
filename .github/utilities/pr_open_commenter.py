@@ -99,8 +99,7 @@ elif title_labels_str == "":
         "update the labels accordingly."
     )
 
-pr.create_issue_comment(
-    f"""
+pr.create_issue_comment(f"""
 ## Thank you for contributing to `aeon-neuro`
 
 {title_labels_str}
@@ -112,5 +111,4 @@ If our `pre-commit` code quality check fails, any trivial fixes will automatical
 
 Don't hesitate to ask questions on the `aeon-neuro` [Slack](
 https://join.slack.com/t/aeon-neuro/shared_invite/zt-2k4qs8mjb-ZZs~6P0MdF8kGf9cUQzKSg) channel if you have any.
-    """  # noqa
-)
+    """)  # noqa

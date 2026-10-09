@@ -38,7 +38,7 @@ jobs:
         with:
           timeout_minutes: 30
           max_attempts: 3
-          command: python -m pip install .[all_extras,dev]
+          command: python -m pip install .[all_extras,dev] --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Show dependencies
         run: python -m pip list
@@ -64,7 +64,7 @@ jobs:
         with:
           timeout_minutes: 30
           max_attempts: 3
-          command: python -m pip install .[all_extras,dev]
+          command: python -m pip install .[all_extras,dev] --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Show dependencies
         run: python -m pip list

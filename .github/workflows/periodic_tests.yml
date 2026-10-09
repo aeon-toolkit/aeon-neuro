@@ -33,7 +33,7 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - uses: pre-commit/action@v3.0.1
         with:
@@ -54,7 +54,7 @@ jobs:
         with:
           timeout_minutes: 30
           max_attempts: 3
-          command: python -m pip install .[all_extras,binder,dev]
+          command: python -m pip install .[all_extras,binder,dev] --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Run example notebooks
         run: .github/utilities/run_examples.sh
@@ -81,7 +81,7 @@ jobs:
         with:
           timeout_minutes: 30
           max_attempts: 3
-          command: python -m pip install .[all_extras,dev]
+          command: python -m pip install .[all_extras,dev] --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Show dependencies
         run: python -m pip list
@@ -107,7 +107,7 @@ jobs:
         with:
           timeout_minutes: 30
           max_attempts: 3
-          command: python -m pip install .[all_extras,dev]
+          command: python -m pip install .[all_extras,dev] --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Show dependencies
         run: python -m pip list
