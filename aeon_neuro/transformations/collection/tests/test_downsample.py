@@ -96,7 +96,7 @@ def test_value_errors():
 
 
 def test_unachievable_ratios_raise_at_construction():
-    """Non-integral decimation ratios must fail loudly, not silently mistransform (#171)."""
+    """Non-integral decimation ratios must fail loudly (#171)."""
     import pytest
 
     with pytest.raises(ValueError, match="not achievable"):
