@@ -18,13 +18,14 @@ class EpochSeriesTransformer(BaseSeriesTransformer):
         Sampling frequency in Hz, by default 1.0.
     epoch_size : int or float, optional
         Length of each epoch in milliseconds, by default None.
-    percent : _type_, optional
+    percent : float, optional
         Percent of the total length for each epoch, by default None.
 
     Raises
     ------
     ValueError
         If `epoch_size` or `percent` are not provided.
+        If `epoch_size` is shorter than one sample at `sfreq`.
     """
 
     _tags = {
@@ -42,6 +43,11 @@ class EpochSeriesTransformer(BaseSeriesTransformer):
         if epoch_size is not None and percent is not None:
             raise ValueError(
                 "Only one of 'epoch_size' or 'percent' should be provided."
+            )
+        if epoch_size is not None and (epoch_size / 1000) * sfreq < 1:
+            raise ValueError(
+                f"'epoch_size' of {epoch_size} ms is shorter than one sample "
+                f"at 'sfreq' of {sfreq} Hz."
             )
 
     def _transform(self, X, y=None):
@@ -65,6 +71,17 @@ class EpochSeriesTransformer(BaseSeriesTransformer):
             n_timepoints_per_epoch = int((self.epoch_size / 1000) * self.sfreq)
         elif self.percent:
             n_timepoints_per_epoch = int(n_timepoints * (self.percent / 100))
+
+        if n_timepoints_per_epoch < 1:
+            raise ValueError(
+                "Each epoch must cover at least one sample: "
+                f"got {n_timepoints_per_epoch} timepoints per epoch."
+            )
+        if n_timepoints_per_epoch > n_timepoints:
+            raise ValueError(
+                f"Each epoch covers {n_timepoints_per_epoch} timepoints, "
+                f"more than the series length of {n_timepoints}."
+            )
 
         n_epochs = n_timepoints // n_timepoints_per_epoch
         X_transformed = np.zeros((n_epochs, n_channels, n_timepoints_per_epoch))
