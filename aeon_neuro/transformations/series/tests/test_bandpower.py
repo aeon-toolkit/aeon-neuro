@@ -63,3 +63,21 @@ def test_transform_nyquist():
     with pytest.raises(ValueError, match="stride must be between 1 and .*"):
         bp = BandPowerSeriesTransformer(window_size=100, stride=0)
         bp.fit_transform(X)
+
+
+def test_bands_partition_the_spectrum():
+    """Every frequency in [0, 60] belongs to exactly one band (#173)."""
+    import numpy as np
+
+    bands = list(BandPowerSeriesTransformer.FREQ_BANDS.values())
+    assert bands[0][0] == 0 and bands[-1][1] == 60
+    for (_, hi), (lo, _) in zip(bands, bands[1:]):
+        assert hi == lo, "bands must be contiguous"
+    freqs = np.arange(0, 60.5, 0.5)
+    for f in freqs:
+        owners = [
+            name
+            for name, (lo, hi) in BandPowerSeriesTransformer.FREQ_BANDS.items()
+            if lo <= f < hi or (hi == 60 and f == hi)
+        ]
+        assert len(owners) == 1, f"{f} Hz owned by {owners}"
