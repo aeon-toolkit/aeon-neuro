@@ -85,7 +85,7 @@ class _BaseRiemannianCovarianceClassifier(BaseClassifier):
         raise NotImplementedError("abstract method")
 
     @classmethod
-    def get_test_params(cls, parameter_set: str = "default"):
+    def _get_test_params(cls, parameter_set: str = "default"):
         """Return parameter settings for estimator tests."""
         return {"covariance_estimator": "scm"}
 
@@ -138,7 +138,7 @@ class RiemannianMDMClassifier(_BaseRiemannianCovarianceClassifier):
         return MDM(metric=self.metric, n_jobs=self.n_jobs)
 
     @classmethod
-    def get_test_params(cls, parameter_set: str = "default"):
+    def _get_test_params(cls, parameter_set: str = "default"):
         """Return parameter settings for estimator tests."""
         return {
             "metric": "riemann",
@@ -200,7 +200,7 @@ class RiemannianKNNClassifier(_BaseRiemannianCovarianceClassifier):
         )
 
     @classmethod
-    def get_test_params(cls, parameter_set: str = "default"):
+    def _get_test_params(cls, parameter_set: str = "default"):
         """Return parameter settings for estimator tests."""
         return {
             "n_neighbors": 3,
