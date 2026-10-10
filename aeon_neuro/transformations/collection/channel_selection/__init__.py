@@ -3,6 +3,7 @@
 __all__ = [
     "BPSO",
     "CLeVerCluster",
+    "ChannelFilter",
     "CLeVerHybrid",
     "CLeVerRank",
     "DetachRocket",
@@ -11,6 +12,9 @@ __all__ = [
 ]
 
 from aeon_neuro.transformations.collection.channel_selection._bpso import BPSO
+from aeon_neuro.transformations.collection.channel_selection._channel_filter import (
+    ChannelFilter,
+)
 from aeon_neuro.transformations.collection.channel_selection._clever import (
     CLeVerCluster,
     CLeVerHybrid,
