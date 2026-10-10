@@ -14,8 +14,10 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
 
     EEG signals occupy the frequency range of 0 - 60Hz,
     which is roughly divided into five constituent physiological EEG sub bands:
-    delta (δ): 0 - 4Hz, theta (θ): 4 - 7Hz, alpha (α): 8 - 12Hz, beta (β): 13 - 30Hz
+    delta (δ): 0 - 4Hz, theta (θ): 4 - 8Hz, alpha (α): 8 - 13Hz, beta (β): 13 - 30Hz
     and gamma (γ): 30 - 60Hz.
+    Bands are contiguous and half-open, ``[low, high)``, except gamma which also
+    includes 60Hz, so every frequency from 0 to 60Hz falls in exactly one band.
     Power within each frequency band is estimated over time using windowed FFTs
 
     The transformer uses psd_array_welch from MNE to calculate power spectral
@@ -56,8 +58,8 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
 
     FREQ_BANDS = {
         "delta": (0, 4),
-        "theta": (4, 7),
-        "alpha": (8, 12),
+        "theta": (4, 8),
+        "alpha": (8, 13),
         "beta": (13, 30),
         "gamma": (30, 60),
     }
@@ -130,8 +132,7 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
         freq_res = freqs[1] - freqs[0]
 
         band_powers = np.zeros(shape=(len(self.FREQ_BANDS), powers.shape[-1]))
-        for band_idx, (min_freq, max_freq) in enumerate(self.FREQ_BANDS.values()):
-            freq_mask = np.logical_and(freqs >= min_freq, freqs <= max_freq)
+        for band_idx, freq_mask in enumerate(self._band_masks(freqs)):
             # integrate over frequencies, average over channels
             band_powers[band_idx, :] = simpson(
                 powers[:, freq_mask, :], dx=freq_res, axis=1
@@ -141,3 +142,19 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
             band_powers /= band_powers.sum(axis=0)
 
         return band_powers
+
+    @classmethod
+    def _band_masks(cls, freqs):
+        """Boolean masks assigning each frequency to exactly one band.
+
+        Bands are half-open, ``[low, high)``, so shared edges such as 4Hz are only
+        counted in the higher band. The last band is closed so its upper edge is kept.
+        """
+        bands = list(cls.FREQ_BANDS.values())
+        masks = []
+        for band_idx, (min_freq, max_freq) in enumerate(bands):
+            if band_idx == len(bands) - 1:
+                masks.append(np.logical_and(freqs >= min_freq, freqs <= max_freq))
+            else:
+                masks.append(np.logical_and(freqs >= min_freq, freqs < max_freq))
+        return masks

@@ -63,3 +63,19 @@ def test_transform_nyquist():
     with pytest.raises(ValueError, match="stride must be between 1 and .*"):
         bp = BandPowerSeriesTransformer(window_size=100, stride=0)
         bp.fit_transform(X)
+
+
+@pytest.mark.parametrize("freq_res", [0.25, 0.5, 1.0])
+def test_band_masks_partition_frequencies(freq_res):
+    """Test every frequency from 0 to 60 Hz falls in exactly one band."""
+    freqs = np.arange(0, 60 + freq_res, freq_res)
+    masks = BandPowerSeriesTransformer._band_masks(freqs)
+    counts = np.sum(masks, axis=0)
+    np.testing.assert_array_equal(counts, np.ones_like(freqs, dtype=int))
+
+
+def test_freq_bands_contiguous():
+    """Test each band starts where the previous one ends."""
+    bands = list(BandPowerSeriesTransformer.FREQ_BANDS.values())
+    for (_, prev_high), (low, _) in zip(bands[:-1], bands[1:]):
+        assert prev_high == low
