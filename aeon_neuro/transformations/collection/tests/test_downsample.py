@@ -110,5 +110,8 @@ def test_unachievable_ratios_raise_at_construction():
 
 
 def test_achievable_ratios_still_construct():
+    """Integral ratios keep constructing without error (#171)."""
     DownsampleCollectionTransformer(downsample_by="proportion", proportion=0.5)
-    DownsampleCollectionTransformer(downsample_by="frequency", source_sfreq=250, target_sfreq=125)
+    DownsampleCollectionTransformer(
+        downsample_by="frequency", source_sfreq=250, target_sfreq=125
+    )

@@ -103,7 +103,9 @@ class DownsampleCollectionTransformer(BaseCollectionTransformer):
             Downsampled time series collection.
         """
         if self.downsample_by == "frequency":
-            step = _decimation_step(self.source_sfreq / self.target_sfreq, "frequency ratio")
+            step = _decimation_step(
+                self.source_sfreq / self.target_sfreq, "frequency ratio"
+            )
         elif self.downsample_by == "proportion":
             step = _decimation_step(1 / (1 - self.proportion), "proportion")
 
