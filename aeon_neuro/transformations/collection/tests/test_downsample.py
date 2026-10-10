@@ -34,15 +34,6 @@ testdata = [
     (
         X,
         10,
-        3,
-        [
-            np.array([[1, 4, 7, 10], [10, 7, 4, 1]]),
-            np.array([[10, 40, 70], [100, 70, 40]]),
-        ],
-    ),
-    (
-        X,
-        10,
         2,
         [
             np.array([[1, 6], [10, 5]]),
@@ -69,6 +60,42 @@ def test_downsample_series(X, source_sfreq, target_sfreq, X_expected):
     for idx in range(2):
         np.testing.assert_array_equal(X_freq_downsample[idx], X_expected[idx])
         np.testing.assert_array_equal(X_prop_downsample[idx], X_expected[idx])
+
+
+@pytest.mark.parametrize(
+    "kwargs, n_timepoints_expected",
+    [
+        ({"downsample_by": "proportion", "proportion": 0.1}, 900),
+        ({"downsample_by": "proportion", "proportion": 0.6}, 400),
+        ({"downsample_by": "proportion", "proportion": 0.5}, 500),
+        ({"downsample_by": "frequency", "source_sfreq": 250, "target_sfreq": 100}, 400),
+        ({"downsample_by": "frequency", "source_sfreq": 250, "target_sfreq": 125}, 500),
+        ({"downsample_by": "frequency", "source_sfreq": 10, "target_sfreq": 3}, 300),
+    ],
+)
+def test_downsample_non_integer_ratio_shape(kwargs, n_timepoints_expected):
+    """Test the output length matches the requested ratio (#171)."""
+    X = np.zeros((2, 3, 1000))
+    X_downsampled = DownsampleCollectionTransformer(**kwargs).fit_transform(X)
+    assert X_downsampled.shape == (2, 3, n_timepoints_expected)
+
+
+def test_downsample_non_integer_ratio_values():
+    """Test a non-integer ratio resamples a slow sine onto the new time grid."""
+    source_sfreq, target_sfreq, n_timepoints = 250, 100, 2500
+    signal_freq = 2.0  # Hz, far below the new Nyquist frequency of 50 Hz
+    t_source = np.arange(n_timepoints) / source_sfreq
+    X = np.sin(2 * np.pi * signal_freq * t_source).reshape(1, 1, -1)
+
+    X_downsampled = DownsampleCollectionTransformer(
+        downsample_by="frequency", source_sfreq=source_sfreq, target_sfreq=target_sfreq
+    ).fit_transform(X)
+
+    t_target = np.arange(X_downsampled.shape[-1]) / target_sfreq
+    expected = np.sin(2 * np.pi * signal_freq * t_target)
+    # ignore filter edge effects at both ends
+    inner = slice(50, -50)
+    np.testing.assert_allclose(X_downsampled[0, 0, inner], expected[inner], atol=1e-2)
 
 
 def test_value_errors():
