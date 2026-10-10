@@ -63,3 +63,34 @@ def test_transform_nyquist():
     with pytest.raises(ValueError, match="stride must be between 1 and .*"):
         bp = BandPowerSeriesTransformer(window_size=100, stride=0)
         bp.fit_transform(X)
+
+
+def test_frequency_bands_have_no_gaps_or_overlaps(monkeypatch):
+    """Each sampled frequency should belong to exactly one EEG band."""
+    freqs = np.arange(0, 60.5, 0.5)
+    selected_freqs = []
+
+    def fake_welch(*args, **kwargs):
+        return freqs[None, :, None], freqs
+
+    def spy_simpson(values, dx, axis):
+        selected_freqs.extend(values[0, :, 0].tolist())
+        return values.sum(axis=axis)
+
+    monkeypatch.setattr(
+        "aeon_neuro.transformations.series._bandpower.psd_array_welch",
+        fake_welch,
+    )
+    monkeypatch.setattr(
+        "aeon_neuro.transformations.series._bandpower.simpson",
+        spy_simpson,
+    )
+
+    transformer = BandPowerSeriesTransformer(
+        sfreq=256,
+        window_size=256,
+        relative=False,
+    )
+    transformer.fit_transform(np.zeros((2, 512)))
+
+    np.testing.assert_array_equal(np.sort(selected_freqs), freqs)
