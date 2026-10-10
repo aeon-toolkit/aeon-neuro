@@ -12,11 +12,21 @@ __all__ = ["BandPowerSeriesTransformer"]
 class BandPowerSeriesTransformer(BaseSeriesTransformer):
     """Band power transformer.
 
-    EEG signals occupy the frequency range of 0 - 60Hz,
-    which is roughly divided into five constituent physiological EEG sub bands:
-    delta (δ): 0 - 4Hz, theta (θ): 4 - 7Hz, alpha (α): 8 - 12Hz, beta (β): 13 - 30Hz
-    and gamma (γ): 30 - 60Hz.
-    Power within each frequency band is estimated over time using windowed FFTs
+    EEG signals occupy the frequency range of 0–60 Hz, divided into
+    five non-overlapping frequency bands:
+
+    - Delta: [0, 4) Hz
+    - Theta: [4, 8) Hz
+    - Alpha: [8, 13) Hz
+    - Beta: [13, 30) Hz
+    - Gamma: [30, 60] Hz
+
+    Each frequency belongs to exactly one band. Lower boundaries are
+    inclusive, while upper boundaries are exclusive, except for gamma,
+    which includes 60 Hz.
+
+    Power within each frequency band is estimated over time using
+    windowed FFTs.
 
     The transformer uses psd_array_welch from MNE to calculate power spectral
     densities for each window for the given sampling frequency. Band powers are then
@@ -56,8 +66,8 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
 
     FREQ_BANDS = {
         "delta": (0, 4),
-        "theta": (4, 7),
-        "alpha": (8, 12),
+        "theta": (4, 8),
+        "alpha": (8, 13),
         "beta": (13, 30),
         "gamma": (30, 60),
     }
@@ -131,7 +141,11 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
 
         band_powers = np.zeros(shape=(len(self.FREQ_BANDS), powers.shape[-1]))
         for band_idx, (min_freq, max_freq) in enumerate(self.FREQ_BANDS.values()):
-            freq_mask = np.logical_and(freqs >= min_freq, freqs <= max_freq)
+            freq_mask = (freqs >= min_freq) & (freqs < max_freq)
+
+            # Include 60 Hz in the final frequency band.
+            if band_idx == len(self.FREQ_BANDS) - 1:
+                freq_mask |= freqs == max_freq
             # integrate over frequencies, average over channels
             band_powers[band_idx, :] = simpson(
                 powers[:, freq_mask, :], dx=freq_res, axis=1
