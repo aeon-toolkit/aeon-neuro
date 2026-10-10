@@ -52,3 +52,23 @@ def test_epoch_dataset():
     X_transformed, y_transformed = epoch_dataset(X_collection, y, sfreq, epoch_size)
     np.testing.assert_array_equal(X_transformed, X_collection_expected)
     np.testing.assert_array_equal(y_transformed, y_expected)
+
+
+def test_epoch_shorter_than_one_sample_raises_value_error():
+    """An epoch that covers no sample must fail loudly, not divide by zero (#172)."""
+    X = np.zeros((2, 50))
+    import pytest
+
+    with pytest.raises(ValueError, match="shorter than one sample"):
+        EpochSeriesTransformer(sfreq=100, epoch_size=5)
+    with pytest.raises(ValueError, match="at least one sample"):
+        EpochSeriesTransformer(sfreq=100, percent=0.5).fit_transform(X)
+
+
+def test_epoch_longer_than_series_raises_value_error():
+    """An epoch longer than the series must fail loudly, not return empty (#172)."""
+    import pytest
+
+    X = np.zeros((2, 50))
+    with pytest.raises(ValueError, match="more than the series length"):
+        EpochSeriesTransformer(sfreq=100, epoch_size=5000).fit_transform(X)
