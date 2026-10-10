@@ -31,15 +31,9 @@ testdata = [
             np.array([[10, 30, 50, 70], [100, 80, 60, 40]]),
         ],
     ),
-    (
-        X,
-        10,
-        3,
-        [
-            np.array([[1, 4, 7, 10], [10, 7, 4, 1]]),
-            np.array([[10, 40, 70], [100, 70, 40]]),
-        ],
-    ),
+    # NOTE (#171): the old (10, 3) case is gone — a 10->3 decimation is not
+    # achievable by integer steps, so it now raises instead of silently
+    # keeping indices 0, 3, 6, 9.
     (
         X,
         10,
@@ -99,3 +93,22 @@ def test_value_errors():
         ValueError, match="proportion must be provided and between 0-1."
     ):
         DownsampleCollectionTransformer(downsample_by="proportion", proportion=0)
+
+
+def test_unachievable_ratios_raise_at_construction():
+    """Non-integral decimation ratios must fail loudly, not silently mistransform (#171)."""
+    import pytest
+
+    with pytest.raises(ValueError, match="not achievable"):
+        DownsampleCollectionTransformer(downsample_by="proportion", proportion=0.1)
+    with pytest.raises(ValueError, match="not achievable"):
+        DownsampleCollectionTransformer(downsample_by="proportion", proportion=0.6)
+    with pytest.raises(ValueError, match="not achievable"):
+        DownsampleCollectionTransformer(
+            downsample_by="frequency", source_sfreq=250, target_sfreq=100
+        )
+
+
+def test_achievable_ratios_still_construct():
+    DownsampleCollectionTransformer(downsample_by="proportion", proportion=0.5)
+    DownsampleCollectionTransformer(downsample_by="frequency", source_sfreq=250, target_sfreq=125)

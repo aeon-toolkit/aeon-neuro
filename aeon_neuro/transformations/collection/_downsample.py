@@ -1,9 +1,26 @@
 """Downsample series by frequency."""
 
+import math
+
 import numpy as np
 from aeon.transformations.collection.base import BaseCollectionTransformer
 
 __all__ = ["DownsampleCollectionTransformer"]
+
+
+def _decimation_step(ratio: float, what: str) -> int:
+    """Integer decimation step for an exact ratio, or raise.
+
+    Decimation keeps every n-th sample, so only integral ratios are
+    achievable; anything else would silently keep the wrong fraction.
+    """
+    step = int(round(ratio))
+    if step < 1 or not math.isclose(ratio, step, rel_tol=1e-9):
+        raise ValueError(
+            f"{what} of {ratio:.6g} is not achievable by decimation: "
+            f"use a ratio of the form 1/n (proportion of the form 1 - 1/n)."
+        )
+    return step
 
 
 class DownsampleCollectionTransformer(BaseCollectionTransformer):
@@ -30,6 +47,7 @@ class DownsampleCollectionTransformer(BaseCollectionTransformer):
         If `downsample_by` is not "frequency" or "proportion".
         If `source_sfreq` < `target_sfreq` when `downsample_by = "frequency"`.
         If `proportion` is not between 0-1 when `downsample_by = "proportion"`.
+        If the ratio is not achievable by decimation (non-integral step).
     """
 
     _tags = {
@@ -55,10 +73,12 @@ class DownsampleCollectionTransformer(BaseCollectionTransformer):
                 raise ValueError("source_sfreq and target_sfreq must be provided")
             if source_sfreq < target_sfreq:
                 raise ValueError("source_sfreq must be > target_sfreq")
+            _decimation_step(source_sfreq / target_sfreq, "frequency ratio")
 
         if downsample_by == "proportion":
             if proportion is None or not (0 < proportion < 1):
                 raise ValueError("proportion must be provided and between 0-1.")
+            _decimation_step(1 / (1 - proportion), "proportion")
 
         super().__init__()
         self.downsample_by = downsample_by
@@ -83,9 +103,9 @@ class DownsampleCollectionTransformer(BaseCollectionTransformer):
             Downsampled time series collection.
         """
         if self.downsample_by == "frequency":
-            step = int(self.source_sfreq / self.target_sfreq)
+            step = _decimation_step(self.source_sfreq / self.target_sfreq, "frequency ratio")
         elif self.downsample_by == "proportion":
-            step = int(1 / (1 - self.proportion))
+            step = _decimation_step(1 / (1 - self.proportion), "proportion")
 
         X_downsampled = []
         for x in X:
