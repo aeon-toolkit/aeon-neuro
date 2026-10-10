@@ -131,7 +131,7 @@ class CommonSpatialPatterns(BaseCollectionTransformer):
         return Xt.astype(np.float64, copy=False)
 
     @classmethod
-    def get_test_params(cls, parameter_set: str = "default"):
+    def _get_test_params(cls, parameter_set: str = "default"):
         """Return testing parameter settings for aeon estimator checks."""
         return [
             {"n_components": 2},

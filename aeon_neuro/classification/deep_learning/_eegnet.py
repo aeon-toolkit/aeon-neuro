@@ -327,7 +327,7 @@ class EEGNetClassifier(BaseClassifier):
         return logits
 
     @classmethod
-    def get_test_params(cls, parameter_set: str = "default"):
+    def _get_test_params(cls, parameter_set: str = "default"):
         """Return testing parameter settings for aeon estimator checks."""
         return {
             "batch_size": 4,
