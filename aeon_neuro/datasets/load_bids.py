@@ -90,6 +90,66 @@ def load_bids_data(path="../",
                    train_ratio = 0.8, 
                    formatts=[".vhdr", ".bdf", ".edf"]
                    ):
+    """
+        Loads EEG recordings from a BIDS-formatted dataset, optionally filters
+        subjects, sessions, tasks, acquisitions, and runs, and selects or excludes
+        specified channels. The recordings are band-pass filtered and segmented
+        into trials. Trials are labeled according to their task or resting-state
+        condition, and the resulting dataset is split into training and test sets.
+
+        Parameters
+        ----------
+        path : str, default="../"
+            Path to the root directory of the BIDS dataset.
+        subjects : list of str or None, default=None
+            Subject identifiers to load, excluding the ``"sub-"`` prefix.
+            If None, all available subjects are considered.
+        sessions : list of str or None, default=None
+            Session identifiers to load, excluding the ``"ses-"`` prefix.
+            If None, all available sessions are considered. If no sessions
+            exist, the subject-level EEG directory is used.
+        tasks : list of str or None, default=None
+            Task identifiers to include. If None, all tasks are considered.
+        acqs : list of str or None, default=None
+            Acquisition identifiers to include. If None, all acquisitions
+            are considered.
+        runs : list of str or None, default=None
+            Run identifiers to include. If None, all runs are considered.
+        include_channels : list of str or None, default=None
+            Channel names to retain. If None, all channels are retained.
+        exclude_channels : list of str or None, default=None
+            Channel names to exclude from the recordings. If None, no channels
+            are excluded.
+        l_freq : float or None, default=0.5
+            Lower cutoff frequency, in Hz, for the band-pass filter.
+            If None, no high-pass filtering is applied.
+        h_freq : float or None, default=100
+            Upper cutoff frequency, in Hz, for the band-pass filter.
+            If None, no low-pass filtering is applied.
+        train_ratio : float, default=0.8
+            Proportion of the dataset to use for training. The remaining
+            samples are used for testing. The split is stratified by class.
+        formatts : list of str, default=[".vhdr", ".bdf", ".edf"]
+            File extensions to consider when searching for EEG recordings.
+            Supported formats are BrainVision (``.vhdr``), BioSemi (``.bdf``),
+            and European Data Format (``.edf``).
+
+        Returns
+        -------
+        X_train : np.ndarray
+            Training EEG data, with shape
+            (n_train_samples, n_channels, n_times).
+        y_train : np.ndarray
+            Labels for the training samples, containing task or resting-state
+            class labels.
+        X_test : np.ndarray
+            Test EEG data, with shape
+            (n_test_samples, n_channels, n_times).
+        y_test : np.ndarray
+            Labels for the test samples, containing task or resting-state
+            class labels.
+        """
+
 
     X = []
     y = []
