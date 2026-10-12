@@ -28,3 +28,11 @@ def test_eeg_net_classifier_multivariate_equal_length():
     assert probs.shape == (10, len(np.unique(y)))
     assert preds.shape == (10,)
     np.testing.assert_allclose(probs.sum(axis=1), 1.0, atol=1e-6)
+
+
+def test_eegnet_lightweight_test_parameters():
+    """Check that aeon receives the intended lightweight test settings."""
+    params = EEGNetClassifier._get_test_params()
+
+    assert params.get("n_epochs") == 1
+    assert params.get("batch_size") == 4
