@@ -25,7 +25,10 @@ class EpochSeriesTransformer(BaseSeriesTransformer):
     ------
     ValueError
         If `epoch_size` or `percent` are not provided.
-        If `epoch_size` is shorter than one sample at `sfreq`.
+        If both `epoch_size` and `percent` are provided.
+        If `epoch_size` is shorter than one sample at `sfreq` (transform time).
+        If an epoch covers fewer than one sample or more than the series
+        length (transform time).
     """
 
     _tags = {
@@ -43,11 +46,6 @@ class EpochSeriesTransformer(BaseSeriesTransformer):
         if epoch_size is not None and percent is not None:
             raise ValueError(
                 "Only one of 'epoch_size' or 'percent' should be provided."
-            )
-        if epoch_size is not None and (epoch_size / 1000) * sfreq < 1:
-            raise ValueError(
-                f"'epoch_size' of {epoch_size} ms is shorter than one sample "
-                f"at 'sfreq' of {sfreq} Hz."
             )
 
     def _transform(self, X, y=None):
@@ -67,12 +65,19 @@ class EpochSeriesTransformer(BaseSeriesTransformer):
         """
         n_channels, n_timepoints = X.shape
 
-        if self.epoch_size:
+        if self.epoch_size is not None:
             n_timepoints_per_epoch = int((self.epoch_size / 1000) * self.sfreq)
-        elif self.percent:
+        elif self.percent is not None:
             n_timepoints_per_epoch = int(n_timepoints * (self.percent / 100))
+        else:  # unreachable: __init__ requires one of the two
+            raise ValueError("Either 'epoch_size' or 'percent' must be provided.")
 
         if n_timepoints_per_epoch < 1:
+            if self.epoch_size is not None:
+                raise ValueError(
+                    f"'epoch_size' of {self.epoch_size} ms is shorter than one "
+                    f"sample at 'sfreq' of {self.sfreq} Hz."
+                )
             raise ValueError(
                 "Each epoch must cover at least one sample: "
                 f"got {n_timepoints_per_epoch} timepoints per epoch."
@@ -113,6 +118,11 @@ def epoch_dataset(X, y, sfreq, epoch_size):
         - Collection of the epoched series,
           of shape (n_epochs_total, n_channels, n_timepoints_per_epoch)
         - Repeated labels corresponding to each epoch, of shape (n_epochs_total, )
+
+    Notes
+    -----
+    Raises if any case is shorter than one epoch; such cases were previously
+    skipped silently.
     """
     transformer = EpochSeriesTransformer(sfreq=sfreq, epoch_size=epoch_size)
     epoched_data = []
