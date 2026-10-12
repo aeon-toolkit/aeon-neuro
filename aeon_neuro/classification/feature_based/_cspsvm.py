@@ -29,8 +29,9 @@ class CSPSVMClassifier(BaseClassifier):
         Number of CSP components.
     reg : float, str or None, default=None
         Regularisation passed to ``mne.decoding.CSP``.
-    log : bool or None, default=None
-        Log transform setting passed to ``mne.decoding.CSP``.
+    log : bool or None, default=True
+        Whether to apply log transform to the average power features. Passed
+        to ``mne.decoding.CSP``.
     cov_est : {"concat", "epoch"}, default="concat"
         Covariance estimation mode for CSP.
     norm_trace : bool, default=False
@@ -41,7 +42,7 @@ class CSPSVMClassifier(BaseClassifier):
         Component ordering strategy for CSP.
     C : float, default=1.0
         SVM regularisation parameter.
-    kernel : {"linear", "poly", "rbf", "sigmoid"}, default="rbf"
+    kernel : {"linear", "poly", "rbf", "sigmoid"}, default="linear"
         SVM kernel.
     degree : int, default=3
         Degree for the polynomial kernel.
@@ -91,13 +92,13 @@ class CSPSVMClassifier(BaseClassifier):
         self,
         n_components: int = 4,
         reg: float | str | None = None,
-        log: bool | None = None,
+        log: bool | None = True,
         cov_est: str = "concat",
         norm_trace: bool = False,
         cov_method_params: dict | None = None,
         component_order: str = "mutual_info",
         C: float = 1.0,
-        kernel: str = "rbf",
+        kernel: str = "linear",
         degree: int = 3,
         gamma: str | float = "scale",
         coef0: float = 0.0,
