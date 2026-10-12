@@ -66,18 +66,30 @@ def test_transform_nyquist():
 
 
 def test_bands_partition_the_spectrum():
-    """Every frequency in [0, 60] belongs to exactly one band (#173)."""
-    import numpy as np
-
+    """Band edges must be contiguous (#173)."""
     bands = list(BandPowerSeriesTransformer.FREQ_BANDS.values())
     assert bands[0][0] == 0 and bands[-1][1] == 60
     for (_, hi), (lo, _) in zip(bands, bands[1:]):
         assert hi == lo, "bands must be contiguous"
-    freqs = np.arange(0, 60.5, 0.5)
-    for f in freqs:
-        owners = [
-            name
-            for name, (lo, hi) in BandPowerSeriesTransformer.FREQ_BANDS.items()
-            if lo <= f < hi or (hi == 60 and f == hi)
-        ]
-        assert len(owners) == 1, f"{f} Hz owned by {owners}"
+
+
+def test_flat_spectrum_band_powers_equal_band_widths():
+    """On a flat spectrum of height 1 the transformer must recover the exact
+    band widths: simpson integrates between the first and last selected
+    sample, so inclusive masks are required (#173)."""
+    from unittest.mock import patch
+
+    freqs = np.arange(0, 60.25, 0.25)
+    powers = np.ones((2, len(freqs), 3))
+    with patch(
+        "aeon_neuro.transformations.series._bandpower.psd_array_welch",
+        return_value=(powers, freqs),
+    ):
+        transformer = BandPowerSeriesTransformer(
+            sfreq=256, window_size=1024, relative=False
+        )
+        out = transformer.fit_transform(np.zeros((2, 3000)))
+    expected = np.tile(
+        np.array([4, 4, 5, 17, 30], dtype=float).reshape(-1, 1), (1, 3)
+    )
+    np.testing.assert_allclose(out, expected, atol=1e-9)
