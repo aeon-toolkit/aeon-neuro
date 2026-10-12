@@ -1,8 +1,9 @@
 """Simple example of loading data from BIDS format."""
-
+import os
+import re
 import mne
 import numpy as np
-
+from sklearn.model_selection import train_test_split
 
 def load_basic_classification_problem(path="../"):
     """Load data and format to classification problem.
@@ -80,4 +81,114 @@ def load_basic_classification_problem(path="../"):
 
     X_train, X_test = np.array(X_train), np.array(X_test)
     y_train, y_test = np.array(y_train), np.array(y_test)
+    return X_train, y_train, X_test, y_test
+
+def load_bids_data(path="../", 
+                   subjects = None, sessions = None, tasks = None, acqs = None, runs = None, 
+                   include_channels = None, exclude_channels = None,
+                   l_freq = 0.5, h_freq = 100,
+                   train_ratio = 0.8, 
+                   formatts=[".vhdr", ".bdf", ".edf"]
+                   ):
+
+    X = []
+    y = []
+
+    # Gets the subjects
+    if subjects is None:
+        subjects = [x[4:] for x in os.listdir(path) if x.startswith("sub")]
+
+    for subject in subjects:
+        subject_path = os.path.join(path, "sub-" + subject)
+
+        if not os.path.isdir(subject_path):
+            continue
+
+        # Find sessions only if none are specified
+        if sessions is None:
+            available_sessions = [x[4:] for x in os.listdir(subject_path) if x.startswith("ses-")]
+        else:
+            available_sessions = sessions
+
+        # Choose EEG directories
+        if available_sessions:
+            eeg_dirs = [os.path.join(subject_path, "ses-" + session, "eeg") for session in available_sessions]
+        elif sessions is None:
+            eeg_dirs = [os.path.join(subject_path, "eeg")]
+        else:
+            continue
+
+        # Find and load recordings
+        for eeg_dir in eeg_dirs:
+            if not os.path.isdir(eeg_dir):
+                continue
+
+            for filename in os.listdir(eeg_dir):
+                if not filename.lower().endswith(tuple(formatts)):
+                    continue
+
+                # Only load files ending with _eeg.
+                if not re.search(r"_eeg\.[^.]+$", filename):
+                    continue
+
+                # Extract and filter task, acq, and run
+                task_match = re.search(r"_task-(.*?)_", filename)
+                acq_match = re.search(r"_acq-(.*?)_", filename)
+                run_match = re.search(r"_run-(.*?)_", filename)
+
+                if tasks is not None:
+                    if not task_match or task_match.group(1) not in tasks:
+                        continue
+
+                if acqs is not None:
+                    if not acq_match or acq_match.group(1) not in acqs:
+                        continue
+
+                if runs is not None:
+                    if not run_match or run_match.group(1) not in runs:
+                        continue
+
+                filepath = os.path.join(eeg_dir, filename)
+                ext = os.path.splitext(filename)[1].lower()
+
+                # Add more extensions if needed
+                if ext == ".vhdr":
+                    raw = mne.io.read_raw_brainvision(filepath)
+                elif ext == ".bdf":
+                    raw = mne.io.read_raw_bdf(filepath)
+                elif ext == ".edf":
+                    raw = mne.io.read_raw_edf(filepath)
+                else:
+                    continue
+
+                raw.load_data()
+
+                # Pick channels if given, exclude channels if given
+                if include_channels is not None:
+                    raw.pick(include_channels)
+                if exclude_channels is not None:
+                    raw.drop_channels(exclude_channels)
+
+                # Filters channels between l_freq and h_freq, defaults to 0.5 and 100 respectivly
+                raw = raw.copy().filter(l_freq, h_freq)
+
+                # Figure out how to get class labels, can never always be task matching
+                if task_match and task_match.group(1) == "task":
+                    for trial in raw.annotations:
+                        trial_data = raw.copy().crop(tmin=trial["onset"] - 0.2, tmax=trial["onset"] + 0.800)
+                        data = trial_data.get_data()
+                        X.append(data[:, :1000])
+                        y.append("task")
+                else:
+                    for timepoint in np.arange(30, 90, 1.5):
+                        trial_data = raw.copy().crop(tmin=timepoint, tmax=timepoint + 1)
+                        data = trial_data.get_data()
+                        X.append(data[:, :1000])
+                        y.append("rest")
+
+    #Split dataset
+    X_train, X_test, y_train, y_test = train_test_split(X, y, train_size = train_ratio, stratify = y)
+    X_train, X_test = np.array(X_train), np.array(X_test)
+    y_train, y_test = np.array(y_train), np.array(y_test)
+
     return X_train, y_train, X_test, y_test
