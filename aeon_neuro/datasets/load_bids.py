@@ -1,9 +1,12 @@
 """Simple example of loading data from BIDS format."""
+
 import os
 import re
+
 import mne
 import numpy as np
 from sklearn.model_selection import train_test_split
+
 
 def load_basic_classification_problem(path="../"):
     """Load data and format to classification problem.
@@ -83,74 +86,81 @@ def load_basic_classification_problem(path="../"):
     y_train, y_test = np.array(y_train), np.array(y_test)
     return X_train, y_train, X_test, y_test
 
-def load_bids_data(path="../", 
-                   subjects = None, sessions = None, tasks = None, acqs = None, runs = None, 
-                   include_channels = None, exclude_channels = None,
-                   l_freq = 0.5, h_freq = 100,
-                   train_ratio = 0.8, 
-                   formatts=[".vhdr", ".bdf", ".edf"]
-                   ):
+
+def load_bids_data(
+    path="../",
+    subjects=None,
+    sessions=None,
+    tasks=None,
+    acqs=None,
+    runs=None,
+    include_channels=None,
+    exclude_channels=None,
+    l_freq=0.5,
+    h_freq=100,
+    train_ratio=0.8,
+    formatts=(".vhdr", ".bdf", ".edf"),
+):
+    """Load BIDS data and format to classification problem.
+
+    Loads EEG recordings from a BIDS-formatted dataset, optionally filters
+    subjects, sessions, tasks, acquisitions, and runs, and selects or excludes
+    specified channels. The recordings are band-pass filtered and segmented
+    into trials. Trials are labeled according to their task or resting-state
+    condition, and the resulting dataset is split into training and test sets.
+
+    Parameters
+    ----------
+    path : str, default="../"
+        Path to the root directory of the BIDS dataset.
+    subjects : list of str or None, default=None
+        Subject identifiers to load, excluding the ``"sub-"`` prefix.
+        If None, all available subjects are considered.
+    sessions : list of str or None, default=None
+        Session identifiers to load, excluding the ``"ses-"`` prefix.
+        If None, all available sessions are considered. If no sessions
+        exist, the subject-level EEG directory is used.
+    tasks : list of str or None, default=None
+        Task identifiers to include. If None, all tasks are considered.
+    acqs : list of str or None, default=None
+        Acquisition identifiers to include. If None, all acquisitions
+        are considered.
+    runs : list of str or None, default=None
+        Run identifiers to include. If None, all runs are considered.
+    include_channels : list of str or None, default=None
+        Channel names to retain. If None, all channels are retained.
+    exclude_channels : list of str or None, default=None
+        Channel names to exclude from the recordings. If None, no channels
+        are excluded.
+    l_freq : float or None, default=0.5
+        Lower cutoff frequency, in Hz, for the band-pass filter.
+        If None, no high-pass filtering is applied.
+    h_freq : float or None, default=100
+        Upper cutoff frequency, in Hz, for the band-pass filter.
+        If None, no low-pass filtering is applied.
+    train_ratio : float, default=0.8
+        Proportion of the dataset to use for training. The remaining
+        samples are used for testing. The split is stratified by class.
+    formatts : list of str, default=[".vhdr", ".bdf", ".edf"]
+        File extensions to consider when searching for EEG recordings.
+        Supported formats are BrainVision (``.vhdr``), BioSemi (``.bdf``),
+        and European Data Format (``.edf``).
+
+    Returns
+    -------
+    X_train : np.ndarray
+        Training EEG data, with shape
+        (n_train_samples, n_channels, n_times).
+    y_train : np.ndarray
+        Labels for the training samples, containing task or resting-state
+        class labels.
+    X_test : np.ndarray
+        Test EEG data, with shape
+        (n_test_samples, n_channels, n_times).
+    y_test : np.ndarray
+        Labels for the test samples, containing task or resting-state
+        class labels.
     """
-        Loads EEG recordings from a BIDS-formatted dataset, optionally filters
-        subjects, sessions, tasks, acquisitions, and runs, and selects or excludes
-        specified channels. The recordings are band-pass filtered and segmented
-        into trials. Trials are labeled according to their task or resting-state
-        condition, and the resulting dataset is split into training and test sets.
-
-        Parameters
-        ----------
-        path : str, default="../"
-            Path to the root directory of the BIDS dataset.
-        subjects : list of str or None, default=None
-            Subject identifiers to load, excluding the ``"sub-"`` prefix.
-            If None, all available subjects are considered.
-        sessions : list of str or None, default=None
-            Session identifiers to load, excluding the ``"ses-"`` prefix.
-            If None, all available sessions are considered. If no sessions
-            exist, the subject-level EEG directory is used.
-        tasks : list of str or None, default=None
-            Task identifiers to include. If None, all tasks are considered.
-        acqs : list of str or None, default=None
-            Acquisition identifiers to include. If None, all acquisitions
-            are considered.
-        runs : list of str or None, default=None
-            Run identifiers to include. If None, all runs are considered.
-        include_channels : list of str or None, default=None
-            Channel names to retain. If None, all channels are retained.
-        exclude_channels : list of str or None, default=None
-            Channel names to exclude from the recordings. If None, no channels
-            are excluded.
-        l_freq : float or None, default=0.5
-            Lower cutoff frequency, in Hz, for the band-pass filter.
-            If None, no high-pass filtering is applied.
-        h_freq : float or None, default=100
-            Upper cutoff frequency, in Hz, for the band-pass filter.
-            If None, no low-pass filtering is applied.
-        train_ratio : float, default=0.8
-            Proportion of the dataset to use for training. The remaining
-            samples are used for testing. The split is stratified by class.
-        formatts : list of str, default=[".vhdr", ".bdf", ".edf"]
-            File extensions to consider when searching for EEG recordings.
-            Supported formats are BrainVision (``.vhdr``), BioSemi (``.bdf``),
-            and European Data Format (``.edf``).
-
-        Returns
-        -------
-        X_train : np.ndarray
-            Training EEG data, with shape
-            (n_train_samples, n_channels, n_times).
-        y_train : np.ndarray
-            Labels for the training samples, containing task or resting-state
-            class labels.
-        X_test : np.ndarray
-            Test EEG data, with shape
-            (n_test_samples, n_channels, n_times).
-        y_test : np.ndarray
-            Labels for the test samples, containing task or resting-state
-            class labels.
-        """
-
-
     X = []
     y = []
 
@@ -166,13 +176,18 @@ def load_bids_data(path="../",
 
         # Find sessions only if none are specified
         if sessions is None:
-            available_sessions = [x[4:] for x in os.listdir(subject_path) if x.startswith("ses-")]
+            available_sessions = [
+                x[4:] for x in os.listdir(subject_path) if x.startswith("ses-")
+            ]
         else:
             available_sessions = sessions
 
         # Choose EEG directories
         if available_sessions:
-            eeg_dirs = [os.path.join(subject_path, "ses-" + session, "eeg") for session in available_sessions]
+            eeg_dirs = [
+                os.path.join(subject_path, "ses-" + session, "eeg")
+                for session in available_sessions
+            ]
         elif sessions is None:
             eeg_dirs = [os.path.join(subject_path, "eeg")]
         else:
@@ -184,7 +199,7 @@ def load_bids_data(path="../",
                 continue
 
             for filename in os.listdir(eeg_dir):
-                if not filename.lower().endswith(tuple(formatts)):
+                if not filename.lower().endswith(formatts):
                     continue
 
                 # Only load files ending with _eeg.
@@ -229,13 +244,15 @@ def load_bids_data(path="../",
                 if exclude_channels is not None:
                     raw.drop_channels(exclude_channels)
 
-                # Filters channels between l_freq and h_freq, defaults to 0.5 and 100 respectivly
+                # Filters channels between l_freq and h_freq
                 raw = raw.copy().filter(l_freq, h_freq)
 
                 # Figure out how to get class labels, can never always be task matching
                 if task_match and task_match.group(1) == "task":
                     for trial in raw.annotations:
-                        trial_data = raw.copy().crop(tmin=trial["onset"] - 0.2, tmax=trial["onset"] + 0.800)
+                        trial_data = raw.copy().crop(
+                            tmin=trial["onset"] - 0.2, tmax=trial["onset"] + 0.800
+                        )
                         data = trial_data.get_data()
                         X.append(data[:, :1000])
                         y.append("task")
@@ -246,8 +263,10 @@ def load_bids_data(path="../",
                         X.append(data[:, :1000])
                         y.append("rest")
 
-    #Split dataset
-    X_train, X_test, y_train, y_test = train_test_split(X, y, train_size = train_ratio, stratify = y)
+    # Split dataset
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, train_size=train_ratio, stratify=y
+    )
     X_train, X_test = np.array(X_train), np.array(X_test)
     y_train, y_test = np.array(y_train), np.array(y_test)
 
