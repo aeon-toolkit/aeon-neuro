@@ -74,9 +74,11 @@ def test_bands_partition_the_spectrum():
 
 
 def test_flat_spectrum_band_powers_equal_band_widths():
-    """On a flat spectrum of height 1 the transformer must recover the exact
-    band widths: simpson integrates between the first and last selected
-    sample, so inclusive masks are required (#173)."""
+    """Flat spectrum recovers exact band widths.
+
+    Simpson integrates between the first and last selected sample, so
+    inclusive masks are required (#173).
+    """
     from unittest.mock import patch
 
     freqs = np.arange(0, 60.25, 0.25)
@@ -89,7 +91,5 @@ def test_flat_spectrum_band_powers_equal_band_widths():
             sfreq=256, window_size=1024, relative=False
         )
         out = transformer.fit_transform(np.zeros((2, 3000)))
-    expected = np.tile(
-        np.array([4, 4, 5, 17, 30], dtype=float).reshape(-1, 1), (1, 3)
-    )
+    expected = np.tile(np.array([4, 4, 5, 17, 30], dtype=float).reshape(-1, 1), (1, 3))
     np.testing.assert_allclose(out, expected, atol=1e-9)
