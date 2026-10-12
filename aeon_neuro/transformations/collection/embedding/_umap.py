@@ -192,7 +192,7 @@ class UMAP(BaseCollectionTransformer):
             raise ValueError("min_dist must be in the interval [0, 1].")
 
     @classmethod
-    def get_test_params(cls, parameter_set="default"):
+    def _get_test_params(cls, parameter_set="default"):
         """Return testing parameter settings for the estimator.
 
         Parameters
