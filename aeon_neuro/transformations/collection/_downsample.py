@@ -47,7 +47,10 @@ class DownsampleCollectionTransformer(BaseCollectionTransformer):
         If `downsample_by` is not "frequency" or "proportion".
         If `source_sfreq` < `target_sfreq` when `downsample_by = "frequency"`.
         If `proportion` is not between 0-1 when `downsample_by = "proportion"`.
-        If the ratio is not achievable by decimation (non-integral step).
+        If `source_sfreq` or `target_sfreq` are not strictly positive
+        (transform time).
+        If the ratio is not achievable by decimation (non-integral step,
+        transform time).
     """
 
     _tags = {
@@ -73,12 +76,10 @@ class DownsampleCollectionTransformer(BaseCollectionTransformer):
                 raise ValueError("source_sfreq and target_sfreq must be provided")
             if source_sfreq < target_sfreq:
                 raise ValueError("source_sfreq must be > target_sfreq")
-            _decimation_step(source_sfreq / target_sfreq, "frequency ratio")
 
         if downsample_by == "proportion":
             if proportion is None or not (0 < proportion < 1):
                 raise ValueError("proportion must be provided and between 0-1.")
-            _decimation_step(1 / (1 - proportion), "proportion")
 
         super().__init__()
         self.downsample_by = downsample_by
@@ -103,6 +104,10 @@ class DownsampleCollectionTransformer(BaseCollectionTransformer):
             Downsampled time series collection.
         """
         if self.downsample_by == "frequency":
+            if self.source_sfreq <= 0 or self.target_sfreq <= 0:
+                raise ValueError(
+                    "source_sfreq and target_sfreq must be strictly positive."
+                )
             step = _decimation_step(
                 self.source_sfreq / self.target_sfreq, "frequency ratio"
             )

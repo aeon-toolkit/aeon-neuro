@@ -95,23 +95,31 @@ def test_value_errors():
         DownsampleCollectionTransformer(downsample_by="proportion", proportion=0)
 
 
-def test_unachievable_ratios_raise_at_construction():
-    """Non-integral decimation ratios must fail loudly (#171)."""
-    import pytest
-
+def test_unachievable_ratios_raise():
+    """Non-integral decimation ratios must fail loudly at transform time (#171)."""
     with pytest.raises(ValueError, match="not achievable"):
-        DownsampleCollectionTransformer(downsample_by="proportion", proportion=0.1)
+        DownsampleCollectionTransformer(
+            downsample_by="proportion", proportion=0.1
+        ).fit_transform(X)
     with pytest.raises(ValueError, match="not achievable"):
-        DownsampleCollectionTransformer(downsample_by="proportion", proportion=0.6)
+        DownsampleCollectionTransformer(
+            downsample_by="proportion", proportion=0.6
+        ).fit_transform(X)
     with pytest.raises(ValueError, match="not achievable"):
         DownsampleCollectionTransformer(
             downsample_by="frequency", source_sfreq=250, target_sfreq=100
-        )
+        ).fit_transform(X)
+    with pytest.raises(ValueError, match="strictly positive"):
+        DownsampleCollectionTransformer(
+            downsample_by="frequency", source_sfreq=0, target_sfreq=0
+        ).fit_transform(X)
 
 
 def test_achievable_ratios_still_construct():
-    """Integral ratios keep constructing without error (#171)."""
-    DownsampleCollectionTransformer(downsample_by="proportion", proportion=0.5)
+    """Integral ratios keep working without error (#171)."""
+    DownsampleCollectionTransformer(
+        downsample_by="proportion", proportion=0.5
+    ).fit_transform(X)
     DownsampleCollectionTransformer(
         downsample_by="frequency", source_sfreq=250, target_sfreq=125
-    )
+    ).fit_transform(X)
