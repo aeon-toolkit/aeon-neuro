@@ -63,3 +63,33 @@ def test_transform_nyquist():
     with pytest.raises(ValueError, match="stride must be between 1 and .*"):
         bp = BandPowerSeriesTransformer(window_size=100, stride=0)
         bp.fit_transform(X)
+
+
+def test_bands_partition_the_spectrum():
+    """Band edges must be contiguous (#173)."""
+    bands = list(BandPowerSeriesTransformer.FREQ_BANDS.values())
+    assert bands[0][0] == 0 and bands[-1][1] == 60
+    for (_, hi), (lo, _) in zip(bands, bands[1:]):
+        assert hi == lo, "bands must be contiguous"
+
+
+def test_flat_spectrum_band_powers_equal_band_widths():
+    """Flat spectrum recovers exact band widths.
+
+    Simpson integrates between the first and last selected sample, so
+    inclusive masks are required (#173).
+    """
+    from unittest.mock import patch
+
+    freqs = np.arange(0, 60.25, 0.25)
+    powers = np.ones((2, len(freqs), 3))
+    with patch(
+        "aeon_neuro.transformations.series._bandpower.psd_array_welch",
+        return_value=(powers, freqs),
+    ):
+        transformer = BandPowerSeriesTransformer(
+            sfreq=256, window_size=1024, relative=False
+        )
+        out = transformer.fit_transform(np.zeros((2, 3000)))
+    expected = np.tile(np.array([4, 4, 5, 17, 30], dtype=float).reshape(-1, 1), (1, 3))
+    np.testing.assert_allclose(out, expected, atol=1e-9)
