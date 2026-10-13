@@ -117,6 +117,33 @@ pip install aeon-neuro[all_extras]
 To install the latest development version from GitHub, see the
 installation guide.
 
+## Convert EEG recordings to BIDS
+
+Use `convert_eeg_to_bids` with a native BrainVision header or an existing MNE Raw
+recording. Supply the output identifiers through MNE-BIDS:
+
+```python
+from mne_bids import BIDSPath
+
+from aeon_neuro.utils.bids import convert_eeg_to_bids
+
+destination = BIDSPath(root="bids-output", subject="01", task="example", datatype="eeg")
+written = convert_eeg_to_bids("recording.vhdr", destination)
+```
+
+The converter assumes supplied metadata is correct and leaves MNE-BIDS checks
+and warnings in place. It applies no filtering, channel selection or epoching,
+and does not overwrite existing recordings by default. Filename input currently
+supports classic BrainVision only; native-path reading does not import existing
+BIDS sidecars. Other formats can be read into MNE Raw before conversion.
+
+For a preloaded recording, including `RawArray`, pass `allow_preload=True` and an
+explicit output encoding, for example
+`convert_eeg_to_bids(raw, destination, allow_preload=True, format="BrainVision")`.
+BrainVision export requires the optional `pybv` package, installed with
+`pip install pybv`; copying an unchanged BrainVision recording does not. Ensure
+the supplied samples are appropriate for raw BIDS before opting into export.
+
 ## Documentation
 
 - Project documentation: https://aeon-neuro.readthedocs.io
