@@ -13,6 +13,8 @@ wrappers:
 2. pyriemann
 Riemannian-MDM (RMD)
 3. MNE+scikit-learn
+    CSP+SVM
+    CSP+LDA
 
 
 """
@@ -25,10 +27,13 @@ __all__ = [
     "EEGNetClassifier",
     "RiemannianMDMClassifier",
     "RiemannianKNNClassifier",
+    "TimeCNNClassifier",
+    "CSPSVMClassifier",
+    "CSPLDAClassifier",
 ]
 
 from aeon.classification.convolution_based import MultiRocketHydraClassifier
-from aeon.classification.deep_learning import InceptionTimeClassifier
+from aeon.classification.deep_learning import InceptionTimeClassifier, TimeCNNClassifier
 from aeon.classification.hybrid import HIVECOTEV2
 
 from aeon_neuro.classification.deep_learning import (
@@ -38,4 +43,8 @@ from aeon_neuro.classification.deep_learning import (
 from aeon_neuro.classification.distance_based import (
     RiemannianKNNClassifier,
     RiemannianMDMClassifier,
+)
+from aeon_neuro.classification.feature_based import (
+    CSPLDAClassifier,
+    CSPSVMClassifier,
 )
