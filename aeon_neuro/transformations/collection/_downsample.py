@@ -1,13 +1,22 @@
 """Downsample series by frequency."""
 
+from fractions import Fraction
+
 import numpy as np
 from aeon.transformations.collection.base import BaseCollectionTransformer
+from scipy.signal import resample_poly
 
 __all__ = ["DownsampleCollectionTransformer"]
 
 
 class DownsampleCollectionTransformer(BaseCollectionTransformer):
     """Downsample the time dimension of a collection of time series.
+
+    If the downsampling ratio is an integer (for example 250 Hz -> 125 Hz, or
+    ``proportion=0.5``), every n-th timepoint is kept, as before. Otherwise the series
+    are resampled with :func:`scipy.signal.resample_poly`, which applies an
+    anti-aliasing filter, so the output has the requested rate
+    (for example 250 Hz -> 100 Hz, or ``proportion=0.1`` keeps 90% of timepoints).
 
     Parameters
     ----------
@@ -82,18 +91,26 @@ class DownsampleCollectionTransformer(BaseCollectionTransformer):
         or np.ndarray of shape (n_cases, n_channels, n_timepoints_downsampled)
             Downsampled time series collection.
         """
-        if self.downsample_by == "frequency":
-            step = int(self.source_sfreq / self.target_sfreq)
-        elif self.downsample_by == "proportion":
-            step = int(1 / (1 - self.proportion))
+        up, down = self._resample_ratio()
 
         X_downsampled = []
         for x in X:
-            n_timepoints = x.shape[-1]
-            indices = np.arange(0, n_timepoints, step)
-            X_downsampled.append(x[:, indices])
+            if up == 1:
+                # integer ratio, keep every `down`-th timepoint
+                X_downsampled.append(x[:, ::down])
+            else:
+                X_downsampled.append(resample_poly(x, up, down, axis=-1))
 
         if isinstance(X, np.ndarray):
             return np.asarray(X_downsampled)
         else:
             return X_downsampled
+
+    def _resample_ratio(self):
+        """Return the (up, down) integer factors of the target/source rate ratio."""
+        if self.downsample_by == "frequency":
+            ratio = Fraction(str(self.target_sfreq)) / Fraction(str(self.source_sfreq))
+        else:
+            ratio = 1 - Fraction(str(self.proportion))
+        ratio = ratio.limit_denominator(10_000)
+        return ratio.numerator, ratio.denominator
