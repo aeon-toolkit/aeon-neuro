@@ -22,16 +22,19 @@ def load_eeg_classification(
     """Load an EEG classification dataset.
 
     This function loads EEG TSC problems into memory, attempting to load from the
-    specified local path `extract_path`` or trying to download from
-    https://zenodo.org// if the data is not in the local path. To download from
-    zenodo, the dataset must be in the list ``dataset_map`` in data._data_loaders.py.
+    specified local path ``extract_path`` or trying to download from
+    https://zenodo.org/ if the data is not in the local path. To download from
+    Zenodo, the dataset must have a record ID in ``dataset_map`` in
+    ``aeon_neuro.datasets.classification_datasets``. Datasets with the placeholder
+    ID 49 are not yet available on Zenodo and can only be loaded from a local path.
     This function assumes the data is stored in format
     ``<extract_path>/<name>/<name>_TRAIN.ts`` and
-    ``<extract_path>/<name>/<name>_TEST.ts.`` If you want to load a file directly
+    ``<extract_path>/<name>/<name>_TEST.ts``. If you want to load a file directly
     from a full path that is in ``aeon`` ts format, use the function
-    `load_from_ts_file`` in ``aeon`` directly. If
-    you do not specify ``extract_path``, it will set the path to
-    ``aeon_neuro/datasets/local_data``.
+    ``load_from_ts_file`` in ``aeon`` directly. If you do not specify
+    ``extract_path``, it looks in ``aeon_neuro/datasets/data`` (datasets shipped
+    with the package) and then ``aeon_neuro/datasets/local_data``, where
+    downloaded datasets are saved.
 
     Data is assumed to be in the standard ``aeon`` .ts format: each row is a (possibly
     multivariate) time series. Each channel is separated by a colon, each value in
@@ -40,19 +43,19 @@ def load_eeg_classification(
     Parameters
     ----------
     name : str
-        Name of data set. If a dataset that is listed in tsc_datasets is given,
+        Name of data set. If a dataset that is listed in ``dataset_map`` is given,
         this function will look in the extract_path first, and if it is not present,
-        attempt to download the data from www.timeseriesclassification.com, saving it to
-        the extract_path.
+        attempt to download the data from Zenodo, saving it to the extract_path.
     split : None or str{"train", "test"}, default=None
         Whether to load the train or test partition of the problem. By default it
         loads both into a single dataset, otherwise it looks only for files of the
         format <name>_TRAIN.ts or <name>_TEST.ts.
     extract_path : str, default=None
         the path to look for the data. If no path is provided, the function
-        looks in `aeon/datasets/local_data/`. If a path is given, it can be absolute,
+        looks in ``aeon_neuro/datasets/data/`` and then
+        ``aeon_neuro/datasets/local_data/``. If a path is given, it can be absolute,
         e.g. C:/Temp/ or relative, e.g. Temp/ or ./Temp/.
-    return_metadata : boolean, default = True
+    return_metadata : boolean, default = False
         If True, returns a tuple (X, y, metadata)
 
     Returns
@@ -70,13 +73,14 @@ def load_eeg_classification(
     URLError or HTTPError
         If the website is not accessible.
     ValueError
-        If a dataset name that does not exist on the repo is given or if a
-        webpage is requested that does not exist.
+        If a dataset name that does not exist on the repo is given, if the
+        dataset is not yet available on Zenodo, or if a webpage is requested that
+        does not exist.
 
     Examples
     --------
-    >>> from aeon.datasets import load_classification
-    >>> X, y = load_classification(name="ArrowHead")  # doctest: +SKIP
+    >>> from aeon_neuro.datasets import load_eeg_classification
+    >>> X, y = load_eeg_classification("SelfRegulationSCP1")  # doctest: +SKIP
     """
     if extract_path is not None:
         local_module = extract_path
@@ -99,9 +103,9 @@ def load_eeg_classification(
         if not os.path.exists(path):
             os.makedirs(path)
         error_str = (
-            f"File name {name} is not in the list of valid files to download,"
-            f"see aeon_neuro.datasets.classification for the current list of "
-            f"maintained datasets."
+            f"File name {name} is not in the list of valid files to download, "
+            f"see aeon_neuro.datasets.classification_datasets for the current list "
+            f"of maintained datasets."
         )
 
         if name not in get_downloaded_tsc_tsr_datasets(path):
@@ -109,7 +113,11 @@ def load_eeg_classification(
             if name in dataset_map.keys():
                 id = dataset_map[name]
                 if id == 49:
-                    raise ValueError(error_str)
+                    raise ValueError(
+                        f"Dataset {name} is not yet available to download from "
+                        f"Zenodo. Place {name}_TRAIN.ts and {name}_TEST.ts in "
+                        f"{os.path.join(path, name)} to load it locally."
+                    )
                 url_train = f"https://zenodo.org/record/{id}/files/{name}_TRAIN.ts"
                 url_test = f"https://zenodo.org/record/{id}/files/{name}_TEST.ts"
                 full_path = os.path.join(path, name)
