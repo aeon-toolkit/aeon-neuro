@@ -48,12 +48,12 @@ def _prepare_events(raw, events, event_id):
             raise ValueError(
                 f"event_id is missing descriptions for codes: {sorted(missing)}"
             )
-        if events.size and raw.first_samp != 0:
+        if events.size and raw.first_samp != 0 and raw.annotations.orig_time is None:
             # MNE-BIDS can shift explicit events by first_time again on export.
             # Reject the ambiguous time base instead of producing shifted markers.
             raise ValueError(
-                "Explicit events with nonzero first_samp are not supported; "
-                "use the complete zero-based recording."
+                "Explicit events with nonzero first_samp require a known time origin; "
+                "use the complete zero-based recording when timing is unknown."
             )
     if event_id is not None:
         # MNE-BIDS supplies its own code for this reserved acquisition annotation.
@@ -92,8 +92,8 @@ def convert_eeg_to_bids(
         acquisition's trigger settings; no codes or classes are inferred here.
         Samples use MNE's absolute sample indices, including ``raw.first_samp``.
         Bounds, integer values and mapping coverage are checked before writing.
-        Recordings with nonzero ``first_samp`` are rejected for explicit events
-        because MNE-BIDS may shift their exported timing.
+        Recordings with nonzero ``first_samp`` and unknown annotation time origin
+        are rejected because MNE-BIDS may shift their exported timing.
     event_id : dict or None, default=None
         Description-to-code mapping. Required when supplying ``events``; include
         descriptions for existing annotations too, following MNE-BIDS rules.

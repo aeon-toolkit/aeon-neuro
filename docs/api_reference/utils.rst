@@ -47,5 +47,7 @@ up to half a sample. Status-channel samples remain unchanged.
 Explicit event arrays/files are checked for integer sample bounds and mapping
 coverage before calling the writer, preventing omitted events and partial
 metadata for these invalid inputs. Other write failures retain MNE-BIDS behaviour.
-Explicit events with nonzero ``first_samp`` are rejected because the underlying
-writer can shift their timing; use a complete zero-based recording.
+Explicit events with nonzero ``first_samp`` and unknown annotation time origin
+are rejected because the underlying writer can shift their timing. Dated offsets
+retain MNE's sample convention; use a complete zero-based recording when timing
+is unknown rather than assigning an arbitrary measurement date.

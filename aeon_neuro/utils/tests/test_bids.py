@@ -1,5 +1,6 @@
 """Test native EEG and MNE Raw conversion through actual BIDS read-back."""
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 import mne
@@ -87,11 +88,17 @@ def test_convert_invalid_events_before_writing(tmp_path, sample, event_id, messa
     assert len(raw.annotations) == 0
 
 
-def test_convert_raw_array_roundtrip(tmp_path):
+@pytest.mark.parametrize("first_samp", [0, 100])
+def test_convert_raw_array_roundtrip(tmp_path, first_samp):
     """Export in-memory samples and acquisition metadata when explicitly enabled."""
     pytest.importorskip("pybv")
     data = np.array([[1e-6, 2e-6, 3e-6], [4e-6, 5e-6, 6e-6]])
-    raw = mne.io.RawArray(data, mne.create_info(["Fp1", "EOG"], 100, ["eeg", "eog"]))
+    raw = mne.io.RawArray(
+        data,
+        mne.create_info(["Fp1", "EOG"], 100, ["eeg", "eog"]),
+        first_samp=first_samp,
+    )
+    raw.set_meas_date(datetime(2020, 1, 1, tzinfo=timezone.utc))
     raw.info["line_freq"] = 50
     raw.set_annotations(mne.Annotations([0.02], [0.01], ["annotation"]))
     destination = BIDSPath(root=tmp_path, subject="01", task="test", datatype="eeg")
@@ -99,7 +106,7 @@ def test_convert_raw_array_roundtrip(tmp_path):
     written = convert_eeg_to_bids(
         raw,
         destination,
-        events=np.array([[1, 0, 7]]),
+        events=np.array([[first_samp + 1, 0, 7]]),
         event_id={"stimulus": 7, "annotation": 9},
         allow_preload=True,
         format="BrainVision",
