@@ -117,6 +117,47 @@ pip install aeon-neuro[all_extras]
 To install the latest development version from GitHub, see the
 installation guide.
 
+## Convert native EEG to BIDS
+
+Use a BrainVision `.vhdr`, EDF/EDF+ `.edf`, BioSemi BDF/BDF+ `.bdf` or continuous
+EEGLAB `.set` recording, keeping its companion files available:
+
+```python
+from mne_bids import BIDSPath
+
+from aeon_neuro.utils.bids import convert_eeg_to_bids
+
+destination = BIDSPath(root="bids-output", subject="01", task="example", datatype="eeg")
+written = convert_eeg_to_bids("recording.edf", destination)
+```
+
+The converter uses MNE readers and MNE-BIDS, retaining all channels and native
+annotations without analysis preprocessing. MNE-BIDS aligns event-table onsets
+to samples, so fractional event latencies may round by up to half a sample.
+Supported source encodings are copied
+where possible, and existing output is protected unless `overwrite=True`.
+Identifiers and acquisition metadata must be supplied and checked by the caller.
+Native-file reading does not import BIDS sidecars; use `mne_bids.read_raw_bids`
+for an existing BIDS dataset. Successful writing is separate from structural
+BIDS validation and scientific metadata checks.
+
+Use `load_eeg_to_mne` from `aeon_neuro.utils.data_io` for format-specific
+reader options, then pass the returned Raw to the converter. Status-channel
+samples stay in the recording; native reading does not automatically extract
+them into a BIDS event table.
+
+Preloaded recordings, including some embedded EEGLAB files, require
+`allow_preload=True` and an explicit output encoding, for example
+`convert_eeg_to_bids(raw, destination, allow_preload=True, format="BrainVision")`.
+Re-encoding to BrainVision requires optional `pybv` (`pip install pybv`) and has
+float32 precision; unchanged native copying needs no exporter. MNE-BIDS retains
+its metadata and export checks, including electrode-coordinate requirements.
+
+Mixed-rate EDF/BDF channels are represented at one sampling rate by MNE.
+Discontinuous recordings and arbitrary acquisition variants need separate
+validation. Epoched EEGLAB files, ambiguous `.cnt` files and XDF stream/clock
+interpretation are outside this filename interface.
+
 ## Documentation
 
 - Project documentation: https://aeon-neuro.readthedocs.io
