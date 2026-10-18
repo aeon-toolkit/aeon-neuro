@@ -28,6 +28,17 @@ class CBraModClassifier(BaseClassifier):
     zero-padded at the end to the next multiple of 200. The pretrained weights
     expect data sampled at 200 Hz; resampling is left to the user.
 
+    CBraMod has no per-electrode embeddings (it uses convolutional positional
+    encoding), so channel names are not needed and any number of channels is
+    accepted. It was pretrained on 19 channels of the 10-20 system.
+
+    The authors' data was band-pass filtered at 0.3-75 Hz, notch filtered at
+    60 Hz, and scaled to units of 0.1 mV (microvolts divided by 100), following
+    their preprocessing (``preprocessing/preprocessing_tueg_for_pretraining.py``
+    and ``pretrain_trainer.py`` in the official CBraMod repository). Data loaded
+    with MNE is in volts, so multiply it by ``1e4``. No filtering or scaling is
+    applied here.
+
     Parameters
     ----------
     estimator : sklearn classifier or None, default=None
