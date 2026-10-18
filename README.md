@@ -133,31 +133,6 @@ installation guide.
 | 💬 General discussion | GitHub Discussions and Slack |
 | 🏭 Contribution and development | Slack |
 
-## Acquisition events in BIDS
-
-Pass acquisition events and their code descriptions to `convert_eeg_to_bids`.
-For example, a recording with BioSemi Status triggers can be read into MNE first:
-
-```python
-import mne
-from mne_bids import BIDSPath
-
-from aeon_neuro.utils.bids import convert_eeg_to_bids
-
-raw = mne.io.read_raw_bdf("recording.bdf", preload=False)
-# Choose trigger settings and descriptions from the acquisition protocol.
-events = mne.find_events(raw, stim_channel="Status", shortest_event=1)
-event_id = {"stimulus": 1, "response": 2}
-destination = BIDSPath(root="bids-output", subject="01", task="example", datatype="eeg")
-written = convert_eeg_to_bids(raw, destination, events=events, event_id=event_id)
-```
-
-The event names/settings above are illustrative. Include every supplied event
-code and native annotation description in `event_id`; explicit events are added
-to annotations by MNE-BIDS. No trigger extraction policy or classification
-labels are inferred. MNE-BIDS rounds fractional event-table onsets to samples.
-The converter keeps Status-channel samples and the original Raw unchanged.
-
 ## Contributing
 
 We welcome contributions across code, datasets, benchmarking, documentation, and testing.
