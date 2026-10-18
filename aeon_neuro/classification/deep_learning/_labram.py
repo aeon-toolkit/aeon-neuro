@@ -34,6 +34,13 @@ class LabramClassifier(BaseClassifier):
     most 16 patches (16 s at 200 Hz) are supported, and pretraining used at most
     256 patches in total (``n_channels * n_patches``).
 
+    The authors' data was band-pass filtered at 0.1-75 Hz, notch filtered at
+    50 Hz, and scaled to units of 0.1 mV (microvolts divided by 100), following
+    their preprocessing
+    (``dataset_maker/make_TUAB.py`` and ``engine_for_finetuning.py`` in the
+    official LaBraM repository). Data loaded with MNE is in volts, so multiply it
+    by ``1e4``. No filtering or scaling is applied here.
+
     LaBraM learns one embedding per electrode, so the channel names must be given
     and must be standard 10-20 system names in LaBraM's 128-electrode list (e.g.
     ``"FP1"``, ``"CZ"``, ``"O2"``; case-insensitive).
