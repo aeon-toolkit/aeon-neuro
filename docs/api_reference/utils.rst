@@ -21,7 +21,10 @@ EEG ingestion
 ``load_eeg_to_mne`` selects the native MNE reader for ``.vhdr``, ``.edf``,
 ``.bdf`` or continuous ``.set`` files. It preserves the reader's complete Raw
 representation and accepts format-specific reader options. MNE may upsample
-mixed-rate EDF/BDF channels; discontinuities are not independently validated.
+mixed-rate EDF/BDF channels. The reader rejects incomplete native records and
+discontinuous EDF+D/BDF+D before decoding, while accepting unknown record counts
+when all records are complete. Calibration and arbitrary corruption remain
+outside these layout checks.
 Some embedded EEGLAB recordings require explicit preloaded export when writing
 BIDS. For existing BIDS datasets, use ``mne_bids.read_raw_bids`` to include their
 sidecars.
