@@ -57,6 +57,36 @@ def test_convert_unsupported_filename(tmp_path):
         convert_eeg_to_bids(tmp_path / "recording.edf", BIDSPath(root=tmp_path))
 
 
+@pytest.mark.parametrize(
+    "sample,event_id,message",
+    [
+        (9, {"stimulus": 7}, "samples"),
+        (210, {"stimulus": 7}, "samples"),
+        (11, {"other": 9}, "missing descriptions"),
+        (11, {"stimulus": 7}, "nonzero first_samp"),
+    ],
+)
+def test_convert_invalid_events_before_writing(tmp_path, sample, event_id, message):
+    """Reject lost events or incomplete mappings before creating dataset metadata."""
+    raw = mne.io.RawArray(
+        np.zeros((1, 200)), mne.create_info(["Cz"], 100, "eeg"), first_samp=10
+    )
+    destination = BIDSPath(root=tmp_path / "bids", subject="01", task="test")
+
+    with pytest.raises(ValueError, match=message):
+        convert_eeg_to_bids(
+            raw,
+            destination,
+            events=np.array([[sample, 0, 7]]),
+            event_id=event_id,
+            allow_preload=True,
+            format="BrainVision",
+        )
+
+    assert not destination.root.exists()
+    assert len(raw.annotations) == 0
+
+
 def test_convert_raw_array_roundtrip(tmp_path):
     """Export in-memory samples and acquisition metadata when explicitly enabled."""
     pytest.importorskip("pybv")
