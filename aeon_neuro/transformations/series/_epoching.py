@@ -29,6 +29,16 @@ class EpochSeriesTransformer(BaseSeriesTransformer):
         If `epoch_size` is shorter than one sample at `sfreq` (transform time).
         If an epoch covers fewer than one sample or more than the series
         length (transform time).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from aeon_neuro.transformations.series import EpochSeriesTransformer
+    >>> X = np.zeros((1, 1000))
+    >>> t = EpochSeriesTransformer(sfreq=100, epoch_size=100)
+    >>> Xt = t.fit_transform(X)
+    >>> Xt.shape
+    (100, 1, 10)
     """
 
     _tags = {
