@@ -32,3 +32,14 @@ Auxiliary information
 be read or decoded. The directory prefix must include its trailing separator.
 
 .. autofunction:: aeon_neuro.utils.data_io.load_auxiliary_info
+
+Acquisition events
+------------------
+
+``convert_eeg_to_bids`` forwards explicit ``events`` and ``event_id`` to MNE-BIDS
+alongside native annotations. This allows acquisition triggers, such as events
+extracted from a BDF Status channel in an MNE Raw, to reach the BIDS event table.
+Supply acquisition-appropriate extraction settings and descriptions for every
+code and annotation; no scientific class mapping is inferred. MNE-BIDS aligns
+event-table onsets to samples, so fractional annotation latencies may round by
+up to half a sample. Status-channel samples remain unchanged.
