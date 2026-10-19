@@ -4,6 +4,7 @@ import pytest
 
 from aeon_neuro.classification.deep_learning import (
     DeepConvNetClassifier,
+    EEGConformerClassifier,
     EEGNetClassifier,
 )
 from aeon_neuro.classification.distance_based._riemannian_knn import (
@@ -25,6 +26,7 @@ from aeon_neuro.transformations.collection.embedding._umap import UMAP
     [
         (EEGNetClassifier, "n_epochs"),
         (DeepConvNetClassifier, "n_epochs"),
+        (EEGConformerClassifier, "n_epochs"),
         (_BaseRiemannianCovarianceClassifier, "covariance_estimator"),
         (RiemannianMDMClassifier, "metric"),
         (RiemannianKNNClassifier, "n_neighbors"),
