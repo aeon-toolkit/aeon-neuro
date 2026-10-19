@@ -5,7 +5,9 @@ from __future__ import annotations
 __all__ = ["CSPClassifier"]
 
 import numpy as np
+from aeon.base._base import _clone_estimator
 from aeon.classification import BaseClassifier
+from sklearn.base import BaseEstimator, is_classifier
 
 from aeon_neuro.transformations.collection.channel_creation import (
     CommonSpatialPatterns,
@@ -13,23 +15,24 @@ from aeon_neuro.transformations.collection.channel_creation import (
 
 
 class CSPClassifier(BaseClassifier):
-    """Common Spatial Patterns plus SVM or LDA classifier.
+    """Common Spatial Patterns plus a scikit-learn classifier.
 
     This estimator applies the ``CommonSpatialPatterns`` transformer, which wraps
     ``mne.decoding.CSP``, to multivariate equal-length time series, then
-    classifies the resulting average power features with either a scikit-learn
-    support vector classifier (``SVC``) or ``LinearDiscriminantAnalysis``.
+    classifies the resulting average power features with a scikit-learn
+    classifier, by default ``LinearDiscriminantAnalysis`` (the classic CSP+LDA
+    pipeline).
 
     The input shape is aeon's standard collection format:
     (n_cases, n_channels, n_timepoints).
 
     Parameters
     ----------
-    classifier : {"svm", "lda"}, default="svm"
-        Classifier fitted on the CSP features. "svm" uses
-        ``sklearn.svm.SVC`` with ``kernel="linear"`` and ``probability=True``
-        unless overridden in ``classifier_params``. "lda" uses
-        ``sklearn.discriminant_analysis.LinearDiscriminantAnalysis``.
+    classifier : sklearn classifier or None, default=None
+        Unfitted scikit-learn classifier fitted on the CSP features, for example
+        ``SVC(kernel="linear", probability=True)``. It is cloned before fitting,
+        so the object passed in is not modified. If None,
+        ``sklearn.discriminant_analysis.LinearDiscriminantAnalysis()`` is used.
     n_components : int, default=4
         Number of CSP components.
     reg : float, str or None, default=None
@@ -45,20 +48,17 @@ class CSPClassifier(BaseClassifier):
         Extra covariance estimation keyword arguments for CSP.
     component_order : str, default="mutual_info"
         Component ordering strategy for CSP.
-    classifier_params : dict or None, default=None
-        Keyword arguments passed to the scikit-learn classifier, e.g.
-        ``{"C": 0.5, "kernel": "rbf"}`` for "svm" or
-        ``{"solver": "lsqr", "shrinkage": "auto"}`` for "lda".
     random_state : int or None, default=None
-        Random seed for the SVM probability model. Ignored for "lda", which is
-        deterministic.
+        Seed used to set the cloned classifier's ``random_state`` parameters, if it
+        has any. If None, the classifier's own setting is kept. Has no effect
+        on deterministic classifiers such as ``LinearDiscriminantAnalysis``.
 
     Attributes
     ----------
     csp_ : CommonSpatialPatterns
         The fitted CSP transformer.
-    classifier_ : sklearn.svm.SVC or LinearDiscriminantAnalysis
-        The fitted scikit-learn classifier.
+    classifier_ : sklearn classifier
+        The fitted clone of ``classifier``.
 
     References
     ----------
@@ -86,9 +86,11 @@ class CSPClassifier(BaseClassifier):
     Examples
     --------
     >>> from aeon.testing.data_generation import make_example_3d_numpy
+    >>> from sklearn.svm import SVC
     >>> from aeon_neuro.classification.feature_based import CSPClassifier
     >>> X, y = make_example_3d_numpy(n_cases=12, n_channels=4, random_state=0)
-    >>> clf = CSPClassifier(classifier="lda", n_components=2)
+    >>> clf = CSPClassifier(n_components=2)  # LinearDiscriminantAnalysis
+    >>> clf = CSPClassifier(SVC(kernel="linear", probability=True), n_components=2)
     >>> clf.fit(X, y)  # doctest: +SKIP
     >>> clf.predict(X)  # doctest: +SKIP
     """
@@ -103,7 +105,7 @@ class CSPClassifier(BaseClassifier):
 
     def __init__(
         self,
-        classifier: str = "svm",
+        classifier=None,
         n_components: int = 4,
         reg: float | str | None = None,
         log: bool | None = True,
@@ -111,7 +113,6 @@ class CSPClassifier(BaseClassifier):
         norm_trace: bool = False,
         cov_method_params: dict | None = None,
         component_order: str = "mutual_info",
-        classifier_params: dict | None = None,
         random_state: int | None = None,
     ):
         self.classifier = classifier
@@ -122,7 +123,6 @@ class CSPClassifier(BaseClassifier):
         self.norm_trace = norm_trace
         self.cov_method_params = cov_method_params
         self.component_order = component_order
-        self.classifier_params = classifier_params
         self.random_state = random_state
 
         super().__init__()
@@ -144,25 +144,21 @@ class CSPClassifier(BaseClassifier):
         return self
 
     def _build_classifier(self):
-        """Return an unfitted scikit-learn classifier for ``self.classifier``."""
-        params = {} if self.classifier_params is None else dict(self.classifier_params)
-        if self.classifier == "svm":
-            from sklearn.svm import SVC
-
-            params = {
-                "kernel": "linear",
-                "probability": True,
-                "random_state": self.random_state,
-                **params,
-            }
-            return SVC(**params)
-        if self.classifier == "lda":
+        """Return an unfitted clone of ``self.classifier`` or the default LDA."""
+        if self.classifier is None:
             from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
-            return LinearDiscriminantAnalysis(**params)
-        raise ValueError(
-            f"classifier must be one of 'svm' or 'lda', got {self.classifier!r}."
-        )
+            classifier = LinearDiscriminantAnalysis()
+        elif isinstance(self.classifier, BaseEstimator) and is_classifier(
+            self.classifier
+        ):
+            classifier = self.classifier
+        else:
+            raise TypeError(
+                "classifier must be a scikit-learn classifier, e.g. "
+                f"LinearDiscriminantAnalysis(), or None, got {self.classifier!r}."
+            )
+        return _clone_estimator(classifier, self.random_state)
 
     def _predict(self, X: np.ndarray) -> np.ndarray:
         """Predict class labels for X."""
@@ -170,9 +166,15 @@ class CSPClassifier(BaseClassifier):
 
     def _predict_proba(self, X: np.ndarray) -> np.ndarray:
         """Predict class probabilities for X."""
-        probs = np.asarray(
-            self.classifier_.predict_proba(self._csp_features(X)), dtype=float
-        )
+        Xt = self._csp_features(X)
+        if not hasattr(self.classifier_, "predict_proba"):
+            # One-hot encode predictions for classifiers without probabilities.
+            probs = np.zeros((X.shape[0], self.n_classes_), dtype=float)
+            for i, label in enumerate(self.classifier_.predict(Xt)):
+                probs[i, self._class_dictionary[label]] = 1.0
+            return probs
+
+        probs = np.asarray(self.classifier_.predict_proba(Xt), dtype=float)
 
         clf_classes = np.asarray(self.classifier_.classes_)
         if np.array_equal(clf_classes, self.classes_):
@@ -197,7 +199,13 @@ class CSPClassifier(BaseClassifier):
     @classmethod
     def _get_test_params(cls, parameter_set: str = "default"):
         """Return testing parameter settings for estimator checks."""
+        from sklearn.svm import SVC
+
         return [
-            {"classifier": "svm", "n_components": 2, "random_state": 0},
-            {"classifier": "lda", "n_components": 2},
+            {"n_components": 2},
+            {
+                "classifier": SVC(kernel="linear", probability=True),
+                "n_components": 2,
+                "random_state": 0,
+            },
         ]
