@@ -1,1 +1,1 @@
-"""Tests for utils."""
+"""Tests for EEG utility functions."""

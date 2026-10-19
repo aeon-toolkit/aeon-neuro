@@ -1,4 +1,4 @@
-"""CSP channel selection using PyReimann implementation."""
+"""CSP channel selection using PyRiemann implementation."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import numpy as np
 from aeon.transformations.collection import BaseCollectionTransformer
 
 
-class CommonSpacialPatterns(BaseCollectionTransformer):
+class CommonSpatialPatterns(BaseCollectionTransformer):
     """Common Spatial Patterns wrapper for aeon collections.
 
     This wraps ``mne.decoding.CSP`` for use as an aeon collection transformer.
@@ -131,7 +131,7 @@ class CommonSpacialPatterns(BaseCollectionTransformer):
         return Xt.astype(np.float64, copy=False)
 
     @classmethod
-    def get_test_params(cls, parameter_set: str = "default"):
+    def _get_test_params(cls, parameter_set: str = "default"):
         """Return testing parameter settings for aeon estimator checks."""
         return [
             {"n_components": 2},

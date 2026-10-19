@@ -14,7 +14,7 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
 
     EEG signals occupy the frequency range of 0 - 60Hz,
     which is roughly divided into five constituent physiological EEG sub bands:
-    delta (δ): 0 - 4Hz, theta (θ): 4 - 7Hz, alpha (α): 8 - 12Hz, beta (β): 13 - 30Hz
+    delta (δ): 0 - 4Hz, theta (θ): 4 - 8Hz, alpha (α): 8 - 13Hz, beta (β): 13 - 30Hz
     and gamma (γ): 30 - 60Hz.
     Power within each frequency band is estimated over time using windowed FFTs
 
@@ -54,10 +54,13 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
         "fit_is_empty": True,
     }
 
+    # Contiguous partition of [0, 60] Hz. Masks stay inclusive on both ends:
+    # simpson integrates between the first and last selected sample, so a
+    # shared endpoint is not double-counted across contiguous bands.
     FREQ_BANDS = {
         "delta": (0, 4),
-        "theta": (4, 7),
-        "alpha": (8, 12),
+        "theta": (4, 8),
+        "alpha": (8, 13),
         "beta": (13, 30),
         "gamma": (30, 60),
     }

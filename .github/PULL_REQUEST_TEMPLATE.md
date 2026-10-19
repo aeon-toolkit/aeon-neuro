@@ -56,6 +56,9 @@ Please go through the checklist below. Please feel free to remove points if they
 ##### For developers with write access
 - [ ] Optionally, I've updated aeon-neuro's [CODEOWNERS](https://github.com/aeon-toolkit/aeon-neuro/blob/main/CODEOWNERS) to receive notifications about future changes to these files.
 
+##### Support aeon-neuro
+
+If you find aeon useful, please consider starring the repository. Stars help others discover the project and support our open-source community.
 
 <!--
 Thanks for contributing!
