@@ -10,16 +10,16 @@ from aeon_neuro.testing.tests import ALL_AEON_NEURO_MODULES
 
 def test_module_crawl():
     """Test that we are crawling modules correctly."""
-    assert "aeon.transformations" in ALL_AEON_NEURO_MODULES
-    assert "aeon.transformations.collection" in ALL_AEON_NEURO_MODULES
-    assert "aeon.transformations.series" in ALL_AEON_NEURO_MODULES
-    assert "aeon.utils" in ALL_AEON_NEURO_MODULES
-    assert "aeon.utils.discovery" in ALL_AEON_NEURO_MODULES
+    assert "aeon_neuro.transformations" in ALL_AEON_NEURO_MODULES
+    assert "aeon_neuro.transformations.collection" in ALL_AEON_NEURO_MODULES
+    assert "aeon_neuro.transformations.series" in ALL_AEON_NEURO_MODULES
+    assert "aeon_neuro.utils" in ALL_AEON_NEURO_MODULES
+    assert "aeon_neuro.utils.discovery" in ALL_AEON_NEURO_MODULES
 
 
 @pytest.mark.parametrize("module", ALL_AEON_NEURO_MODULES)
 def test_module_soft_deps(module):
-    """Test soft dependency imports in aeon modules.
+    """Test soft dependency imports in aeon-neuro modules.
 
     Imports all modules and catch exceptions due to missing dependencies.
     """

@@ -6,7 +6,6 @@ __all__ = ["all_estimators"]
 import inspect
 import warnings
 from importlib import import_module
-from operator import itemgetter
 from pathlib import Path
 from pkgutil import walk_packages
 
@@ -31,9 +30,9 @@ def all_estimators(
     from aeon's and sklearn's base classes.
 
     Not included are: the base classes themselves, classes defined in test
-    modules.
+    modules, estimators imported from aeon and aliases of other estimators.
 
-    Based on the aeon 1.0.0 utility of the same name.
+    Based on the aeon 1.6.0 utility of the same name.
     Copyright (c) The aeon developers, BSD-3
 
     Parameters
@@ -41,16 +40,16 @@ def all_estimators(
     type_filter: str, estimator type or list of str/type, default=None
         Which kind of estimators should be returned.
         if None, no filter is applied.
-        if str, type or list, returns esimators that are of one of the provided types.
+        if str, type or list, returns estimators that are of one of the provided types.
             Valid entries are available in the keys and values of
             ``aeon``'s utils.base.BASE_CLASS_REGISTER. i.e. "classifier" and
             "transformer" for str, and BaseClassifier and BaseTransformer for type.
     exclude_types: str, estimator type or list of str/type, default=None
         Which kind of estimators to exclude. Inverse of type_filter.
         if None, no exclusion is applied.
-        if str, type or list, excludes esimators that are of the provided types.
+        if str, type or list, excludes estimators that are of the provided types.
             Valid entries are available in the keys and values of
-            `aeon``'s utils.base.BASE_CLASS_REGISTER. i.e. "classifier" and
+            ``aeon``'s utils.base.BASE_CLASS_REGISTER. i.e. "classifier" and
             "transformer" for str, and BaseClassifier and BaseTransformer for type.
     tag_filter: dict of (str or list of str), default=None
         Return only estimators that have tags matching the provided values.
@@ -93,7 +92,10 @@ def all_estimators(
         "base",
         "tests",
         # ignore these submodules
+        "benchmarking",
         "datasets",
+        "distances",
+        "networks",
         "testing",
         "utils",
     )
@@ -115,12 +117,14 @@ def all_estimators(
             module = import_module(module_name)
 
             classes = inspect.getmembers(module, inspect.isclass)
-            # skip private estimators and those not implemented in aeon-neuro
+            # skip private estimators, aliases and those not implemented in
+            # aeon-neuro
             classes = [
                 (name, est_cls)
                 for name, est_cls in classes
                 if not name.startswith("_")
-                and str(est_cls).startswith("<class 'aeon_neuro")
+                and name == est_cls.__name__
+                and str(est_cls).startswith("<class 'aeon_neuro.")
                 and issubclass(est_cls, base_filter)
             ]
 
@@ -148,7 +152,7 @@ def all_estimators(
         )
 
     # sort for reproducibility, remove names if return_names=False
-    estimators = sorted(set(estimators), key=itemgetter(0))
+    estimators = sorted(set(estimators), key=lambda x: (x[0], str(x[1])))
     if not return_names:
         return [est for (name, est) in estimators]
     else:
