@@ -20,11 +20,11 @@ from aeon.transformations.collection.channel_selection import (
 )
 
 from aeon_neuro.transformations.collection.channel_creation import (
-    CommonSpacialPatterns,
+    CommonSpatialPatterns,
+    UMAPChannelCreator,
 )
 from aeon_neuro.transformations.collection.channel_selection import (
     BPSO,
-    UMAP,
     CLeVerCluster,
     CLeVerHybrid,
     CLeVerRank,
@@ -138,14 +138,14 @@ def _make_transformer(selector_name, n_channels):
     """Construct a selector or channel creator for one dataset."""
     n_components = ceil(CHANNEL_PROPORTION * n_channels)
     if selector_name == "CSP":
-        return CommonSpacialPatterns(
+        return CommonSpatialPatterns(
             n_components=n_components,
             log=None,
             transform_into="csp_space",
             random_state=SEED,
         )
     if selector_name == "UMAP":
-        return UMAP(
+        return UMAPChannelCreator(
             n_components=n_components,
             random_state=SEED,
         )

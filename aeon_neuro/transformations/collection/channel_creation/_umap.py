@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from aeon.transformations.collection.base import BaseCollectionTransformer
 
-__all__ = ["UMAP"]
+__all__ = ["UMAPChannelCreator"]
 
 
-class UMAP(BaseCollectionTransformer):
+class UMAPChannelCreator(BaseCollectionTransformer):
     """Create latent channels using Uniform Manifold Approximation and Projection.
 
     The input is reshaped so that each case-timepoint pair is a sample and the

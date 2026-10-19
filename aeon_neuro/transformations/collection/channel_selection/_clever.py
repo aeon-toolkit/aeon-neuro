@@ -268,7 +268,9 @@ class CLeVerRank(_BaseCLeVer):
     Examples
     --------
     >>> import numpy as np
-    >>> from aeon.transformations.collection.channel_selection import CLeVerRank
+    >>> from aeon_neuro.transformations.collection.channel_selection import (
+    ...     CLeVerRank,
+    ... )
     >>> X = np.random.default_rng(0).normal(size=(10, 6, 20))
     >>> Xt = CLeVerRank(n_channels=3).fit_transform(X)
     >>> Xt.shape
@@ -357,7 +359,9 @@ class CLeVerCluster(_BaseCLeVerClustering):
     Examples
     --------
     >>> import numpy as np
-    >>> from aeon.transformations.collection.channel_selection import CLeVerCluster
+    >>> from aeon_neuro.transformations.collection.channel_selection import (
+    ...     CLeVerCluster,
+    ... )
     >>> X = np.random.default_rng(0).normal(size=(10, 6, 20))
     >>> Xt = CLeVerCluster(n_channels=3, random_state=0).fit_transform(X)
     >>> Xt.shape
@@ -469,7 +473,9 @@ class CLeVerHybrid(_BaseCLeVerClustering):
     Examples
     --------
     >>> import numpy as np
-    >>> from aeon.transformations.collection.channel_selection import CLeVerHybrid
+    >>> from aeon_neuro.transformations.collection.channel_selection import (
+    ...     CLeVerHybrid,
+    ... )
     >>> X = np.random.default_rng(0).normal(size=(10, 6, 20))
     >>> Xt = CLeVerHybrid(n_channels=3, random_state=0).fit_transform(X)
     >>> Xt.shape

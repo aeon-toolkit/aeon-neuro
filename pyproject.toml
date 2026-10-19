@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>61", "wheel", "toml", "build"]
+requires = ["setuptools>=84.0.0", "wheel", "toml", "build"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -55,8 +55,8 @@ all_extras = [
     "aeon[all_extras]",
 ]
 dl = [
-    "tensorflow>=2.14",
-    "keras>=3.6.0",
+    "tensorflow>=2.21.0",
+    "keras>=3.15.1",
 ]
 dev = [
     "aeon[dev]",

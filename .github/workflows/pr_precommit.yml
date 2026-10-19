@@ -17,13 +17,13 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
-      - uses: tj-actions/changed-files@v47.0.0
+      - uses: tj-actions/changed-files@v47.0.6
         id: changed-files
 
       - name: List changed files
@@ -41,4 +41,4 @@ jobs:
           extra_args: --files ${{ steps.changed-files.outputs.all_changed_files }}
 
       - if: ${{ failure() && github.event_name == 'pull_request' && github.event.pull_request.draft == false }}
-        uses: pre-commit-ci/lite-action@v1.1.0
+        uses: pre-commit-ci/lite-action@v1.2.0
