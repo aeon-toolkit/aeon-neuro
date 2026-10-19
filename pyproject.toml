@@ -51,8 +51,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+eeg_io = [
+    "antio>=0.5",
+    "mffpy>=0.11",
+    "pymatreader",
+    "pyxdf",
+    "pybvrf[mne]>=0.1.3,<0.1.4",
+]
 all_extras = [
     "aeon[all_extras]",
+    "aeon-neuro[eeg_io]",
 ]
 dl = [
     "tensorflow>=2.21.0",
