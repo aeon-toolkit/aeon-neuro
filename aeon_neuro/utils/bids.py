@@ -1,24 +1,24 @@
 """Convert native EEG recordings and MNE Raw objects to BIDS."""
 
 from os import PathLike
-from pathlib import Path
 
 from mne.io import BaseRaw
 from mne_bids import write_raw_bids
 
-from aeon_neuro.utils.data_io import load_brainvision_to_mne
+from aeon_neuro.utils.data_io import load_eeg_to_mne
 
 
 def convert_eeg_to_bids(
     source, bids_path, *, format="auto", allow_preload=False, overwrite=False
 ):
-    """Write a BrainVision recording or an MNE Raw object to BIDS.
+    """Write a native EEG recording or an MNE Raw object to BIDS.
 
     Parameters
     ----------
     source : str, os.PathLike or mne.io.BaseRaw
-        BrainVision .vhdr path with its linked signal and marker files, or an
-        existing MNE Raw recording. Other filename formats are not yet supported.
+        BrainVision .vhdr, EDF/EDF+ .edf, BioSemi BDF/BDF+ .bdf or continuous
+        EEGLAB .set path with required companions, or an existing MNE Raw.
+        For reader-specific settings, first use ``load_eeg_to_mne`` and pass Raw.
     bids_path : mne_bids.BIDSPath
         Destination with root, subject and task set. Supply session, run and
         datatype where needed; identifiers are not inferred from the source path.
@@ -43,31 +43,28 @@ def convert_eeg_to_bids(
     TypeError
         If source is neither a filename nor an MNE Raw object.
     ValueError
-        If a filename does not have the .vhdr extension, or MNE-BIDS rejects the
+        If a filename has an unsupported extension, or MNE-BIDS rejects the
         recording or output configuration.
 
     Notes
     -----
     Supplied metadata is assumed correct. No metadata repair, filtering, channel
     selection, re-referencing or epoching is performed. Annotations are written
-    using MNE-BIDS conventions; event codes may be reassigned. Existing BIDS
-    sidecars are not imported when reading a native BrainVision path.
+    using MNE-BIDS conventions; event codes may be reassigned and onsets rounded
+    to the nearest sample. Existing BIDS sidecars are not imported when reading
+    a native filename. Status channels
+    remain in the recording even when no explicit events are supplied.
 
     MNE and MNE-BIDS file, metadata and export errors propagate unchanged.
     Successful writing alone does not establish full BIDS validation.
     """
     if isinstance(source, (str, PathLike)):
-        if Path(source).suffix.lower() != ".vhdr":
-            raise ValueError(
-                "Only BrainVision .vhdr filenames are supported; "
-                "pass an MNE Raw object for other input formats."
-            )
         # Keep samples on disk so MNE-BIDS can copy the original recording.
-        raw = load_brainvision_to_mne(source)
+        raw = load_eeg_to_mne(source)
     elif isinstance(source, BaseRaw):
         raw = source
     else:
-        raise TypeError("source must be a BrainVision filename or an MNE Raw object.")
+        raise TypeError("source must be an EEG filename or an MNE Raw object.")
 
     # Delegate metadata checks and preloaded export policy to MNE-BIDS.
     return write_raw_bids(
