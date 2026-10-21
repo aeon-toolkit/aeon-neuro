@@ -1,5 +1,65 @@
 # EEG Datasets
 
+## OpenNeuro BIDS recordings
+
+Install the optional download client with `pip install 'aeon-neuro[openneuro]'`.
+`fetch_openneuro_dataset` accepts an OpenNeuro dataset ID plus an explicit release,
+or a versioned OpenNeuro HTTPS URL. Select subjects explicitly to avoid downloading
+an entire dataset:
+
+```python
+from aeon_neuro.datasets import fetch_openneuro_dataset
+from mne_bids import BIDSPath, read_raw_bids
+
+root = fetch_openneuro_dataset(
+    "ds008082", version="1.0.0", subjects="CUCOV001", cache_dir="./openneuro-cache"
+)
+source = BIDSPath(
+    root=root, subject="CUCOV001", task="COVID", datatype="eeg", suffix="eeg",
+    extension=".edf",
+)
+raw = read_raw_bids(source)
+```
+
+The same helper accepts
+`"https://openneuro.org/datasets/ds006761/versions/1.0.0"` with `subjects="31"`
+for an RPS recording. Subject labels may include `sub-`; pass labels as strings
+to retain leading zeros. A subject selection downloads **all files** in those
+subject folders, including other modalities or sessions when present. RPS signal
+files can be several gigabytes. Dataset-root files, including inherited JSON
+sidecars and the original participant table, are retained. This is a selected
+local copy; it does not prune participant rows or rewrite dataset metadata.
+Dataset-level folders such as `phenotype`, `stimuli` and `derivatives` are outside
+this selection. Download them separately when an analysis needs their contents.
+
+The helper returns a local BIDS folder. Use MNE-BIDS to read a recording;
+`convert_eeg_to_bids` remains a separate single-recording operation. Fetching
+does not construct classification examples, assign players or select channels.
+
+The default cache is `$AEON_DATA/openneuro`, or `~/aeon_data/openneuro` when
+`AEON_DATA` is unset. Each dataset, release and canonical subject selection has
+its own entry. Overlapping selections can duplicate recordings. A completed entry
+is reused without importing the optional client or contacting the network:
+
+```python
+root = fetch_openneuro_dataset(
+    "ds008082", version="1.0.0", subjects="CUCOV001",
+    cache_dir="./openneuro-cache", download=False,
+)
+```
+
+Each reuse reads all cached files and checks their sizes and SHA-256 hashes,
+including large signals. This detects local changes after download, rather than
+providing independently authenticated remote checksums. Transfers use
+[openneuro-py's verification and retry behavior](https://github.com/openneuro-py/openneuro-py).
+The source is explicitly OpenNeuro, irrespective of the client's mirror setting.
+Failed downloads never become completed cache entries; temporary files are
+removed, so a subsequent call starts a new transfer. A missing cache with
+`download=False` raises `FileNotFoundError`. Incomplete or altered completed
+entries raise `ValueError`; use a fresh cache directory or remove the identified
+entry before retrying. Treat returned folders as read-only, and write conversions
+or edits elsewhere.
+
 
 ## EEG Data Characteristics
 | Problem               | train cases | test cases | dimensions | length  | num classes  |
