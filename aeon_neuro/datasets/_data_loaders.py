@@ -2,7 +2,7 @@
 
 import os
 
-from aeon.datasets import load_classification
+from aeon.datasets._data_loaders import _load_collection
 from aeon.datasets._single_problem_loaders import _load_saved_dataset
 from aeon.datasets.dataset_collections import get_downloaded_tsc_tsr_datasets
 
@@ -23,7 +23,7 @@ def load_eeg_classification(
 
     This function loads EEG TSC problems into memory, attempting to load from the
     specified local path ``extract_path`` or trying to download from
-    https://zenodo.org/ with ``aeon``'s ``load_classification`` if the data is not
+    https://zenodo.org/ with ``aeon``'s collection loader if the data is not
     in the local path. To download from
     Zenodo, the dataset must have a record ID in ``dataset_map`` in
     ``aeon_neuro.datasets.classification_datasets``. Datasets with the placeholder
@@ -109,20 +109,22 @@ def load_eeg_classification(
                 f"Place {name}_TRAIN.ts and {name}_TEST.ts in <extract_path>/{name}/ "
                 f"and pass extract_path to load it locally."
             )
-        return load_classification(
-            name,
+        X, y, meta = _load_collection(
+            name=name,
+            problem_dict=dataset_map,
             split=split,
             extract_path=extract_path,
-            return_metadata=return_metadata,
+            return_metadata=True,
         )
-    X, y, meta = _load_saved_dataset(
-        name=name,
-        dir_name=name,
-        split=split,
-        local_module=local_module,
-        local_dirname=local_dirname,
-        return_meta=True,
-    )
+    else:
+        X, y, meta = _load_saved_dataset(
+            name=name,
+            dir_name=name,
+            split=split,
+            local_module=local_module,
+            local_dirname=local_dirname,
+            return_meta=True,
+        )
     # Check this is a classification problem
     if "classlabel" not in meta or not meta["classlabel"]:
         raise ValueError(
