@@ -1,10 +1,11 @@
 """Datasets in the EEG classification archive."""
 
-# 31 EEG Classification problems
+# 32 EEG Classification problems
 dataset_names = [
     "Alzheimers",
     "Blink",
     "ButtonPress",
+    "COVID19",
     "Epilepsy2",
     "EyesOpenShut",
     "FaceDetection",
@@ -42,6 +43,7 @@ dataset_map = {
     "Alzheimers": 15500801,
     "Blink": 18735667,
     "ButtonPress": 15522930,
+    "COVID19": 23531371, 
     "Epilepsy2": 49,
     "EyesOpenShut": 18496872,
     "FaceDetection": 11206216,
