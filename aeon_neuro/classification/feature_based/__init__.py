@@ -1,4 +1,5 @@
 """Feature based EEG classifiers."""
 
-__all__ = ["CSPClassifier"]
+__all__ = ["CSPClassifier", "XdawnClassifier"]
 from aeon_neuro.classification.feature_based._csp import CSPClassifier
+from aeon_neuro.classification.feature_based._xdawn import XdawnClassifier
