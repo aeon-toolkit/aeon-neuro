@@ -91,7 +91,11 @@ aeon_neuro = [
 ]
 
 [tool.setuptools.packages.find]
-exclude = ["experiments", "experiments.*", "tests", "tests.*"]
+exclude = [
+    "experiments", "experiments.*",
+    "tests", "tests.*",
+    "example_raw_eeg", "example_raw_eeg.*",
+]
 
 [tool.check-manifest]
 ignore = [
@@ -99,6 +103,7 @@ ignore = [
     "venv/**",
     # Experiments are excluded from the published package
     "experiments/**",
+    "example_raw_eeg/**",
     # Ignore the docs symlink and its contents
     "docs/examples",
     "docs/examples/**",
