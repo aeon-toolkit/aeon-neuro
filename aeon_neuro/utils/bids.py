@@ -1,5 +1,6 @@
 """Convert native EEG recordings and MNE Raw objects to BIDS."""
 
+import csv
 from os import PathLike
 
 from mne.io import BaseRaw
@@ -67,10 +68,40 @@ def convert_eeg_to_bids(
         raise TypeError("source must be an EEG filename or an MNE Raw object.")
 
     # Delegate metadata checks and preloaded export policy to MNE-BIDS.
-    return write_raw_bids(
+    written = write_raw_bids(
         raw,
         bids_path,
         format=format,
         allow_preload=allow_preload,
         overwrite=overwrite,
     )
+    _preserve_stim_units(raw, written)
+    return written
+
+
+def _preserve_stim_units(raw, written):
+    """Keep native dimensionless trigger units in the generated channel table."""
+    dimensionless = {
+        channel["ch_name"]
+        for channel, kind in zip(raw.info["chs"], raw.get_channel_types())
+        if kind == "stim" and int(channel["unit"]) == -1
+    }
+    if not dimensionless:
+        return
+    path = written.copy().update(suffix="channels", extension=".tsv").fpath
+    with path.open(encoding="utf-8", newline="") as stream:
+        reader = csv.DictReader(stream, delimiter="\t")
+        fields, rows = reader.fieldnames, list(reader)
+    for row in rows:
+        if row["name"] in dimensionless:
+            # MNE-BIDS exports unknown units as n/a, then reapplying STIM on read
+            # can assign volts. Its supported 'arbitrary' spelling retains NONE.
+            # Change only the unit label; integer codes and voltage channels stay
+            # in their original numeric representation.
+            row["units"] = "arbitrary"
+    with path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(
+            stream, fieldnames=fields, delimiter="\t", lineterminator="\n"
+        )
+        writer.writeheader()
+        writer.writerows(rows)
