@@ -1,5 +1,143 @@
 # EEG Datasets
 
+## OpenNeuro BIDS recordings
+
+Install the optional download client with `pip install 'aeon-neuro[openneuro]'`.
+`fetch_openneuro_dataset` accepts an OpenNeuro dataset ID plus an explicit release,
+or a versioned OpenNeuro HTTPS URL. It prepares primary EEG metadata and returns
+a local BIDS folder that can be read directly. Select subjects explicitly:
+
+```python
+from aeon_neuro.datasets import fetch_openneuro_dataset
+from mne_bids import BIDSPath, read_raw_bids
+
+root = fetch_openneuro_dataset(
+    "ds008082", version="1.0.0", subjects="CUCOV001", cache_dir="./openneuro-cache"
+)
+source = BIDSPath(
+    root=root, subject="CUCOV001", task="COVID", datatype="eeg", suffix="eeg",
+    extension=".edf",
+)
+raw = read_raw_bids(source)
+```
+
+To fetch a complete pinned snapshot without constructing a subject list:
+
+```python
+root = fetch_openneuro_dataset("ds008082", version="1.0.0", subjects="all")
+```
+
+`subjects="all"` includes all subjects and other nonhidden snapshot files,
+including `phenotype`, `stimuli` and `derivatives` when present. These downloads
+can be much larger than a subject selection. Whole snapshots and explicit
+subject selections have separate cache entries.
+
+The same helper accepts
+`"https://openneuro.org/datasets/ds006761/versions/1.0.0"` with `subjects="31"`
+for an RPS recording. Subject labels may include `sub-`; pass labels as strings
+to retain leading zeros. A subject selection downloads **all files** in those
+subject folders, including other modalities or sessions when present. RPS signal
+files can be several gigabytes. Dataset-root files, including inherited JSON
+sidecars and the original participant table, are retained. This is a selected
+local copy; it does not prune participant rows.
+Dataset-level folders such as `phenotype`, `stimuli` and `derivatives` are outside
+an explicit subject selection; they are included with `subjects="all"`.
+
+The helper returns a local BIDS folder. Use MNE-BIDS to read a recording;
+`convert_eeg_to_bids` is not required for these existing BIDS recordings.
+Signals are downloaded once per cache entry and metadata is prepared in place
+before the entry is published. No second conversion copy is created. There is
+no filtering, resampling, temporal cropping, re-referencing or channel removal.
+Classification examples and player identities remain downstream decisions.
+
+### Preparation and findings
+
+Request the per-recording report alongside the BIDS folder:
+
+```python
+root, report = fetch_openneuro_dataset(
+    "ds008082", version="1.0.0", subjects="all", return_report=True
+)
+print(report["summary"])
+```
+
+Preparation reads supported primary EEG headers through MNE-BIDS without
+preloading signals. It checks sampling frequency, supplied channel order and
+event timing/sample correspondence. Recording duration is corrected from the
+decoded sample grid. Channel counts are corrected only when a channel table
+supplies roles; missing roles are reported and reader defaults are not treated
+as verified acquisition facts. Event tables, signal files, participant fields
+and other downloaded material are retained. Corrections to inherited metadata
+are written at recording scope so other recordings do not change.
+
+Discontinuity markers and events outside the sampled interval are reported and
+retained without clipping or inventing gaps. Unknown mains frequency remains
+unknown. Reader warnings and missing metadata appear in the report, and a summary
+warning signals findings that need review. This is an EEG preparation check,
+not full BIDS validation or a scientific assessment of usable analysis intervals.
+Non-EEG recordings and derivatives are preserved without preparation.
+
+Blocking frequency/channel inconsistencies, invalid event timing and unreadable
+recordings raise `BIDSPreparationError`. Its `.report` contains per-recording
+findings, and no completed entry is published. The report retains original EEG
+metadata, each before/after correction and its evidence, plus size/SHA-256
+provenance for downloaded files. Corrected dataset descriptions retain source
+DOI attribution in `SourceDatasets` rather than claiming the original DOI.
+When a release includes `datacite.yml`, that citation file is retained and
+listed in `.bidsignore`, since it is outside the BIDS file schema.
+
+Explicit corrections require an evidence reference and an exact relative
+recording filename:
+
+```python
+corrections = {
+    "sub-01/eeg/sub-01_task-rest_eeg.edf": {
+        "source": "Verified acquisition record, revision 2",
+        "metadata": {"PowerLineFrequency": 50, "EEGReference": "common"},
+        "channel_types": {"ECG": "ECG"},
+    }
+}
+root, report = fetch_openneuro_dataset(
+    "ds000001", version="1.0.0", subjects="01",
+    metadata_corrections=corrections, return_report=True,
+)
+```
+
+The example assumes that its recording and evidence exist. Supported metadata
+fields are `PowerLineFrequency`, `EEGReference`, `EEGGround`,
+`EEGPlacementScheme`, `Manufacturer`, `ManufacturersModelName` and
+`TaskDescription`. Channel corrections require an existing channel table with
+verified units; supported types are `EEG`, `EOG`, `ECG`, `EMG`, `MISC` and `TRIG`.
+Source strings record evidence but do not authenticate it. Sampling frequency
+cannot be changed through descriptive corrections. Use `prepare=False` to fetch
+the published originals without preparation; corrections then are disallowed.
+
+The default cache is `$AEON_DATA/openneuro`, or `~/aeon_data/openneuro` when
+`AEON_DATA` is unset. Each dataset, release and canonical subject selection has
+its own entry. Preparation policy and sourced corrections also identify the
+entry, so changed decisions cannot silently reuse earlier output. Overlapping
+selections or different preparation policies can duplicate recordings. A completed entry
+is reused without importing the optional client or contacting the network:
+
+```python
+root = fetch_openneuro_dataset(
+    "ds008082", version="1.0.0", subjects="CUCOV001",
+    cache_dir="./openneuro-cache", download=False,
+)
+```
+
+Each reuse reads all cached files and checks their sizes and SHA-256 hashes,
+including large signals, and verifies the stored preparation report. This detects local changes after download, rather than
+providing independently authenticated remote checksums. Transfers use
+[openneuro-py's verification and retry behavior](https://github.com/openneuro-py/openneuro-py).
+The source is explicitly OpenNeuro, irrespective of the client's mirror setting.
+Failed downloads never become completed cache entries; temporary files are
+removed, so a subsequent call starts a new transfer. A missing cache with
+`download=False` raises `FileNotFoundError`. Incomplete or altered completed
+entries raise `ValueError`; use a fresh cache directory or remove the identified
+entry before retrying. Treat returned folders as read-only, and write conversions
+or edits elsewhere.
+
 
 ## EEG Data Characteristics
 | Problem               | train cases | test cases | dimensions | length  | num classes  |
