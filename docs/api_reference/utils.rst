@@ -58,7 +58,7 @@ EEG conversion guide
    :maxdepth: 1
 
    ../ingestion/README
-   
+
 Acquisition events
 ------------------
 
