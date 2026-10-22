@@ -7,11 +7,24 @@ BIDS conversion
 ---------------
 
 ``convert_eeg_to_bids`` accepts BrainVision, EDF/EDF+, BioSemi BDF/BDF+ and
-continuous EEGLAB filenames, or an existing MNE Raw recording, and returns the
-written ``BIDSPath``. Supplied metadata is assumed
+continuous EEGLAB filenames, an existing MNE Raw recording, or an explicit
+source ``BIDSPath``, and returns the written ``BIDSPath``. For filenames and Raw,
+supplied metadata is assumed
 correct; MNE-BIDS handles writing and its existing validation. No analysis
 processing or metadata repair is added. Native-path reading does not import
 existing BIDS sidecars.
+
+Dimensionless native STIM channels, including BioSemi Status, use ``arbitrary``
+units in the generated channel table so MNE-BIDS read-back retains their native
+unit code. Samples and trigger codes are not rescaled.
+
+A source ``BIDSPath`` reads the recording with MNE-BIDS and preserves matched
+event/channel tables, coordinate files and selected participant fields outside
+Raw. Identifiers and native encoding stay unchanged. Output uses a separate
+dataset root, protects existing recordings and warns on published duration or
+EEG-count discrepancies. This route does not merge all JSON inheritance levels
+or infer acquisition facts. See ``docs/ingestion/README.md`` for the preservation
+contract, limitations and a COVID/RPS example.
 
 .. autofunction:: aeon_neuro.utils.bids.convert_eeg_to_bids
 
@@ -46,3 +59,11 @@ Auxiliary information
 be read or decoded. The directory prefix must include its trailing separator.
 
 .. autofunction:: aeon_neuro.utils.data_io.load_auxiliary_info
+
+EEG conversion guide
+--------------------
+
+.. toctree::
+   :maxdepth: 1
+
+   ../ingestion/README
