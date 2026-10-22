@@ -99,11 +99,16 @@ def test_convert_raw_array_roundtrip(tmp_path):
     data = np.array([[1e-6, 2e-6, 3e-6], [4e-6, 5e-6, 6e-6]])
     raw = mne.io.RawArray(data, mne.create_info(["Fp1", "EOG"], 100, ["eeg", "eog"]))
     raw.info["line_freq"] = 50
-    raw.set_annotations(mne.Annotations([0.01], [0.01], ["stimulus"]))
+    raw.set_annotations(mne.Annotations([0.02], [0.01], ["annotation"]))
     destination = BIDSPath(root=tmp_path, subject="01", task="test", datatype="eeg")
 
     written = convert_eeg_to_bids(
-        raw, destination, allow_preload=True, format="BrainVision"
+        raw,
+        destination,
+        events=np.array([[1, 0, 7]]),
+        event_id={"stimulus": 7, "annotation": 9},
+        allow_preload=True,
+        format="BrainVision",
     )
     restored = read_raw_bids(written)
 
@@ -111,7 +116,16 @@ def test_convert_raw_array_roundtrip(tmp_path):
     assert_allclose(restored.get_data(), data, rtol=1e-7, atol=0)
     assert restored.get_channel_types() == ["eeg", "eog"]
     assert restored.info["line_freq"] == 50
-    assert_array_equal(restored.annotations.description, ["stimulus"])
-    assert_allclose(restored.annotations.onset, [0.01], rtol=0, atol=1e-9)
-    assert_allclose(restored.annotations.duration, [0.01], rtol=0, atol=1e-9)
+    assert_array_equal(restored.annotations.description, ["stimulus", "annotation"])
+    assert_allclose(restored.annotations.onset, [0.01, 0.02], rtol=0, atol=1e-9)
+    assert_allclose(restored.annotations.duration, [0, 0.01], rtol=0, atol=1e-9)
+    events = np.genfromtxt(
+        written.copy().update(suffix="events", extension=".tsv").fpath,
+        delimiter="\t",
+        names=True,
+        dtype=None,
+        encoding="utf-8",
+    )
+    assert_array_equal(events["value"], [7, 9])
+    assert_array_equal(raw.annotations.description, ["annotation"])
     assert_array_equal(raw.get_data(), data)
