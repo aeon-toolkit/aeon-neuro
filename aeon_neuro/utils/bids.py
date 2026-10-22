@@ -9,7 +9,14 @@ from aeon_neuro.utils.data_io import load_eeg_to_mne
 
 
 def convert_eeg_to_bids(
-    source, bids_path, *, format="auto", allow_preload=False, overwrite=False
+    source,
+    bids_path,
+    *,
+    events=None,
+    event_id=None,
+    format="auto",
+    allow_preload=False,
+    overwrite=False,
 ):
     """Write a native EEG recording or an MNE Raw object to BIDS.
 
@@ -22,6 +29,14 @@ def convert_eeg_to_bids(
     bids_path : mne_bids.BIDSPath
         Destination with root, subject and task set. Supply session, run and
         datatype where needed; identifiers are not inferred from the source path.
+    events : path-like, np.ndarray or None, default=None
+        MNE events file or array of shape (n_events, 3), forwarded to MNE-BIDS.
+        These are written in addition to native annotations. For Status-channel
+        triggers, extract events explicitly with ``mne.find_events`` using the
+        acquisition's trigger settings; no codes or classes are inferred here.
+    event_id : dict or None, default=None
+        Description-to-code mapping. Required when supplying ``events``; include
+        descriptions for existing annotations too, following MNE-BIDS rules.
     format : str, default="auto"
         Output encoding passed to ``mne_bids.write_raw_bids``. The default copies
         supported source files where possible. Preloaded recordings require an
@@ -70,6 +85,8 @@ def convert_eeg_to_bids(
     return write_raw_bids(
         raw,
         bids_path,
+        events=events,
+        event_id=event_id,
         format=format,
         allow_preload=allow_preload,
         overwrite=overwrite,
