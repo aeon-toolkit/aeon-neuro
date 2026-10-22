@@ -58,3 +58,14 @@ EEG conversion guide
    :maxdepth: 1
 
    ../ingestion/README
+   
+Acquisition events
+------------------
+
+``convert_eeg_to_bids`` forwards explicit ``events`` and ``event_id`` to MNE-BIDS
+alongside native annotations. This allows acquisition triggers, such as events
+extracted from a BDF Status channel in an MNE Raw, to reach the BIDS event table.
+Supply acquisition-appropriate extraction settings and descriptions for every
+code and annotation; no scientific class mapping is inferred. MNE-BIDS aligns
+event-table onsets to samples, so fractional annotation latencies may round by
+up to half a sample. Status-channel samples remain unchanged.

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aeon-neuro"
-version = "0.0.2"
+version = "0.1.0"
 description = "A package for EEG classification built on the aeon toolkit."
 authors = [
     {name = "aeon developers", email = "contact@aeon-toolkit.org"},
@@ -91,12 +91,19 @@ aeon_neuro = [
 ]
 
 [tool.setuptools.packages.find]
-exclude = ["experiments", "experiments.*", "tests", "tests.*"]
+exclude = [
+    "experiments", "experiments.*",
+    "tests", "tests.*",
+    "example_raw_eeg", "example_raw_eeg.*",
+]
 
 [tool.check-manifest]
 ignore = [
     # Ignore virtual environments in local builds
     "venv/**",
+    # Experiments are excluded from the published package
+    "experiments/**",
+    "example_raw_eeg/**",
     # Ignore the docs symlink and its contents
     "docs/examples",
     "docs/examples/**",
