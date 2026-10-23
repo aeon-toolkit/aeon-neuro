@@ -124,6 +124,74 @@ def test_convert_invalid_events_before_writing(tmp_path, sample, event_id, messa
     assert len(raw.annotations) == 0
 
 
+@pytest.mark.parametrize(
+    "events,event_id,error,message",
+    [
+        (np.array([[10, 7]]), {"stimulus": 7}, ValueError, "shape"),
+        (np.array([[10.5, 0, 7]]), {"stimulus": 7}, TypeError, "integer"),
+        (np.array([[10, 0, 7]]), None, ValueError, "event_id is required"),
+        (
+            np.array([[10, 0, 7]]),
+            {"stimulus": 7},
+            ValueError,
+            "all native annotation descriptions",
+        ),
+    ],
+)
+def test_convert_invalid_event_metadata_before_writing(
+    tmp_path, events, event_id, error, message
+):
+    """Reject malformed events and missing mappings before writer side effects."""
+    raw = mne.io.RawArray(np.zeros((1, 200)), mne.create_info(["Cz"], 100, "eeg"))
+    raw.set_annotations(mne.Annotations([0.2], [0], ["annotation"]))
+    destination = BIDSPath(root=tmp_path / "bids", subject="01", task="test")
+
+    with pytest.raises(error, match=message):
+        convert_eeg_to_bids(raw, destination, events=events, event_id=event_id)
+
+    assert not destination.root.exists()
+    assert_array_equal(raw.annotations.description, ["annotation"])
+
+
+@pytest.mark.parametrize("event_source", ["array", "file"])
+@pytest.mark.parametrize("first_samp", [0, 100])
+def test_convert_event_boundaries_roundtrip(tmp_path, first_samp, event_source):
+    """Preserve events at both inclusive sample bounds through BIDS read-back."""
+    pytest.importorskip("pybv")
+    raw = mne.io.RawArray(
+        np.zeros((1, 200)), mne.create_info(["Cz"], 100, "eeg"), first_samp=first_samp
+    )
+    # Nonzero offsets need a known origin to avoid the writer's timing ambiguity.
+    if first_samp:
+        raw.set_meas_date(datetime(2020, 1, 1, tzinfo=timezone.utc))
+    events = np.array([[raw.first_samp, 0, 7], [raw.last_samp, 0, 8]])
+    source = events
+    if event_source == "file":
+        source = tmp_path / "boundary-events.eve"
+        np.savetxt(source, events, fmt="%d")
+    destination = BIDSPath(root=tmp_path / "bids", subject="01", task="test")
+
+    written = convert_eeg_to_bids(
+        raw,
+        destination,
+        events=source,
+        event_id={"first": 7, "last": 8},
+        allow_preload=True,
+        format="BrainVision",
+    )
+    restored = read_raw_bids(written)
+    restored_events, _ = mne.events_from_annotations(
+        restored, event_id={"first": 7, "last": 8}
+    )
+
+    assert restored.n_times == raw.n_times
+    assert_array_equal(restored.annotations.description, ["first", "last"])
+    assert_allclose(restored.annotations.onset, [0, 1.99], rtol=0, atol=1e-9)
+    assert_array_equal(restored_events, [[0, 0, 7], [199, 0, 8]])
+    assert_array_equal(events, [[first_samp, 0, 7], [first_samp + 199, 0, 8]])
+    assert len(raw.annotations) == 0
+
+
 @pytest.mark.parametrize("first_samp", [0, 100])
 def test_convert_raw_array_roundtrip(tmp_path, first_samp):
     """Export in-memory samples and acquisition metadata when explicitly enabled."""
