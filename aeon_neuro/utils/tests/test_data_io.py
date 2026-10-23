@@ -16,7 +16,10 @@ from aeon_neuro.utils.data_io import (
 
 
 @pytest.mark.parametrize("extension,width", [("edf", 2), ("bdf", 3)])
-@pytest.mark.parametrize("variant", ["truncated", "discontinuous", "unknown_count"])
+@pytest.mark.parametrize(
+    "variant",
+    ["truncated", "discontinuous", "unknown_count", "count_too_low", "count_too_high"],
+)
 def test_edf_bdf_record_layout(tmp_path, extension, width, variant):
     """Reject lost records and time gaps while accepting legal unknown counts."""
     # One 100 Hz channel and two complete seconds, using the shared fixed header.
@@ -51,6 +54,9 @@ def test_edf_bdf_record_layout(tmp_path, extension, width, variant):
         content = content[:-1]
     elif variant == "discontinuous":
         content[192:236] = ("EDF+D" if width == 2 else "BDF+D").encode().ljust(44)
+    elif variant in ("count_too_low", "count_too_high"):
+        # Keep both payload records complete so only the declared count is wrong.
+        content[236:244] = b"1       " if variant == "count_too_low" else b"3       "
     else:
         content[236:244] = b"-1      "
     source.write_bytes(content)
