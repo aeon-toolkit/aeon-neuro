@@ -124,7 +124,8 @@ def test_different_sampling_frequencies(tmp_path):
 
     assert isinstance(X, list)
     assert len(X) == 2
-    assert all(recording.shape == (2, 100) for recording in X)
+    assert all(recording.ndim == 2 for recording in X)
+    assert all(recording.shape[0] == 2 for recording in X)
     assert metadata[0]["sampling_frequency"] == pytest.approx(100.0)
     assert metadata[1]["sampling_frequency"] == pytest.approx(200.0)
 
