@@ -60,6 +60,7 @@ dl = [
 ]
 dev = [
     "aeon[dev]",
+    "edfio",
 ]
 binder = [
     "aeon[binder]",
