@@ -5,6 +5,7 @@
 | Problem               | train cases | test cases | dimensions | length  | num classes  |
 |---                    |---    |---    |---    |---    |---|
 | Blink                 | 500   | 450   | 4   | 510   |  2 |
+| COVID19               | 25319 | 11216 | 19  | 400   |  2 |
 | EyesOpenShut          | 56    | 42    | 14  |  128  | 2  |
 | FaceDetection         | 5890  | 3524  | 144 |  62   |  2 |
 | FingerMovements       | 316   | 100   | 28  |  50   |  2 |
