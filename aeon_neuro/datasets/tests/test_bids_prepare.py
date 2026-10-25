@@ -213,6 +213,126 @@ def test_report_integrity_checked(dataset, tmp_path):
         fetch(tmp_path, download=False)
 
 
+@pytest.mark.parametrize("problem", ["declared_count", "partial_tail", "discontinuous"])
+def test_native_record_layout_rejected_before_preparation(dataset, tmp_path, problem):
+    """Do not cache native layouts whose continuous sample grid is unsupported."""
+    _, signal, _, _, _ = dataset
+    content = bytearray(signal.read_bytes())
+    if problem == "declared_count":
+        content[236:244] = b"2       "
+    elif problem == "partial_tail":
+        content += b"\x00"
+    else:
+        content[192:236] = b"BDF+D".ljust(44)
+    signal.write_bytes(content)
+    with pytest.raises(BIDSPreparationError) as caught:
+        fetch(tmp_path)
+    assert caught.value.report["summary"]["failed"] == 1
+    assert not list((tmp_path / "cache").rglob("complete.json"))
+
+
+@pytest.mark.parametrize("old_policy", [2, 3])
+def test_older_preparation_policy_is_not_reused(dataset, tmp_path, old_policy):
+    """Earlier layout/event/inheritance checks cannot satisfy the current policy."""
+    root, _ = fetch(tmp_path)
+    entry = root.parent
+    manifest = json.loads((entry / "complete.json").read_text())
+    manifest["preparation"]["version"] = old_policy
+    key = {"subjects": ["01"], "preparation": manifest["preparation"]}
+    old_entry = entry.with_name(
+        hashlib.sha256(json.dumps(key, sort_keys=True).encode()).hexdigest()
+    )
+    entry.rename(old_entry)
+    (old_entry / "complete.json").write_text(json.dumps(manifest))
+    with pytest.raises(FileNotFoundError, match="No cached OpenNeuro"):
+        fetch(tmp_path, download=False)
+    new_root, _ = fetch(tmp_path)
+    assert new_root.parent != old_entry
+    assert (old_entry / "complete.json").is_file()
+
+
+@pytest.mark.parametrize(
+    "onset,sample,alternative",
+    [(0.2, "20", "99"), (0.2, "n/a", "99"), (0.2, "20", "20.5"), (0.205, "20", "21")],
+)
+def test_every_event_sample_column_is_validated(
+    dataset, tmp_path, onset, sample, alternative
+):
+    """Neither a second sample column nor a missing first value bypasses checks."""
+    _, _, _, events, _ = dataset
+    events.write_text(
+        f"onset\tduration\tsample\tonset_sample\n{onset}\t0\t{sample}\t{alternative}\n"
+    )
+    with pytest.raises(BIDSPreparationError) as caught:
+        fetch(tmp_path)
+    assert (
+        "invalid timing or sample position"
+        in caught.value.report["recordings"][0]["error"]
+    )
+    assert not list((tmp_path / "cache").rglob("complete.json"))
+
+
+@pytest.mark.parametrize(
+    "sample,alternative", [("20", "20"), ("n/a", "20"), ("20", "n/a")]
+)
+def test_agreeing_event_sample_columns_are_preserved(
+    dataset, tmp_path, sample, alternative
+):
+    """Missing aliases and matching positions remain valid without table edits."""
+    source, _, _, events, _ = dataset
+    events.write_text(
+        f"onset\tduration\tsample\tonset_sample\n0.204\t0\t{sample}\t{alternative}\n"
+    )
+    root, _ = fetch(tmp_path)
+    assert (root / events.relative_to(source)).read_bytes() == events.read_bytes()
+
+
+@pytest.mark.parametrize("root_only", [False, True])
+def test_inherited_metadata_is_materialized_with_origins(dataset, tmp_path, root_only):
+    """Expose inherited fields to downstream MNE-BIDS and retain their sources."""
+    source, _, metadata, _, _ = dataset
+    values = json.loads(metadata.read_text())
+    inherited = {"Manufacturer": "Inherited vendor", "PowerLineFrequency": 50}
+    if root_only:
+        inherited.update(values)
+        metadata.unlink()
+    else:
+        values.pop("PowerLineFrequency")
+        metadata.write_text(json.dumps(values))
+    ancestor = source / "task-rest_eeg.json"
+    ancestor.write_text(json.dumps(inherited))
+    before = ancestor.read_bytes()
+    root, report = fetch(tmp_path)
+    output = root / metadata.relative_to(source)
+    assert json.loads(output.read_text())["Manufacturer"] == "Inherited vendor"
+    assert json.loads(output.read_text())["PowerLineFrequency"] == 50
+    raw = read_raw_bids(
+        get_bids_path_from_fname(output.with_suffix(".bdf")), verbose=False
+    )
+    assert raw.info["line_freq"] == 50
+    raw.close()
+    record = report["recordings"][0]
+    assert record["metadata_origins"]["PowerLineFrequency"] == "task-rest_eeg.json"
+    assert record["metadata_sources"][0] == "task-rest_eeg.json"
+    assert record["actions"][0]["path"] == metadata.relative_to(source).as_posix()
+    assert not any(
+        issue["code"] == "unknown_mains_frequency" for issue in record["issues"]
+    )
+    assert ancestor.read_bytes() == before
+    assert (root / ancestor.name).read_bytes() == before
+
+
+def test_ambiguous_inherited_metadata_is_not_cached(dataset, tmp_path):
+    """Ambiguous source selection cannot become a completed prepared entry."""
+    source, _, _, _, _ = dataset
+    for name in ["eeg.json", "task-rest_eeg.json"]:
+        (source / name).write_text('{"PowerLineFrequency": 50}')
+    with pytest.raises(BIDSPreparationError) as caught:
+        fetch(tmp_path)
+    assert "Multiple applicable" in caught.value.report["recordings"][0]["error"]
+    assert not list((tmp_path / "cache").rglob("complete.json"))
+
+
 @pytest.mark.parametrize(
     "correction",
     [

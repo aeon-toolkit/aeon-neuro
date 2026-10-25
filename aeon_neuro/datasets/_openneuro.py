@@ -48,7 +48,9 @@ def fetch_openneuro_dataset(
         cache entry and never imports the download client or accesses the network.
     prepare : bool, default=True
         Check primary EEG recordings and correct derived metadata before caching.
-        Signals and event tables are retained. False returns downloaded originals.
+        Reject incomplete or discontinuous EDF/BDF layouts and resolve EEG JSON
+        inheritance. Signals and event tables are retained. False returns
+        downloaded originals.
     metadata_corrections : dict or None, default=None
         Verified corrections keyed by exact relative recording filename. Each
         entry requires ``source`` and may contain ``metadata`` (descriptive EEG
@@ -56,7 +58,8 @@ def fetch_openneuro_dataset(
         See the dataset guide for supported fields. Requires ``prepare=True``.
     return_report : bool, default=False
         Return ``(root, report)`` instead of just the local root. The report
-        contains per-recording findings, corrections and original EEG metadata.
+        contains per-recording findings, corrections, original effective EEG
+        metadata, field origins and metadata materialization actions.
 
     Returns
     -------
@@ -96,7 +99,9 @@ def fetch_openneuro_dataset(
     corrections = _validate_corrections(metadata_corrections)
     # Correction evidence and preparation policy belong in the cache identity;
     # changed decisions must never silently reuse a differently prepared dataset.
-    policy = {"version": 2, "corrections": corrections} if prepare else None
+    # Earlier policies did not apply every layout, event-column and inheritance
+    # check. A new identity prevents older prepared entries bypassing these rules.
+    policy = {"version": 4, "corrections": corrections} if prepare else None
     if cache_dir is None:
         cache_dir = Path(os.environ.get("AEON_DATA", "~/aeon_data")) / "openneuro"
     # Canonical selections share a cache even when their order or spelling differs.

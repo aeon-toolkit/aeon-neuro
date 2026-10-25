@@ -9,6 +9,9 @@ from pathlib import PurePosixPath
 
 from mne_bids import find_matching_paths, read_raw_bids
 
+from aeon_neuro.utils._bids_json import _read_eeg_json
+from aeon_neuro.utils.data_io import _check_edf_layout
+
 _METADATA_FIELDS = {
     "PowerLineFrequency",
     "EEGReference",
@@ -140,11 +143,21 @@ def _check_events(path, raw, record):
             duration = 0.0 if row["duration"] == "n/a" else float(row["duration"])
             if not math.isfinite(onset) or not math.isfinite(duration) or duration < 0:
                 raise ValueError
-            sample = row.get("sample", row.get("onset_sample", "n/a"))
-            if sample != "n/a":
-                sample = float(sample)
-                if not sample.is_integer() or abs(sample - onset * sfreq) > 0.500001:
-                    raise ValueError
+            samples = set()
+            for column in ("sample", "onset_sample"):
+                sample = row.get(column, "n/a")
+                if sample != "n/a":
+                    sample = float(sample)
+                    if (
+                        not sample.is_integer()
+                        or abs(sample - onset * sfreq) > 0.500001
+                    ):
+                        raise ValueError
+                    samples.add(sample)
+            # At exactly half a sample, two different integers can both meet
+            # the onset tolerance. Supplied aliases must still identify one sample.
+            if len(samples) > 1:
+                raise ValueError
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError(
                 f"Event row {number} has invalid timing or sample position"
@@ -169,13 +182,16 @@ def _check_events(path, raw, record):
 
 
 def _prepare_recording(path, root, corrections, record):
+    if path.extension in (".edf", ".bdf"):
+        # MNE-BIDS calls native readers directly; preserve the native loader's
+        # rejection of inferred record counts, incomplete tails and time gaps.
+        _check_edf_layout(path.fpath, 2 if path.extension == ".edf" else 3)
     relative = path.fpath.relative_to(root).as_posix()
-    metadata_path = path.find_matching_sidecar(suffix="eeg", extension=".json")
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8-sig"))
-    if not isinstance(metadata, dict):
-        raise ValueError("EEG metadata must be a JSON object")
-    json.dumps(metadata, allow_nan=False)
+    metadata, inheritance = _read_eeg_json(path)
     record["original_metadata"] = metadata.copy()
+    record["metadata_sources"] = inheritance["sources"]
+    record["metadata_origins"] = inheritance["fields"]
+    record["actions"] = []
     values = corrections.get(relative, {})
     for field, value in values.get("metadata", {}).items():
         if metadata.get(field) != value:
@@ -212,7 +228,20 @@ def _prepare_recording(path, root, corrections, record):
         _write_table(target, fields, channels)
 
     target_json = path.copy().update(extension=".json").fpath
-    if values.get("metadata"):
+    target_relative = target_json.relative_to(root).as_posix()
+    materialize = any(
+        name != target_relative for name in inheritance["fields"].values()
+    )
+    if materialize:
+        record["actions"].append(
+            {
+                "path": target_relative,
+                "reason": "Materialize inherited EEG JSON fields for BIDS reading",
+            }
+        )
+    if materialize or values.get("metadata"):
+        # MNE-BIDS selects one EEG JSON rather than combining ancestor fields.
+        # Localize effective metadata in staging, preserving inherited sources.
         target_json.write_text(
             json.dumps(metadata, indent=2, allow_nan=False) + "\n", encoding="utf-8"
         )
@@ -352,7 +381,11 @@ def _prepare_dataset(root, corrections):
             "No supported primary EEG recordings were found; "
             "other modalities were left unchanged."
         ]
-    report["dataset_changes"] = []
+    report["dataset_changes"] = [
+        action
+        for record in report["recordings"]
+        for action in record.get("actions", [])
+    ]
     if (root / "datacite.yml").is_file():
         # DataLad/OpenNeuro releases can retain DataCite citation metadata at the
         # root. Keep its bytes, but identify this non-BIDS file to the validator.

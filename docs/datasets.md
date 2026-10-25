@@ -62,13 +62,26 @@ print(report["summary"])
 ```
 
 Preparation reads supported primary EEG headers through MNE-BIDS without
-preloading signals. It checks sampling frequency, supplied channel order and
-event timing/sample correspondence. Recording duration is corrected from the
+preloading signals. EDF/BDF layout checks reject incomplete records, incorrect
+declared counts and discontinuous EDF+D/BDF+D before decoding. It checks sampling
+frequency, supplied channel order and event timing/sample correspondence.
+Every supplied `sample` and `onset_sample` column is checked: values must be
+integers, agree with each other and match onset within half a sample.
+Recording duration is corrected from the
 decoded sample grid. Channel counts are corrected only when a channel table
 supplies roles; missing roles are reported and reader defaults are not treated
 as verified acquisition facts. Event tables, signal files, participant fields
 and other downloaded material are retained. Corrections to inherited metadata
 are written at recording scope so other recordings do not change.
+
+EEG JSON fields are inherited from applicable ancestor files, with lower-level
+keys overriding higher-level values and absent keys remaining inherited. Multiple
+applicable EEG JSON files at the same directory level are rejected. Effective
+inherited fields are materialized in recording-specific JSON before MNE-BIDS
+reading, retaining the original ancestor files. Reports include their paths,
+per-field origins for original metadata and materialization actions. Event,
+channel and coordinate sidecars continue to use MNE-BIDS matching; their JSON
+dictionaries are not merged across hierarchy levels.
 
 Discontinuity markers and events outside the sampled interval are reported and
 retained without clipping or inventing gaps. Unknown mains frequency remains
@@ -116,7 +129,9 @@ The default cache is `$AEON_DATA/openneuro`, or `~/aeon_data/openneuro` when
 `AEON_DATA` is unset. Each dataset, release and canonical subject selection has
 its own entry. Preparation policy and sourced corrections also identify the
 entry, so changed decisions cannot silently reuse earlier output. Overlapping
-selections or different preparation policies can duplicate recordings. A completed entry
+selections or different preparation policies can duplicate recordings. Policy
+upgrades also create a new entry so earlier prepared data cannot bypass new
+validation or inheritance checks. A completed entry
 is reused without importing the optional client or contacting the network:
 
 ```python
