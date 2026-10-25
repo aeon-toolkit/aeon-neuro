@@ -61,7 +61,9 @@ The converter retains:
   placement scheme, task description/name, institution, filters and mains
   frequency. Dataset authors, licence and citations are retained. The source
   dataset DOI moves to `SourceDatasets`; the subset receives no copy of that DOI
-  as its own identifier. Sources without a DOI use a local source-folder URI.
+  as its own identifier. Existing `SourceDatasets` entries are retained when the
+  immediate source is added, without repeating an identical entry. Sources
+  without a DOI use a local source-folder URI.
 
 The converter checks event bounds and supplied sample positions, sampling rate
 and channel correspondence before writing. These checks require events within
@@ -76,8 +78,14 @@ roles are unavailable. Review those roles before analysis. Duration uses
 includes the final sample interval. Events named `discontinuity` are retained
 with a warning; they do not establish gap lengths or a valid analysis interval.
 
-The preservation scope is the sidecars selected by MNE-BIDS, not a general merge
-of JSON fields across every inheritance level. Unlisted acquisition fields and
+EEG JSON fields are resolved from applicable ancestor files, from dataset root
+to recording directory. Lower-level keys override higher-level values; absent
+keys remain inherited. Multiple applicable EEG JSON files at the same directory
+level are rejected rather than resolved by filename specificity. Effective
+known mains frequency is validated before reading and retained on read-back.
+Original metadata files remain unchanged. Event/channel/coordinate sidecars
+still use MNE-BIDS matching; their JSON dictionaries are not merged across levels.
+Unlisted acquisition fields and
 other files, such as stimuli and arbitrary ancillary documents, are outside this
 route. Acquisition facts are attributed to the source release; they are not
 independently verified or automatically reconciled with conflicting evidence.
@@ -87,6 +95,10 @@ Existing recordings and conflicting shared metadata are protected. Temporary
 space must accommodate one native recording. Publishing files is not a
 filesystem transaction: inspect an interrupted move before retrying, and avoid
 concurrent appends. Full BIDS validation remains a separate check.
+
+EDF/BDF source layout is checked before reading sidecars: incomplete records,
+wrong declared counts and discontinuous EDF+D/BDF+D are rejected. These guards
+do not authenticate calibration or every vendor-specific layout.
 
 Use `mne_bids.read_raw_bids(written)` downstream to read the recording with its
 sidecars. Read participant columns and behavioral event tables directly when

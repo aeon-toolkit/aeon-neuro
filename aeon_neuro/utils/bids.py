@@ -142,8 +142,10 @@ def convert_eeg_to_bids(
     signal dimensions. Dataset attribution is retained with source provenance.
     Calls can append recordings from the same source dataset; existing metadata
     must agree. Matched electrode/coordinate files retain their original frame.
-    This is matched-sidecar preservation, not a general JSON inheritance merger
-    or acquisition-metadata conflict resolver. Unknown acquisition facts remain
+    EEG JSON fields include applicable ancestor metadata, with lower-level keys
+    overriding inherited values. Other sidecars use MNE-BIDS matching rather
+    than field-wise inheritance. This is not an acquisition-metadata conflict
+    resolver. Unknown acquisition facts remain
     unknown. Source metadata is published information, not independently verified.
 
     No filtering, channel selection, re-referencing or epoching is performed.

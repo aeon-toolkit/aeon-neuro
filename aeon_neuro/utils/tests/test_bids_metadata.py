@@ -118,6 +118,167 @@ def _hashes(root):
     }
 
 
+@pytest.mark.parametrize("extension,width", [("edf", 2), ("bdf", 3)])
+@pytest.mark.parametrize("variant", ["declared_count", "partial_tail", "discontinuous"])
+def test_bids_source_native_layout_precedes_metadata(
+    tmp_path, extension, width, variant
+):
+    """Apply native record guards before reading sidecars or publishing files."""
+    source = BIDSPath(
+        root=tmp_path / "source",
+        subject="01",
+        task="test",
+        datatype="eeg",
+        suffix="eeg",
+        extension=f".{extension}",
+    )
+    source.directory.mkdir(parents=True)
+    fields = [
+        ("0" if width == 2 else "\xffBIOSEMI", 8),
+        ("X", 80),
+        ("X", 80),
+        ("01.01.00", 8),
+        ("00.00.00", 8),
+        ("512", 8),
+        ("", 44),
+        ("2", 8),
+        ("1", 8),
+        ("1", 4),
+        ("Cz", 16),
+        ("", 80),
+        ("uV", 8),
+        ("-1", 8),
+        ("1", 8),
+        ("-32768" if width == 2 else "-8388608", 8),
+        ("32767" if width == 2 else "8388607", 8),
+        ("", 80),
+        ("100", 8),
+        ("", 32),
+    ]
+    content = bytearray(
+        b"".join(value.encode("latin-1").ljust(size) for value, size in fields)
+    )
+    content.extend(bytes(200 * width))
+    if variant == "declared_count":
+        content[236:244] = b"3       "
+    elif variant == "partial_tail":
+        content += b"\x00"
+    else:
+        content[192:236] = ("EDF+D" if width == 2 else "BDF+D").encode().ljust(44)
+    source.fpath.write_bytes(content)
+    output = tmp_path / "output"
+    with pytest.raises(ValueError, match="records|Discontinuous"):
+        convert_eeg_to_bids(source, source.copy().update(root=output))
+    assert not output.exists()
+    assert source.fpath.read_bytes() == content
+
+
+@pytest.mark.parametrize("has_doi", [False, True])
+def test_bids_source_keeps_origin_chain(recording_factory, tmp_path, has_doi):
+    """A subset of prepared BIDS retains earlier origins and its immediate source."""
+    source = recording_factory()
+    path = source.root / "dataset_description.json"
+    description = json.loads(path.read_text())
+    original = {"DOI": "doi:10.1234/original", "Version": "1.0.0"}
+    description["SourceDatasets"] = [original]
+    if not has_doi:
+        description.pop("DatasetDOI")
+    path.write_text(json.dumps(description))
+    before = _hashes(source.root)
+    written = convert_eeg_to_bids(
+        source, source.copy().update(root=tmp_path / "output")
+    )
+    output = json.loads((written.root / "dataset_description.json").read_text())
+    immediate = (
+        {"DOI": "doi:10.1234/example"} if has_doi else {"URL": source.root.as_uri()}
+    )
+    assert output["SourceDatasets"] == [original, immediate]
+    assert "DatasetDOI" not in output
+    assert _hashes(source.root) == before
+
+
+def test_bids_source_does_not_duplicate_origin(recording_factory, tmp_path):
+    """An immediate source already recorded verbatim is retained once."""
+    source = recording_factory()
+    path = source.root / "dataset_description.json"
+    description = json.loads(path.read_text())
+    description["SourceDatasets"] = [{"DOI": description["DatasetDOI"]}]
+    path.write_text(json.dumps(description))
+    written = convert_eeg_to_bids(
+        source, source.copy().update(root=tmp_path / "output")
+    )
+    output = json.loads((written.root / "dataset_description.json").read_text())
+    assert output["SourceDatasets"] == [{"DOI": "doi:10.1234/example"}]
+
+
+def test_bids_source_inherits_eeg_metadata(recording_factory, tmp_path):
+    """Retain applicable root fields and recording overrides through read-back."""
+    source = recording_factory()
+    path = source.copy().update(extension=".json").fpath
+    description = json.loads(path.read_text())
+    description.pop("PowerLineFrequency")
+    path.write_text(json.dumps(description))
+    (source.root / "task-test_eeg.json").write_text(
+        json.dumps(
+            {
+                "Manufacturer": "Inherited vendor",
+                "PowerLineFrequency": 50,
+                "EEGReference": "root reference",
+            }
+        )
+    )
+    before = _hashes(source.root)
+    written = convert_eeg_to_bids(
+        source, source.copy().update(root=tmp_path / "output")
+    )
+    output = json.loads(written.copy().update(extension=".json").fpath.read_text())
+    assert output["Manufacturer"] == "Inherited vendor"
+    assert output["EEGReference"] == "common"
+    assert output["PowerLineFrequency"] == 50
+    restored = read_raw_bids(written, verbose=False)
+    assert restored.info["line_freq"] == 50
+    restored.close()
+    assert _hashes(source.root) == before
+
+
+def test_bids_source_rejects_ambiguous_eeg_json(recording_factory, tmp_path):
+    """Reject ambiguous inherited sources before creating a destination."""
+    source = recording_factory()
+    for name in ["eeg.json", "task-test_eeg.json"]:
+        (source.root / name).write_text('{"PowerLineFrequency": 50}')
+    output = tmp_path / "output"
+    with pytest.raises(ValueError, match="Multiple applicable"):
+        convert_eeg_to_bids(source, source.copy().update(root=output))
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("frequency", [0, -50, True, "50"])
+def test_bids_source_rejects_invalid_frequency(recording_factory, tmp_path, frequency):
+    """Validate effective JSON frequency before calling the native reader."""
+    source = recording_factory()
+    path = source.copy().update(extension=".json").fpath
+    metadata = json.loads(path.read_text())
+    metadata["PowerLineFrequency"] = frequency
+    path.write_text(json.dumps(metadata))
+    output = tmp_path / "output"
+    with pytest.raises(ValueError, match="PowerLineFrequency"):
+        convert_eeg_to_bids(source, source.copy().update(root=output))
+    assert not output.exists()
+
+
+def test_bids_source_rejects_invalid_origin_container(recording_factory, tmp_path):
+    """Malformed provenance cannot be silently replaced by a new origin list."""
+    source = recording_factory()
+    path = source.root / "dataset_description.json"
+    metadata = json.loads(path.read_text())
+    metadata["SourceDatasets"] = {"DOI": "doi:10.1234/original"}
+    path.write_text(json.dumps(metadata))
+    output = tmp_path / "output"
+    with pytest.raises(ValueError, match="SourceDatasets must be a list"):
+        convert_eeg_to_bids(source, source.copy().update(root=output))
+    assert not output.exists()
+
+
 @pytest.mark.parametrize("behavioral", [False, True])
 def test_bids_source_preserves_metadata(recording_factory, tmp_path, behavioral):
     """Retain event semantics, participant fields and template coordinates."""

@@ -11,7 +11,9 @@ from pathlib import Path
 import numpy as np
 from mne_bids import BIDSPath, read_raw_bids, write_raw_bids
 
+from aeon_neuro.utils._bids_json import _read_eeg_json
 from aeon_neuro.utils.bids import _preserve_stim_units
+from aeon_neuro.utils.data_io import _check_edf_layout
 
 # These describe acquisition. Duration, sampling rate and channel counts must
 # continue to describe the decoded signal rather than a possibly stale template.
@@ -210,10 +212,21 @@ def _convert_bids_recording(source, destination, format, allow_preload, overwrit
     source.update(extension=extension)
     destination.update(extension=extension)
 
-    metadata_path = source.find_matching_sidecar(suffix="eeg", extension=".json")
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8-sig"))
-    # Use MNE-BIDS to select applicable sidecars and apply channel roles/events.
-    # Do not duplicate its filename matching or infer roles from channel names.
+    if extension in (".edf", ".bdf"):
+        # MNE-BIDS bypasses the native loader, whose layout guard must still run
+        # before a reader can infer a replacement record count or omit a tail.
+        _check_edf_layout(source.fpath, 2 if extension == ".edf" else 3)
+    metadata, provenance = _read_eeg_json(source)
+    frequency = metadata.get("PowerLineFrequency")
+    if frequency not in (None, "n/a") and (
+        isinstance(frequency, bool)
+        or not isinstance(frequency, (int, float))
+        or not np.isfinite(frequency)
+        or frequency <= 0
+    ):
+        raise ValueError("Published PowerLineFrequency must be finite and positive.")
+    # MNE-BIDS handles channel/event tables, while effective EEG JSON fields
+    # also include applicable ancestors missing from its selected sidecar.
     raw = read_raw_bids(source)
     if raw.preload:
         raise ValueError(
@@ -224,6 +237,8 @@ def _convert_bids_recording(source, destination, format, allow_preload, overwrit
         raise ValueError(
             "Published SamplingFrequency disagrees with the decoded signal."
         )
+    if frequency not in (None, "n/a"):
+        raw.info["line_freq"] = float(frequency)
 
     copied = {}
     sidecars = {}
@@ -272,7 +287,8 @@ def _convert_bids_recording(source, destination, format, allow_preload, overwrit
     ):
         if field in metadata and metadata[field] != actual:
             warnings.warn(
-                f"{metadata_path}: published {field}={metadata[field]!r}; "
+                f"{provenance['fields'][field]}: "
+                f"published {field}={metadata[field]!r}; "
                 f"decoded signal gives {actual!r}. Output uses the decoded value.",
                 UserWarning,
                 stacklevel=3,
@@ -282,9 +298,15 @@ def _convert_bids_recording(source, destination, format, allow_preload, overwrit
         (source.root / "dataset_description.json").read_text(encoding="utf-8-sig")
     )
     source_doi = description.pop("DatasetDOI", None)
-    description["SourceDatasets"] = [
-        {"DOI": source_doi} if source_doi else {"URL": source_root.as_uri()}
-    ]
+    sources = description.get("SourceDatasets", [])
+    if not isinstance(sources, list):
+        raise ValueError("SourceDatasets must be a list of source descriptions.")
+    immediate = {"DOI": source_doi} if source_doi else {"URL": source_root.as_uri()}
+    # Prepared datasets may already identify their original release. Keep that
+    # chain when adding the recording subset's immediate source.
+    if immediate not in sources:
+        sources.append(immediate)
+    description["SourceDatasets"] = sources
     description["Name"] += " (recording subset)"
     description.pop("BIDSVersion", None)
     description_path = destination.root / "dataset_description.json"
