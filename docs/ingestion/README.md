@@ -112,3 +112,11 @@ use the existing optional `pybv` exporter and skip when it is unavailable.
 
 Dimensionless native STIM channels also retain their units in the plain filename
 and Raw routes, using `arbitrary` in the generated channel table.
+
+# EEG conversion and trigger units
+
+`convert_eeg_to_bids` retains dimensionless native STIM channels, such as BioSemi
+Status, using `arbitrary` in the generated BIDS channel table. This spelling
+preserves the native MNE unit code when reading the output with MNE-BIDS.
+Samples, trigger codes and voltage-channel units remain unchanged. No new
+dependency or trigger extraction policy is introduced.

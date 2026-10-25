@@ -1,16 +1,82 @@
 """Convert native EEG, existing BIDS recordings and MNE Raw objects to BIDS."""
 
 import csv
+<<<<<<< enh/bids-source-intake
+=======
+from numbers import Integral
+>>>>>>> main
 from os import PathLike
 
+import mne
+import numpy as np
 from mne.io import BaseRaw
 from mne_bids import BIDSPath, write_raw_bids
 
 from aeon_neuro.utils.data_io import load_eeg_to_mne
 
 
+def _prepare_events(raw, events, event_id):
+    """Check explicit event bounds and mappings before dataset files are created."""
+    if event_id is not None:
+        if not isinstance(event_id, dict) or any(
+            not isinstance(name, str)
+            or isinstance(code, bool)
+            or not isinstance(code, Integral)
+            for name, code in event_id.items()
+        ):
+            raise TypeError("event_id must map string descriptions to integer codes.")
+    if events is not None:
+        if event_id is None:
+            raise ValueError("event_id is required when supplying events.")
+        if isinstance(events, (str, PathLike)):
+            events = mne.read_events(events)
+        if (
+            not isinstance(events, np.ndarray)
+            or events.ndim != 2
+            or events.shape[1] != 3
+        ):
+            raise ValueError(
+                "events must be an MNE event file or an array of shape (n, 3)."
+            )
+        if not np.issubdtype(events.dtype, np.integer):
+            raise TypeError("events must contain integer sample indices and codes.")
+        if np.any(events[:, 0] < raw.first_samp) or np.any(
+            events[:, 0] > raw.last_samp
+        ):
+            raise ValueError(
+                f"Event samples must lie between {raw.first_samp} and {raw.last_samp}."
+            )
+        missing = set(events[:, 2]) - set(event_id.values())
+        if missing:
+            raise ValueError(
+                f"event_id is missing descriptions for codes: {sorted(missing)}"
+            )
+        if events.size and raw.first_samp != 0 and raw.annotations.orig_time is None:
+            # MNE-BIDS can shift explicit events by first_time again on export.
+            # Reject the ambiguous time base instead of producing shifted markers.
+            raise ValueError(
+                "Explicit events with nonzero first_samp require a known time origin; "
+                "use the complete zero-based recording when timing is unknown."
+            )
+    if event_id is not None:
+        # MNE-BIDS supplies its own code for this reserved acquisition annotation.
+        missing = set(raw.annotations.description) - set(event_id) - {"BAD_ACQ_SKIP"}
+        if missing or (len(raw.annotations) and not event_id):
+            raise ValueError(
+                "event_id must include all native annotation descriptions."
+            )
+    return events
+
+
 def convert_eeg_to_bids(
-    source, bids_path, *, format="auto", allow_preload=False, overwrite=False
+    source,
+    bids_path,
+    *,
+    events=None,
+    event_id=None,
+    format="auto",
+    allow_preload=False,
+    overwrite=False,
 ):
     """Write a native EEG recording, BIDS recording or MNE Raw object to BIDS.
 
@@ -27,6 +93,18 @@ def convert_eeg_to_bids(
     bids_path : mne_bids.BIDSPath
         Destination with root, subject and task set. Supply session, run and
         datatype where needed; identifiers are not inferred from the source path.
+    events : path-like, np.ndarray or None, default=None
+        MNE events file or array of shape (n_events, 3), forwarded to MNE-BIDS.
+        These are written in addition to native annotations. For Status-channel
+        triggers, extract events explicitly with ``mne.find_events`` using the
+        acquisition's trigger settings; no codes or classes are inferred here.
+        Samples use MNE's absolute sample indices, including ``raw.first_samp``.
+        Bounds, integer values and mapping coverage are checked before writing.
+        Recordings with nonzero ``first_samp`` and unknown annotation time origin
+        are rejected because MNE-BIDS may shift their exported timing.
+    event_id : dict or None, default=None
+        Description-to-code mapping. Required when supplying ``events``; include
+        descriptions for existing annotations too, following MNE-BIDS rules.
     format : str, default="auto"
         Output encoding passed to ``mne_bids.write_raw_bids``. The default copies
         supported source files where possible. Preloaded recordings require an
@@ -94,10 +172,15 @@ def convert_eeg_to_bids(
             "source must be an EEG filename, BIDSPath or an MNE Raw object."
         )
 
+    # MNE-BIDS may omit out-of-range events or write metadata before discovering
+    # an incomplete mapping. Check these inputs before handing it a destination.
+    events = _prepare_events(raw, events, event_id)
     # Delegate metadata checks and preloaded export policy to MNE-BIDS.
     written = write_raw_bids(
         raw,
         bids_path,
+        events=events,
+        event_id=event_id,
         format=format,
         allow_preload=allow_preload,
         overwrite=overwrite,
