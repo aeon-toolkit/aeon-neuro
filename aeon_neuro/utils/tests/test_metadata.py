@@ -5,6 +5,7 @@ import json
 import mne
 import numpy as np
 import pytest
+from mne._fiff.constants import FIFF
 from numpy.testing import assert_array_equal
 
 from aeon_neuro.utils.metadata import prepare_eeg_metadata
@@ -52,6 +53,39 @@ def test_verified_metadata_corrections():
     assert_array_equal(prepared.annotations.description, raw.annotations.description)
     assert raw.get_channel_types() == ["eeg", "eeg"]
     assert raw.info["line_freq"] is None
+    json.dumps(report, allow_nan=False)
+
+
+def test_channel_type_unit_change_preserves_samples():
+    """Report a declared-unit change without rescaling or modifying the input."""
+    data = np.arange(20).reshape(2, 10) * 1e-6
+    raw = mne.io.RawArray(data.copy(), mne.create_info(["Cz", "Aux"], 100, "eeg"))
+    # MISC changes the unit tag, whereas EEG and EOG both use volts.
+    with pytest.warns(RuntimeWarning, match="unit.*changed"):
+        prepared, report = prepare_eeg_metadata(
+            raw,
+            channel_types={"Aux": "misc"},
+            correction_source="acquisition record, revision 1",
+        )
+
+    assert prepared.get_channel_types() == ["eeg", "misc"]
+    assert prepared.info["chs"][0]["unit"] == FIFF.FIFF_UNIT_V
+    assert prepared.info["chs"][1]["unit"] == FIFF.FIFF_UNIT_NONE
+    assert report["corrections"] == [
+        {
+            "field": "channel_type",
+            "channel": "Aux",
+            "before": "eeg",
+            "after": "misc",
+            "source": "acquisition record, revision 1",
+            "unit_before": int(FIFF.FIFF_UNIT_V),
+            "unit_after": int(FIFF.FIFF_UNIT_NONE),
+        }
+    ]
+    assert_array_equal(prepared.get_data(), data)
+    assert_array_equal(raw.get_data(), data)
+    assert raw.get_channel_types() == ["eeg", "eeg"]
+    assert all(channel["unit"] == FIFF.FIFF_UNIT_V for channel in raw.info["chs"])
     json.dumps(report, allow_nan=False)
 
 
