@@ -100,8 +100,7 @@ Supported formats
    * - XDF
      - ``.xdf``/``.xdfz`` via optional PyXDF; one EEG stream plus markers.
 
-Other formats accepted by the installed ``mne.io.read_raw`` dispatcher are
-delegated to MNE. Keep companion files together.
+Keep companion files together.
 
 
 .. autofunction:: aeon_neuro.utils.data_io.load_eeg_to_mne
