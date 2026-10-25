@@ -11,7 +11,63 @@ from aeon_neuro.utils.data_io import (
     load_auxiliary_info,
     load_brainvision_to_mne,
     load_brainvision_to_numpy,
+    load_eeg_to_mne,
 )
+
+
+@pytest.mark.parametrize("extension,width", [("edf", 2), ("bdf", 3)])
+@pytest.mark.parametrize(
+    "variant",
+    ["truncated", "discontinuous", "unknown_count", "count_too_low", "count_too_high"],
+)
+def test_edf_bdf_record_layout(tmp_path, extension, width, variant):
+    """Reject lost records and time gaps while accepting legal unknown counts."""
+    # One 100 Hz channel and two complete seconds, using the shared fixed header.
+    fields = [
+        ("0" if extension == "edf" else "\xffBIOSEMI", 8),
+        ("X", 80),
+        ("X", 80),
+        ("01.01.00", 8),
+        ("00.00.00", 8),
+        ("512", 8),
+        ("", 44),
+        ("2", 8),
+        ("1", 8),
+        ("1", 4),
+        ("Cz", 16),
+        ("", 80),
+        ("uV", 8),
+        ("-1", 8),
+        ("1", 8),
+        ("-32768" if width == 2 else "-8388608", 8),
+        ("32767" if width == 2 else "8388607", 8),
+        ("", 80),
+        ("100", 8),
+        ("", 32),
+    ]
+    content = bytearray(
+        b"".join(value.encode("latin-1").ljust(size) for value, size in fields)
+    )
+    content.extend(bytes(200 * width))
+    source = tmp_path / f"recording.{extension}"
+    if variant == "truncated":
+        content = content[:-1]
+    elif variant == "discontinuous":
+        content[192:236] = ("EDF+D" if width == 2 else "BDF+D").encode().ljust(44)
+    elif variant in ("count_too_low", "count_too_high"):
+        # Keep both payload records complete so only the declared count is wrong.
+        content[236:244] = b"1       " if variant == "count_too_low" else b"3       "
+    else:
+        content[236:244] = b"-1      "
+    source.write_bytes(content)
+
+    if variant == "unknown_count":
+        raw = load_eeg_to_mne(source)
+        assert raw.n_times == 200
+        assert raw.info["sfreq"] == 100
+    else:
+        with pytest.raises(ValueError, match="records|Discontinuous"):
+            load_eeg_to_mne(source)
 
 
 def test_auxiliary_info(tmp_path):

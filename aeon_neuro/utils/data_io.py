@@ -1,12 +1,53 @@
 """Read EEG recordings and auxiliary dataset information."""
 
 import json
+import os
 import re
 import warnings
 from pathlib import Path
 
 import mne
 import numpy as np
+
+
+def _check_edf_layout(path, bytes_per_sample):
+    """Reject incomplete records and unsupported discontinuities before decoding."""
+    with open(path, "rb") as stream:
+        fixed = stream.read(256)
+        if len(fixed) != 256:
+            raise ValueError("Incomplete EDF/BDF header.")
+        if fixed[192:236].startswith((b"EDF+D", b"BDF+D")):
+            raise ValueError("Discontinuous EDF+D/BDF+D recordings are not supported.")
+        try:
+            header_bytes = int(fixed[184:192])
+            records = int(fixed[236:244])
+            channels = int(fixed[252:256])
+            if channels <= 0 or header_bytes != 256 * (channels + 1) or records < -1:
+                raise ValueError
+            signal_header = stream.read(256 * channels)
+            if len(signal_header) != 256 * channels:
+                raise ValueError
+            # EDF and BDF share these fixed-width fields; only sample width differs.
+            counts = [
+                int(
+                    signal_header[216 * channels + 8 * i : 216 * channels + 8 * (i + 1)]
+                )
+                for i in range(channels)
+            ]
+            if any(count <= 0 for count in counts):
+                raise ValueError
+        except ValueError as error:
+            raise ValueError("Invalid EDF/BDF record layout.") from error
+        payload = os.fstat(stream.fileno()).st_size - header_bytes
+        record_bytes = bytes_per_sample * sum(counts)
+        # -1 is the legal unknown-record-count sentinel. It still requires
+        # complete records, rather than MNE silently dropping a truncated tail.
+        if payload % record_bytes or (
+            records != -1 and payload != records * record_bytes
+        ):
+            raise ValueError(
+                "EDF/BDF file size does not match complete declared records."
+            )
 
 
 def load_eeg_to_mne(path, *, preload=False, **reader_kwargs):
@@ -37,13 +78,15 @@ def load_eeg_to_mne(path, *, preload=False, **reader_kwargs):
     Raises
     ------
     ValueError
-        If the format is unsupported or ambiguous, or the reader rejects it.
+        If the filename extension is unsupported, EDF/BDF records are incomplete
+        or discontinuous, or the MNE reader rejects the recording.
 
     Notes
     -----
     No filtering, referencing, channel selection or epoching is applied. MNE
     reader behaviour still applies: mixed-rate EDF/BDF channels are represented
-    at one sampling rate, and discontinuities are not independently validated.
+    at one sampling rate. Discontinuous EDF+D/BDF+D is rejected because its gaps
+    cannot be represented faithfully by the continuous reader route.
     Status-channel triggers remain in the signal; use ``mne.find_events`` with
     acquisition-appropriate settings when an explicit event table is needed.
     Native reading does not import existing BIDS sidecars or repair metadata.
@@ -111,6 +154,8 @@ def load_eeg_to_mne(path, *, preload=False, **reader_kwargs):
             f"Unsupported EEG extension {extension!r}; supply the recording entry file "
             "(for example .vhdr, .set or .lay) with its companions."
         )
+    if extension in (".edf", ".bdf"):
+        _check_edf_layout(path, 2 if extension == ".edf" else 3)
     # Reuse native decoders so calibration, companions and reader errors stay in MNE.
     return readers[extension](path, preload=preload, **reader_kwargs)
 
