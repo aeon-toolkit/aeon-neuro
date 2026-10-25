@@ -8,7 +8,8 @@ BIDS conversion
 
 ``convert_eeg_to_bids`` accepts BrainVision, EDF/EDF+, BioSemi BDF/BDF+ and
 continuous EEGLAB filenames, or an existing MNE Raw recording, and returns the
-written ``BIDSPath``. Supplied metadata is assumed
+written ``BIDSPath``. Known mains frequency must be finite and positive;
+unknown frequency remains permitted. Other supplied metadata is assumed
 correct; MNE-BIDS handles writing and its existing validation. No analysis
 processing or metadata repair is added. Native-path reading does not import
 existing BIDS sidecars.
