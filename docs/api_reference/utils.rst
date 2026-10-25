@@ -13,6 +13,10 @@ correct; MNE-BIDS handles writing and its existing validation. No analysis
 processing or metadata repair is added. Native-path reading does not import
 existing BIDS sidecars.
 
+Dimensionless native STIM channels, including BioSemi Status, use ``arbitrary``
+units in the generated channel table so MNE-BIDS read-back retains their native
+unit code. Samples and trigger codes are not rescaled.
+
 .. autofunction:: aeon_neuro.utils.bids.convert_eeg_to_bids
 
 EEG ingestion
@@ -61,6 +65,14 @@ without sample rescaling or calibration repair. The report assesses mains
 frequency only and does not establish complete BIDS metadata validity.
 
 .. autofunction:: aeon_neuro.utils.metadata.prepare_eeg_metadata
+
+EEG conversion guide
+--------------------
+
+.. toctree::
+   :maxdepth: 1
+
+   ../ingestion/README
 
 Acquisition events
 ------------------
