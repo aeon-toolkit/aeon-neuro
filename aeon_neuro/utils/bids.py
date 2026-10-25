@@ -1,10 +1,7 @@
 """Convert native EEG, existing BIDS recordings and MNE Raw objects to BIDS."""
 
 import csv
-<<<<<<< enh/bids-source-intake
-=======
 from numbers import Integral
->>>>>>> main
 from os import PathLike
 
 import mne
@@ -89,7 +86,8 @@ def convert_eeg_to_bids(
         A BIDSPath explicitly reads associated BIDS metadata and preserves matched
         event/channel tables, coordinates and participant fields. This route
         requires unchanged identifiers, native encoding, deferred reading and
-        overwrite=False, with a separate destination dataset.
+        overwrite=False, with a separate destination dataset. Explicit events
+        and event_id overrides are rejected because source tables are retained.
     bids_path : mne_bids.BIDSPath
         Destination with root, subject and task set. Supply session, run and
         datatype where needed; identifiers are not inferred from the source path.
@@ -157,6 +155,11 @@ def convert_eeg_to_bids(
     """
     # BIDSPath implements PathLike, so it must be dispatched before bare filenames.
     if isinstance(source, BIDSPath):
+        # Original event tables are retained verbatim; overrides must not be ignored.
+        if events is not None or event_id is not None:
+            raise ValueError(
+                "events and event_id cannot override preserved BIDS source tables."
+            )
         from aeon_neuro.utils._bids_metadata import _convert_bids_recording
 
         return _convert_bids_recording(

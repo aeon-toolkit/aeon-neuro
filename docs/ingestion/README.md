@@ -37,8 +37,10 @@ four acquisition prefixes and auxiliary inputs. Those prefixes alone do not
 establish the number or identities of recorded players.
 
 This route requires the source identifiers and encoding to remain unchanged,
-`format="auto"`, `allow_preload=False` and `overwrite=False`. Source and
-destination datasets must use separate folders, with neither nested inside the
+`format="auto"`, `allow_preload=False` and `overwrite=False`. Original event
+tables are retained verbatim, so `events` and `event_id` must remain `None`;
+explicit overrides raise before output is created. Source and destination
+datasets must use separate folders, with neither nested inside the
 other. Native files that necessarily preload, such as embedded EEGLAB data,
 need the separate Raw/export route described below. Different source datasets
 belong in different destination roots. Additional recordings from the same

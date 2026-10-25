@@ -167,6 +167,26 @@ def test_bids_source_preserves_metadata(recording_factory, tmp_path, behavioral)
     assert _hashes(source.root) == original_files
 
 
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"events": np.array([[20, 0, 99]])},
+        {"event_id": {"override": 99}},
+        {"event_id": {}},
+        {"events": np.array([[20, 0, 99]]), "event_id": {"override": 99}},
+    ],
+)
+def test_bids_source_rejects_event_overrides(recording_factory, tmp_path, overrides):
+    """Do not silently discard event arguments when preserving source tables."""
+    source = recording_factory()
+    before = _hashes(source.root)
+    output = tmp_path / "output"
+    with pytest.raises(ValueError, match="cannot override preserved BIDS source"):
+        convert_eeg_to_bids(source, source.copy().update(root=output), **overrides)
+    assert not output.exists()
+    assert _hashes(source.root) == before
+
+
 def test_bids_source_appends_without_losing_rows(recording_factory, tmp_path):
     """Appending subjects and runs retains participant labels and prior scans."""
     sources = [
