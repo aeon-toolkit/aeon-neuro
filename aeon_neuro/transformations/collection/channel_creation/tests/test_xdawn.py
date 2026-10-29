@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from aeon.testing.data_generation import make_example_3d_numpy
 
-from aeon_neuro.transformations.collection.channel_creation import Xdawn
+from aeon_neuro.transformations.collection.channel_creation import XDAWN
 
 
 def _make_erp_data(n_cases=100, n_channels=8, n_timepoints=100, random_state=0):
@@ -25,7 +25,7 @@ def test_xdawn_output_shape(n_components, n_channels):
         n_cases=20, n_channels=n_channels, n_timepoints=30, random_state=0
     )
 
-    Xt = Xdawn(n_components=n_components).fit_transform(X, y)
+    Xt = XDAWN(n_components=n_components).fit_transform(X, y)
 
     assert Xt.shape == (20, 2 * min(n_channels, n_components), 30)
     assert Xt.dtype == np.float64
@@ -37,7 +37,7 @@ def test_xdawn_transform_matches_fit_transform():
         n_cases=20, n_channels=4, n_timepoints=30, random_state=0
     )
 
-    xdawn = Xdawn(n_components=2)
+    xdawn = XDAWN(n_components=2)
     Xt1 = xdawn.fit_transform(X, y)
     Xt2 = xdawn.transform(X)
 
@@ -48,7 +48,7 @@ def test_xdawn_enhances_erp():
     """Test the first xDAWN component recovers the time-locked response."""
     X, y, bump = _make_erp_data()
 
-    Xt = Xdawn(n_components=1).fit_transform(X, y)
+    Xt = XDAWN(n_components=1).fit_transform(X, y)
 
     # The class 1 average of the first class 1 component should follow the bump
     # much more closely than any single raw channel does.
@@ -70,4 +70,4 @@ def test_xdawn_requires_y():
     )
 
     with pytest.raises(ValueError, match="requires_y"):
-        Xdawn().fit(X)
+        XDAWN().fit(X)

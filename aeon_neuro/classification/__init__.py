@@ -14,7 +14,7 @@ wrappers:
 Riemannian-MDM (RMD)
 3. MNE+scikit-learn
     CSP+SVM, CSP+LDA (CSPClassifier)
-    xDAWN+LDA (XdawnClassifier)
+    xDAWN+LDA (XDAWNClassifier)
 
 
 """
@@ -29,7 +29,7 @@ __all__ = [
     "RiemannianKNNClassifier",
     "TimeCNNClassifier",
     "CSPClassifier",
-    "XdawnClassifier",
+    "XDAWNClassifier",
 ]
 
 from aeon.classification.convolution_based import MultiRocketHydraClassifier
@@ -44,4 +44,4 @@ from aeon_neuro.classification.distance_based import (
     RiemannianKNNClassifier,
     RiemannianMDMClassifier,
 )
-from aeon_neuro.classification.feature_based import CSPClassifier, XdawnClassifier
+from aeon_neuro.classification.feature_based import CSPClassifier, XDAWNClassifier

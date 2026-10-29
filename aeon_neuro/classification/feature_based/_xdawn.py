@@ -2,24 +2,24 @@
 
 from __future__ import annotations
 
-__all__ = ["XdawnClassifier"]
+__all__ = ["XDAWNClassifier"]
 
 import numpy as np
 from aeon.base._base import _clone_estimator
 from aeon.classification import BaseClassifier
 from sklearn.base import BaseEstimator, is_classifier
 
-from aeon_neuro.transformations.collection.channel_creation import Xdawn
+from aeon_neuro.transformations.collection.channel_creation import XDAWN
 
 
-class XdawnClassifier(BaseClassifier):
+class XDAWNClassifier(BaseClassifier):
     """xDAWN spatial filtering plus a scikit-learn classifier.
 
-    This estimator applies the ``Xdawn`` transformer, which wraps
+    This estimator applies the ``XDAWN`` transformer, which wraps
     ``mne.decoding.XdawnTransformer``, to multivariate equal-length time series,
     flattens the filtered series of each case into a feature vector, then
-    classifies the features with a scikit-learn classifier, by default
-    ``LinearDiscriminantAnalysis`` (the classic xDAWN+LDA pipeline).
+    classifies the features with a scikit-learn classifier, by default a
+    shrinkage ``LinearDiscriminantAnalysis`` (the classic xDAWN+LDA pipeline).
 
     xDAWN enhances event-related potentials (ERPs), so this classifier is
     intended for ERP data such as P300 or oddball paradigms.
@@ -31,12 +31,20 @@ class XdawnClassifier(BaseClassifier):
     ----------
     classifier : sklearn classifier or None, default=None
         Unfitted scikit-learn classifier fitted on the xDAWN features, for
-        example ``LinearDiscriminantAnalysis(solver="lsqr", shrinkage="auto")``
-        or ``SVC(kernel="linear", probability=True)``. It is cloned before
+        example ``SVC(kernel="linear", probability=True)``. It is cloned before
         fitting, so the object passed in is not modified. If None,
-        ``sklearn.discriminant_analysis.LinearDiscriminantAnalysis()`` is used.
+        ``LinearDiscriminantAnalysis(solver="lsqr", shrinkage="auto")`` is used,
+        which suits the many features xDAWN produces relative to the number of
+        cases [3]_.
     n_components : int, default=2
         Number of xDAWN spatial filters kept per class.
+    decimate : int, default=1
+        Factor by which the xDAWN-filtered series are downsampled before
+        flattening, using ``scipy.signal.decimate`` (low-pass filter, then keep
+        every ``decimate``-th timepoint). 1 means no downsampling. For ERP data,
+        choose it so the resulting rate is about 50-64 Hz, e.g. 10 for data
+        recorded at 500 Hz. ``scipy`` recommends factors of at most 13; for larger
+        factors, downsample before fitting instead.
     reg : float, str or None, default=None
         Regularisation for covariance estimation, passed to
         ``mne.decoding.XdawnTransformer``.
@@ -52,7 +60,7 @@ class XdawnClassifier(BaseClassifier):
 
     Attributes
     ----------
-    xdawn_ : Xdawn
+    xdawn_ : XDAWN
         The fitted xDAWN transformer.
     classifier_ : sklearn classifier
         The fitted clone of ``classifier``.
@@ -60,10 +68,10 @@ class XdawnClassifier(BaseClassifier):
     Notes
     -----
     Each case is represented by its xDAWN-filtered series flattened to length
-    ``n_classes * min(n_channels, n_components) * n_timepoints``. This is often
-    large relative to the number of cases, so a shrinkage LDA,
-    ``LinearDiscriminantAnalysis(solver="lsqr", shrinkage="auto")``, is
-    recommended for small ERP datasets [3]_.
+    ``n_classes * min(n_channels, n_components) * ceil(n_timepoints / decimate)``.
+    This is often large relative to the number of cases, which is why the default
+    classifier is a shrinkage LDA [3]_. Setting ``decimate`` reduces the number
+    of features further.
 
     References
     ----------
@@ -83,9 +91,9 @@ class XdawnClassifier(BaseClassifier):
     Examples
     --------
     >>> from aeon.testing.data_generation import make_example_3d_numpy
-    >>> from aeon_neuro.classification.feature_based import XdawnClassifier
+    >>> from aeon_neuro.classification.feature_based import XDAWNClassifier
     >>> X, y = make_example_3d_numpy(n_cases=12, n_channels=4, random_state=0)
-    >>> clf = XdawnClassifier(n_components=2)
+    >>> clf = XDAWNClassifier(n_components=2)
     >>> clf.fit(X, y)  # doctest: +SKIP
     >>> clf.predict(X)  # doctest: +SKIP
     """
@@ -102,6 +110,7 @@ class XdawnClassifier(BaseClassifier):
         self,
         classifier=None,
         n_components: int = 2,
+        decimate: int = 1,
         reg: float | str | None = None,
         signal_cov: np.ndarray | None = None,
         cov_method_params: dict | None = None,
@@ -109,6 +118,7 @@ class XdawnClassifier(BaseClassifier):
     ):
         self.classifier = classifier
         self.n_components = n_components
+        self.decimate = decimate
         self.reg = reg
         self.signal_cov = signal_cov
         self.cov_method_params = cov_method_params
@@ -118,7 +128,15 @@ class XdawnClassifier(BaseClassifier):
 
     def _fit(self, X: np.ndarray, y: np.ndarray):
         """Fit the xDAWN plus classifier pipeline."""
-        self.xdawn_ = Xdawn(
+        if (
+            not isinstance(self.decimate, (int, np.integer))
+            or isinstance(self.decimate, bool)
+            or self.decimate < 1
+        ):
+            raise ValueError(
+                f"decimate must be an integer >= 1, got {self.decimate!r}."
+            )
+        self.xdawn_ = XDAWN(
             n_components=self.n_components,
             reg=self.reg,
             signal_cov=self.signal_cov,
@@ -133,7 +151,7 @@ class XdawnClassifier(BaseClassifier):
         if self.classifier is None:
             from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
-            classifier = LinearDiscriminantAnalysis()
+            classifier = LinearDiscriminantAnalysis(solver="lsqr", shrinkage="auto")
         elif isinstance(self.classifier, BaseEstimator) and is_classifier(
             self.classifier
         ):
@@ -180,6 +198,10 @@ class XdawnClassifier(BaseClassifier):
             Xt = self.xdawn_.fit_transform(X, y)
         else:
             Xt = self.xdawn_.transform(X)
+        if self.decimate > 1:
+            from scipy.signal import decimate
+
+            Xt = decimate(Xt, self.decimate, axis=-1)
         return Xt.reshape(Xt.shape[0], -1)
 
     @classmethod

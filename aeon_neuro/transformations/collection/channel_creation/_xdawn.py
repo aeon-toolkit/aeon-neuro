@@ -6,7 +6,7 @@ import numpy as np
 from aeon.transformations.collection import BaseCollectionTransformer
 
 
-class Xdawn(BaseCollectionTransformer):
+class XDAWN(BaseCollectionTransformer):
     """xDAWN spatial filter wrapper for aeon collections.
 
     This wraps ``mne.decoding.XdawnTransformer`` for use as an aeon collection
@@ -75,9 +75,9 @@ class Xdawn(BaseCollectionTransformer):
     Examples
     --------
     >>> from aeon.testing.data_generation import make_example_3d_numpy
-    >>> from aeon_neuro.transformations.collection.channel_creation import Xdawn
+    >>> from aeon_neuro.transformations.collection.channel_creation import XDAWN
     >>> X, y = make_example_3d_numpy(n_cases=20, n_channels=8, random_state=0)
-    >>> xdawn = Xdawn(n_components=2)
+    >>> xdawn = XDAWN(n_components=2)
     >>> Xt = xdawn.fit_transform(X, y)  # doctest: +SKIP
     >>> Xt.shape  # 2 classes * 2 components  # doctest: +SKIP
     (20, 4, 12)
@@ -116,17 +116,17 @@ class Xdawn(BaseCollectionTransformer):
 
         Returns
         -------
-        self : Xdawn
+        self : XDAWN
             Reference to self.
         """
         if y is None:
-            raise ValueError("Xdawn requires y in fit.")
+            raise ValueError("XDAWN requires y in fit.")
 
         try:
             from mne.decoding import XdawnTransformer
         except ImportError as exc:
             raise ImportError(
-                "Xdawn requires the optional dependency 'mne'. "
+                "XDAWN requires the optional dependency 'mne'. "
                 "Install it with: pip install mne"
             ) from exc
 

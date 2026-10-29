@@ -7,18 +7,18 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.linear_model import RidgeClassifier
 from sklearn.svm import SVC
 
-from aeon_neuro.classification.feature_based import XdawnClassifier
+from aeon_neuro.classification.feature_based import XDAWNClassifier
 
 CLASSIFIERS = [
     None,
-    LinearDiscriminantAnalysis(solver="lsqr", shrinkage="auto"),
+    LinearDiscriminantAnalysis(),
     SVC(kernel="linear", probability=True),
 ]
 
 
 @pytest.mark.parametrize("classifier", CLASSIFIERS)
 def test_xdawn_classifier_multivariate_equal_length(classifier):
-    """Test XdawnClassifier on multivariate equal-length data."""
+    """Test XDAWNClassifier on multivariate equal-length data."""
     X, y = make_example_3d_numpy(
         n_cases=12,
         n_channels=4,
@@ -26,7 +26,7 @@ def test_xdawn_classifier_multivariate_equal_length(classifier):
         random_state=0,
     )
 
-    clf = XdawnClassifier(classifier, n_components=2, random_state=0)
+    clf = XDAWNClassifier(classifier, n_components=2, random_state=0)
     clf.fit(X, y)
 
     probs = clf.predict_proba(X)
@@ -39,7 +39,7 @@ def test_xdawn_classifier_multivariate_equal_length(classifier):
 
 @pytest.mark.parametrize("classifier", CLASSIFIERS)
 def test_xdawn_classifier_multiclass(classifier):
-    """Test XdawnClassifier returns one probability column per class."""
+    """Test XDAWNClassifier returns one probability column per class."""
     X, y = make_example_3d_numpy(
         n_cases=30,
         n_channels=4,
@@ -48,7 +48,7 @@ def test_xdawn_classifier_multiclass(classifier):
         random_state=0,
     )
 
-    clf = XdawnClassifier(classifier, n_components=2, random_state=0)
+    clf = XDAWNClassifier(classifier, n_components=2, random_state=0)
     clf.fit(X, y)
     probs = clf.predict_proba(X)
 
@@ -58,7 +58,7 @@ def test_xdawn_classifier_multiclass(classifier):
 
 @pytest.mark.parametrize("classifier", CLASSIFIERS)
 def test_xdawn_classifier_reproducible(classifier):
-    """Test XdawnClassifier gives the same output for a fixed random state."""
+    """Test XDAWNClassifier gives the same output for a fixed random state."""
     X, y = make_example_3d_numpy(
         n_cases=12,
         n_channels=4,
@@ -67,12 +67,12 @@ def test_xdawn_classifier_reproducible(classifier):
     )
 
     probs1 = (
-        XdawnClassifier(classifier, n_components=2, random_state=0)
+        XDAWNClassifier(classifier, n_components=2, random_state=0)
         .fit(X, y)
         .predict_proba(X)
     )
     probs2 = (
-        XdawnClassifier(classifier, n_components=2, random_state=0)
+        XDAWNClassifier(classifier, n_components=2, random_state=0)
         .fit(X, y)
         .predict_proba(X)
     )
@@ -81,7 +81,7 @@ def test_xdawn_classifier_reproducible(classifier):
 
 
 def test_xdawn_classifier_default_lda():
-    """Test the default classifier is LinearDiscriminantAnalysis."""
+    """Test the default classifier is a shrinkage LinearDiscriminantAnalysis."""
     X, y = make_example_3d_numpy(
         n_cases=12,
         n_channels=4,
@@ -89,10 +89,11 @@ def test_xdawn_classifier_default_lda():
         random_state=0,
     )
 
-    clf = XdawnClassifier(n_components=2).fit(X, y)
+    clf = XDAWNClassifier(n_components=2).fit(X, y)
 
     assert isinstance(clf.classifier_, LinearDiscriminantAnalysis)
-    assert clf.classifier_.solver == "svd"
+    assert clf.classifier_.solver == "lsqr"
+    assert clf.classifier_.shrinkage == "auto"
 
 
 def test_xdawn_classifier_passed_classifier_is_cloned():
@@ -103,14 +104,14 @@ def test_xdawn_classifier_passed_classifier_is_cloned():
         n_timepoints=64,
         random_state=0,
     )
-    lda = LinearDiscriminantAnalysis(solver="lsqr", shrinkage="auto")
+    lda = LinearDiscriminantAnalysis(solver="eigen", shrinkage=0.5)
 
-    clf = XdawnClassifier(lda, n_components=2).fit(X, y)
+    clf = XDAWNClassifier(lda, n_components=2).fit(X, y)
 
     assert isinstance(clf.classifier_, LinearDiscriminantAnalysis)
     assert clf.classifier_ is not lda
-    assert clf.classifier_.solver == "lsqr"
-    assert clf.classifier_.shrinkage == "auto"
+    assert clf.classifier_.solver == "eigen"
+    assert clf.classifier_.shrinkage == 0.5
     assert not hasattr(lda, "classes_")
 
 
@@ -123,7 +124,7 @@ def test_xdawn_classifier_without_predict_proba():
         random_state=0,
     )
 
-    clf = XdawnClassifier(RidgeClassifier(), n_components=2).fit(X, y)
+    clf = XDAWNClassifier(RidgeClassifier(), n_components=2).fit(X, y)
     probs = clf.predict_proba(X)
     preds = clf.predict(X)
 
@@ -140,13 +141,58 @@ def test_xdawn_classifier_feature_shape():
         random_state=0,
     )
 
-    clf = XdawnClassifier(n_components=2).fit(X, y)
+    clf = XDAWNClassifier(n_components=2).fit(X, y)
 
     assert clf._xdawn_features(X).shape == (12, 2 * 2 * 64)
 
 
+def test_xdawn_classifier_decimate_feature_shape():
+    """Test decimate reduces the number of timepoints per xDAWN component."""
+    X, y = make_example_3d_numpy(
+        n_cases=12,
+        n_channels=4,
+        n_timepoints=64,
+        random_state=0,
+    )
+
+    clf = XDAWNClassifier(n_components=2, decimate=4).fit(X, y)
+
+    assert clf._xdawn_features(X).shape == (12, 2 * 2 * 16)
+
+
+def test_xdawn_classifier_decimate_one_matches_default():
+    """Test decimate=1 gives the same probabilities as the default."""
+    X, y = make_example_3d_numpy(
+        n_cases=12,
+        n_channels=4,
+        n_timepoints=64,
+        random_state=0,
+    )
+
+    probs_default = XDAWNClassifier(n_components=2).fit(X, y).predict_proba(X)
+    probs_one = (
+        XDAWNClassifier(n_components=2, decimate=1).fit(X, y).predict_proba(X)
+    )
+
+    np.testing.assert_allclose(probs_default, probs_one)
+
+
+@pytest.mark.parametrize("decimate", [0, -1, 2.5, True])
+def test_xdawn_classifier_invalid_decimate(decimate):
+    """Test decimate must be an integer >= 1."""
+    X, y = make_example_3d_numpy(
+        n_cases=12,
+        n_channels=4,
+        n_timepoints=64,
+        random_state=0,
+    )
+
+    with pytest.raises(ValueError, match="decimate must be an integer"):
+        XDAWNClassifier(n_components=2, decimate=decimate).fit(X, y)
+
+
 def test_xdawn_classifier_detects_erp():
-    """Test XdawnClassifier separates trials with and without an ERP."""
+    """Test XDAWNClassifier separates trials with and without an ERP."""
     rng = np.random.RandomState(0)
     n_cases, n_channels, n_timepoints = 200, 8, 100
     X = rng.randn(n_cases, n_channels, n_timepoints)
@@ -155,7 +201,7 @@ def test_xdawn_classifier_detects_erp():
     bump = np.exp(-0.5 * ((np.arange(n_timepoints) - 50) / 5) ** 2)
     X[y == 1] += 0.5 * pattern[:, None] * bump[None, :]
 
-    clf = XdawnClassifier(
+    clf = XDAWNClassifier(
         LinearDiscriminantAnalysis(solver="lsqr", shrinkage="auto"), n_components=2
     )
     clf.fit(X[:100], y[:100])
@@ -174,4 +220,4 @@ def test_xdawn_classifier_invalid_classifier(classifier):
     )
 
     with pytest.raises(TypeError, match="must be a scikit-learn classifier"):
-        XdawnClassifier(classifier, n_components=2).fit(X, y)
+        XDAWNClassifier(classifier, n_components=2).fit(X, y)

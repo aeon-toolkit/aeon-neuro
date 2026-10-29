@@ -11,11 +11,11 @@ from aeon_neuro.classification.distance_based._riemannian_knn import (
     RiemannianMDMClassifier,
     _BaseRiemannianCovarianceClassifier,
 )
-from aeon_neuro.classification.feature_based import XdawnClassifier
+from aeon_neuro.classification.feature_based import XDAWNClassifier
 from aeon_neuro.transformations.collection.channel_creation._csp import (
     CommonSpatialPatterns,
 )
-from aeon_neuro.transformations.collection.channel_creation._xdawn import Xdawn
+from aeon_neuro.transformations.collection.channel_creation._xdawn import XDAWN
 from aeon_neuro.transformations.collection.channel_selection._riemannian import (
     Riemannian,
 )
@@ -33,8 +33,8 @@ from aeon_neuro.transformations.collection.embedding._umap import UMAP
         (UMAP, "n_neighbors"),
         (Riemannian, "proportion"),
         (CommonSpatialPatterns, "n_components"),
-        (Xdawn, "n_components"),
-        (XdawnClassifier, "n_components"),
+        (XDAWN, "n_components"),
+        (XDAWNClassifier, "n_components"),
     ],
 )
 def test_estimator_test_parameters(estimator_cls, expected_key):
