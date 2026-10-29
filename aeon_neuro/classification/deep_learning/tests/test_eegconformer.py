@@ -75,3 +75,14 @@ def test_eeg_conformer_lightweight_test_parameters():
     assert params.get("n_epochs") == 1
     assert params.get("batch_size") == 4
     assert params.get("num_layers") == 1
+
+
+
+def test_eegconformer_predict_different_length_raises():
+    X, y = make_example_3d_numpy(n_cases=8, n_channels=2, n_timepoints=128, random_state=0)
+    clf = EEGConformerClassifier(**EEGConformerClassifier._get_test_params())
+    clf.fit(X, y)
+
+    X_long, _ = make_example_3d_numpy(n_cases=8, n_channels=2, n_timepoints=200, random_state=0)
+    with pytest.raises(ValueError, match="different length"):
+        clf.predict(X_long)

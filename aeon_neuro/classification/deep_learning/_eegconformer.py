@@ -144,12 +144,14 @@ class EEGConformerClassifier(BaseClassifier):
             [self._class_dictionary[label] for label in y], dtype=np.int64
         )
 
+        
         rng = check_random_state(self.random_state)
         seed = int(rng.randint(np.iinfo(np.int32).max))
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
 
+        self.n_timepoints_ = X.shape[2]
         self.device_ = self._resolve_device()
         self.network_ = self._build_network(
             n_channels=X.shape[1], n_timepoints=X.shape[2]
@@ -202,7 +204,15 @@ class EEGConformerClassifier(BaseClassifier):
         import torch
         from torch.utils.data import DataLoader, TensorDataset
 
+        if X.shape[2] != self.n_timepoints_:
+            raise ValueError(
+                f"EEGConformerClassifier was fitted on series of length "
+                f"{self.n_timepoints_}, got {X.shape[2]}. The network's final "
+                f"layer depends on the series length used in fit."
+            )
+
         X = np.asarray(X, dtype=np.float32, order="C")
+ 
         dataset = TensorDataset(torch.from_numpy(X))
         loader = DataLoader(
             dataset,
@@ -230,6 +240,7 @@ class EEGConformerClassifier(BaseClassifier):
 
     def _predict(self, X: np.ndarray) -> np.ndarray:
         """Predict class labels for X."""
+ 
         probs = self._predict_proba(X)
         rng = check_random_state(self.random_state)
 
