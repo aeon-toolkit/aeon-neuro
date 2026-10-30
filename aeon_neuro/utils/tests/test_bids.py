@@ -56,7 +56,7 @@ def test_convert_invalid_source(tmp_path):
 def test_convert_unsupported_filename(tmp_path):
     """Do not silently claim native support for an unimplemented format."""
     with pytest.raises(ValueError, match=".vhdr"):
-        convert_eeg_to_bids(tmp_path / "recording.cnt", BIDSPath(root=tmp_path))
+        convert_eeg_to_bids(tmp_path / "recording.abc", BIDSPath(root=tmp_path))
 
 
 @pytest.mark.parametrize("extension,backend", [("edf", "edfio"), ("set", "eeglabio")])
