@@ -51,6 +51,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+openneuro = [
+    "openneuro-py>=2026.9.1",
+]
 eeg_io = [
     "antio>=0.5",
     "mffpy>=0.11",

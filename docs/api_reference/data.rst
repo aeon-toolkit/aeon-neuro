@@ -3,6 +3,13 @@
 Data
 ====
 
+OpenNeuro fetching and preparation
+---------------------------------
+
+.. autofunction:: aeon_neuro.datasets.fetch_openneuro_dataset
+
+.. autoexception:: aeon_neuro.datasets.BIDSPreparationError
+
 Classification case construction
 --------------------------------
 
