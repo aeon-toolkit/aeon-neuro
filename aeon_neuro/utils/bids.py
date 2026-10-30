@@ -1,4 +1,4 @@
-"""Convert native EEG recordings and MNE Raw objects to BIDS."""
+"""Convert native EEG, existing BIDS recordings and MNE Raw objects to BIDS."""
 
 import csv
 from numbers import Integral
@@ -7,7 +7,7 @@ from os import PathLike
 import mne
 import numpy as np
 from mne.io import BaseRaw
-from mne_bids import write_raw_bids
+from mne_bids import BIDSPath, write_raw_bids
 
 from aeon_neuro.utils.data_io import load_eeg_to_mne
 
@@ -75,14 +75,19 @@ def convert_eeg_to_bids(
     allow_preload=False,
     overwrite=False,
 ):
-    """Write a native EEG recording or an MNE Raw object to BIDS.
+    """Write a native EEG recording, BIDS recording or MNE Raw object to BIDS.
 
     Parameters
     ----------
-    source : str, os.PathLike or mne.io.BaseRaw
+    source : str, os.PathLike, mne_bids.BIDSPath or mne.io.BaseRaw
         BrainVision .vhdr, EDF/EDF+ .edf, BioSemi BDF/BDF+ .bdf or continuous
         EEGLAB .set path with required companions, or an existing MNE Raw.
         For reader-specific settings, first use ``load_eeg_to_mne`` and pass Raw.
+        A BIDSPath explicitly reads associated BIDS metadata and preserves matched
+        event/channel tables, coordinates and participant fields. This route
+        requires unchanged identifiers, native encoding, deferred reading and
+        overwrite=False, with a separate destination dataset. Explicit events
+        and event_id overrides are rejected because source tables are retained.
     bids_path : mne_bids.BIDSPath
         Destination with root, subject and task set. Supply session, run and
         datatype where needed; identifiers are not inferred from the source path.
@@ -117,30 +122,60 @@ def convert_eeg_to_bids(
     Raises
     ------
     TypeError
-        If source is neither a filename nor an MNE Raw object.
+        If source is not a filename, BIDSPath or MNE Raw object.
     ValueError
-        If a filename has an unsupported extension, or MNE-BIDS rejects the
-        recording or output configuration.
+        If input metadata, identifiers or options violate the preservation
+        contract, a filename extension is unsupported, or MNE-BIDS rejects it.
+    FileExistsError
+        If the output recording exists or destination metadata conflicts.
 
     Notes
     -----
-    Supplied metadata is assumed correct. No metadata repair, filtering, channel
-    selection, re-referencing or epoching is performed. Annotations are written
-    using MNE-BIDS conventions; event codes may be reassigned and onsets rounded
-    to the nearest sample. Existing BIDS sidecars are not imported when reading
-    a native filename. Status channels
-    remain in the recording even when no explicit events are supplied.
+    Native filenames do not import BIDS sidecars. Raw and native annotation
+    export follows MNE-BIDS conventions; event codes may be reassigned and onsets
+    rounded to the nearest sample. Status channels remain in the recording.
+
+    BIDSPath input preserves matched source tables, participant dictionaries and
+    descriptive acquisition fields outside Raw. Source event bounds, sample
+    positions, sampling rate and channel order are checked before writing.
+    Published duration/channel-count discrepancies warn; output uses decoded
+    signal dimensions. Dataset attribution is retained with source provenance.
+    Calls can append recordings from the same source dataset; existing metadata
+    must agree. Matched electrode/coordinate files retain their original frame.
+    EEG JSON fields include applicable ancestor metadata, with lower-level keys
+    overriding inherited values. Other sidecars use MNE-BIDS matching rather
+    than field-wise inheritance. This is not an acquisition-metadata conflict
+    resolver. Unknown acquisition facts remain
+    unknown. Source metadata is published information, not independently verified.
+
+    No filtering, channel selection, re-referencing or epoching is performed.
+    BIDSPath writing is prepared in a temporary dataset before publication.
+    Publication is not a filesystem transaction; concurrent appends are unsupported.
 
     MNE and MNE-BIDS file, metadata and export errors propagate unchanged.
     Successful writing alone does not establish full BIDS validation.
     """
+    # BIDSPath implements PathLike, so it must be dispatched before bare filenames.
+    if isinstance(source, BIDSPath):
+        # Original event tables are retained verbatim; overrides must not be ignored.
+        if events is not None or event_id is not None:
+            raise ValueError(
+                "events and event_id cannot override preserved BIDS source tables."
+            )
+        from aeon_neuro.utils._bids_metadata import _convert_bids_recording
+
+        return _convert_bids_recording(
+            source, bids_path, format, allow_preload, overwrite
+        )
     if isinstance(source, (str, PathLike)):
         # Keep samples on disk so MNE-BIDS can copy the original recording.
         raw = load_eeg_to_mne(source)
     elif isinstance(source, BaseRaw):
         raw = source
     else:
-        raise TypeError("source must be an EEG filename or an MNE Raw object.")
+        raise TypeError(
+            "source must be an EEG filename, BIDSPath or an MNE Raw object."
+        )
 
     # MNE-BIDS may omit out-of-range events or write metadata before discovering
     # an incomplete mapping. Check these inputs before handing it a destination.
