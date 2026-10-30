@@ -1,6 +1,7 @@
 """Convert native EEG, existing BIDS recordings and MNE Raw objects to BIDS."""
 
 import csv
+from math import isfinite
 from numbers import Integral
 from os import PathLike
 
@@ -125,12 +126,15 @@ def convert_eeg_to_bids(
         If source is not a filename, BIDSPath or MNE Raw object.
     ValueError
         If input metadata, identifiers or options violate the preservation
-        contract, a filename extension is unsupported, or MNE-BIDS rejects it.
+        contract, supplied line_freq is nonfinite or nonpositive, a filename
+        extension is unsupported, or MNE-BIDS rejects it.
     FileExistsError
         If the output recording exists or destination metadata conflicts.
 
     Notes
     -----
+    Known mains frequency on Raw or native input must be finite and positive;
+    None remains unknown. Other supplied acquisition metadata is assumed correct.
     Native filenames do not import BIDS sidecars. Raw and native annotation
     export follows MNE-BIDS conventions; event codes may be reassigned and onsets
     rounded to the nearest sample. Status channels remain in the recording.
@@ -176,6 +180,11 @@ def convert_eeg_to_bids(
         raise TypeError(
             "source must be an EEG filename, BIDSPath or an MNE Raw object."
         )
+
+    # The writer can otherwise serialize NaN or negative frequency into metadata.
+    frequency = raw.info["line_freq"]
+    if frequency is not None and (not isfinite(frequency) or frequency <= 0):
+        raise ValueError("line_freq must be finite and positive, or None if unknown.")
 
     # MNE-BIDS may omit out-of-range events or write metadata before discovering
     # an incomplete mapping. Check these inputs before handing it a destination.
