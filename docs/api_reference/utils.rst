@@ -54,6 +54,18 @@ be read or decoded. The directory prefix must include its trailing separator.
 
 .. autofunction:: aeon_neuro.utils.data_io.load_auxiliary_info
 
+Metadata preparation
+---------------------
+
+``prepare_eeg_metadata`` reports unknown/invalid mains frequency and applies
+explicit channel-role/frequency corrections on a Raw copy. Corrections require
+a supplied evidence reference and produce a JSON-compatible before/after report.
+Samples and annotations remain unchanged; declared unit changes are recorded,
+without sample rescaling or calibration repair. The report assesses mains
+frequency only and does not establish complete BIDS metadata validity.
+
+.. autofunction:: aeon_neuro.utils.metadata.prepare_eeg_metadata
+
 EEG conversion guide
 --------------------
 
