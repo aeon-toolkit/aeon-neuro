@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import warnings
 from pathlib import Path
 
@@ -55,20 +56,24 @@ def load_eeg_to_mne(path, *, preload=False, **reader_kwargs):
     Parameters
     ----------
     path : str or os.PathLike
-        BrainVision .vhdr, EDF/EDF+ .edf, BioSemi BDF/BDF+ .bdf or continuous
-        EEGLAB .set file. Keep any linked signal and marker files alongside it.
+        EEG recording file or EGI .mff directory. Formats include BrainVision,
+        EDF/BDF, continuous EEGLAB, CNT, EGI, GDF, Nicolet, Nihon Kohden, Persyst,
+        eXimia, FIF, BVRF and XDF. Keep linked files together.
     preload : bool or str, default=False
         Whether to load samples into memory, or an MNE memory-map filename.
         Deferred reading lets MNE-BIDS copy supported native files unchanged.
-        Some EEGLAB files with embedded samples are necessarily preloaded.
+        BVRF, XDF and some embedded EEGLAB files are necessarily preloaded.
+        BVRF and XDF do not support memory-map filenames.
     **reader_kwargs : dict
-        Options passed to the selected MNE reader, such as ``eog``, ``misc`` or
-        ``uint16_codec``. Available options depend on the recording format.
+        Options passed to the selected reader, such as ``eog``, ``misc`` or
+        ``uint16_codec``. Nicolet requires ``ch_type`` from the recording
+        protocol. For XDF these are PyXDF options, including ``select_streams``.
 
     Returns
     -------
     raw : mne.io.BaseRaw
-        All channels, acquisition metadata and annotations decoded by MNE.
+        Recording as decoded by the selected reader. XDF includes one EEG
+        stream and annotations from selected marker streams.
 
     Raises
     ------
@@ -85,23 +90,165 @@ def load_eeg_to_mne(path, *, preload=False, **reader_kwargs):
     Status-channel triggers remain in the signal; use ``mne.find_events`` with
     acquisition-appropriate settings when an explicit event table is needed.
     Native reading does not import existing BIDS sidecars or repair metadata.
+
+    XDF requires channel labels and voltage units. PyXDF corrects timestamps;
+    the EEG samples are represented on MNE's regular time grid. Other signal
+    streams and per-sample timestamps are not retained. BVRF requires PyBVRF.
     """
     readers = {
         ".vhdr": mne.io.read_raw_brainvision,
+        ".ahdr": mne.io.read_raw_brainvision,
         ".edf": mne.io.read_raw_edf,
         ".bdf": mne.io.read_raw_bdf,
         ".set": mne.io.read_raw_eeglab,
+        ".cnt": mne.io.read_raw_cnt,
+        ".eeg": mne.io.read_raw_nihon,
+        ".egi": mne.io.read_raw_egi,
+        ".raw": mne.io.read_raw_egi,
+        ".mff": mne.io.read_raw_egi,
+        ".gdf": mne.io.read_raw_gdf,
+        ".data": mne.io.read_raw_nicolet,
+        ".lay": mne.io.read_raw_persyst,
+        ".nxe": mne.io.read_raw_eximia,
+        ".fif": mne.io.read_raw_fif,
+        ".fif.gz": mne.io.read_raw_fif,
+        ".bvrh": _read_bvrf,
+        ".bvrd": _read_bvrf,
+        ".bvrm": _read_bvrf,
+        ".bvri": _read_bvrf,
+        ".xdf": _read_xdf,
+        ".xdfz": _read_xdf,
     }
-    extension = Path(path).suffix.lower()
+    path = Path(path).expanduser()
+    extension = (
+        ".fif.gz" if path.name.lower().endswith(".fif.gz") else path.suffix.lower()
+    )
+    if extension in {".eeg", ".vmrk", ".amrk"}:
+        header = _brainvision_header(path)
+        if header is not None:
+            path, extension = header, header.suffix.lower()
+        elif extension != ".eeg":
+            raise FileNotFoundError(f"No BrainVision header references {path.name}.")
+        elif not _read_signature(path).startswith((b"EEG-", b"QI-", b"DAE-")):
+            raise ValueError(
+                f"Cannot identify {path.name}; supply its recording header."
+            )
+    elif extension == ".cnt":
+        signature = _read_signature(path)
+        if (signature[:4] == b"RIFF" and signature[8:12] == b"CNT ") or (
+            signature[:4] == b"RF64" and signature[12:16] == b"CNT "
+        ):
+            readers[extension] = mne.io.read_raw_ant
+        elif not signature.startswith(b"Version "):
+            raise ValueError(f"Cannot identify the CNT vendor from {path.name}.")
+    elif extension in {".egi", ".raw"}:
+        if int.from_bytes(_read_signature(path)[:4], "big") not in {2, 4, 6}:
+            raise ValueError(f"{path.name} is not a continuous EGI recording.")
+    elif extension == ".data" and "ch_type" not in reader_kwargs:
+        raise ValueError(
+            "Nicolet .data files require ch_type from the recording protocol."
+        )
+
     if extension not in readers:
         raise ValueError(
-            "Supported EEG filenames are .vhdr, .edf, .bdf and continuous .set; "
-            "use a format-specific MNE reader for other recordings."
+            f"Unsupported EEG extension {extension!r}; supply the recording entry file "
+            "(for example .vhdr, .set or .lay) with its companions."
         )
     if extension in (".edf", ".bdf"):
         _check_edf_layout(path, 2 if extension == ".edf" else 3)
     # Reuse native decoders so calibration, companions and reader errors stay in MNE.
     return readers[extension](path, preload=preload, **reader_kwargs)
+
+
+def _read_signature(path):
+    """Read the bytes needed to distinguish formats sharing an extension."""
+    with path.open("rb") as stream:
+        return stream.read(16)
+
+
+def _brainvision_header(path):
+    """Find the sibling BrainVision header referencing a companion file."""
+    key = "DataFile" if path.suffix.lower() == ".eeg" else "MarkerFile"
+    matches = []
+    for header in sorted(path.parent.iterdir()):
+        if header.suffix.lower() not in {".vhdr", ".ahdr"} or not header.is_file():
+            continue
+        contents = header.read_bytes()
+        try:
+            text = contents.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = contents.decode("cp1252")
+        if "[Common Infos]" not in text:
+            continue
+        common = text.split("[Common Infos]", 1)[1].split("\n[", 1)[0]
+        match = re.search(rf"(?mi)^\s*{key}\s*=\s*(.+?)\s*$", common)
+        if match:
+            linked = header.parent / match[1].replace("\\", "/")
+            if linked.resolve() == path.resolve():
+                matches.append(header)
+    if len(matches) > 1:
+        raise ValueError(
+            "Multiple BrainVision headers reference this file; pass a header."
+        )
+    return matches[0] if matches else None
+
+
+def _read_bvrf(path, *, preload=False, **reader_kwargs):
+    """Read one in-memory BVRF recording with the optional PyBVRF reader."""
+    if not isinstance(preload, bool):
+        raise ValueError("BVRF always loads into memory; preload must be a bool.")
+    if reader_kwargs.get("split"):
+        raise ValueError("load_eeg_to_mne returns one Raw; split must be False.")
+
+    import pybvrf
+
+    return pybvrf.read_raw_bvrf(path, **reader_kwargs)
+
+
+def _read_xdf(path, *, preload=False, verbose=None, **reader_kwargs):
+    """Read one continuous EEG stream and its markers with PyXDF."""
+    if not isinstance(preload, bool):
+        raise ValueError("XDF always loads into memory; preload must be a bool.")
+
+    import pyxdf
+
+    streams, _ = pyxdf.load_xdf(str(path), **reader_kwargs)
+    eeg = [s for s in streams if (s["info"]["type"][0] or "").lower() == "eeg"]
+    if len(eeg) != 1:
+        raise ValueError("Select exactly one EEG stream using select_streams.")
+
+    stream = eeg[0]
+    info = stream["info"]
+    if len(info.get("segments", [])) > 1:
+        raise ValueError("XDF EEG has recording gaps; continuous data is required.")
+
+    channels = info["desc"][0]["channels"][0]["channel"]
+    names = [channel["label"][0] for channel in channels]
+    types = [
+        (channel.get("type", [None])[0] or info["type"][0]).lower()
+        for channel in channels
+    ]
+    units = [channel.get("unit", [""])[0] or "" for channel in channels]
+    units = [unit.strip().lower().replace("µ", "u").replace("μ", "u") for unit in units]
+    scales = {"v": 1.0, "mv": 1e-3, "uv": 1e-6, "nv": 1e-9}
+    if any(unit not in scales for unit in units):
+        raise ValueError("XDF channels need voltage units: V, mV, uV/µV or nV.")
+
+    data = np.asarray(stream["time_series"], dtype=float).T
+    data = data * np.array([scales[unit] for unit in units])[:, None]
+    sfreq = info.get("effective_srate") or float(info["nominal_srate"][0])
+    raw = mne.io.RawArray(data, mne.create_info(names, sfreq, types), verbose=verbose)
+
+    onsets, descriptions = [], []
+    for other in streams:
+        kind = (other["info"]["type"][0] or "").lower()
+        if kind in {"marker", "markers", "event", "events"}:
+            onsets.extend(np.asarray(other["time_stamps"]) - stream["time_stamps"][0])
+            descriptions.extend(
+                "/".join(map(str, marker)) for marker in other["time_series"]
+            )
+    raw.set_annotations(mne.Annotations(onsets, np.zeros(len(onsets)), descriptions))
+    return raw
 
 
 def load_auxiliary_info(path, dataset_name):
