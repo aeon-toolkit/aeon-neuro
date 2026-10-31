@@ -69,6 +69,7 @@ dl = [
 dev = [
     "aeon[dev]",
     "edfio",
+    "pybv>=0.7.5",
 ]
 binder = [
     "aeon[binder]",
