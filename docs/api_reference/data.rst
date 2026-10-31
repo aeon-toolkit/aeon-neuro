@@ -3,6 +3,14 @@
 Data
 ====
 
+Usage
+-----
+
+.. toctree::
+   :maxdepth: 1
+
+   ../classification-problems
+
 Classification case construction
 --------------------------------
 
