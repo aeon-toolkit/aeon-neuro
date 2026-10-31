@@ -89,7 +89,8 @@ Supported formats
      - Input and reader selection
    * - Classic BrainVision
      - ``.vhdr``/``.ahdr``; ``.eeg``/``.vmrk``/``.amrk`` when a nearby
-       header explicitly references the input.
+       header explicitly references the input. Discovery honours declared header
+       encodings and the supported NeurOne ``[Common infos]`` section spelling.
    * - EDF/EDF+, BDF, GDF
      - ``.edf``, ``.bdf``, ``.gdf`` via MNE.
    * - Continuous EEGLAB
