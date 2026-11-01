@@ -1,5 +1,10 @@
 # EEG Datasets
 
+For constructed recording/window/event cases, see
+[validating classification assignments](classification-problems.md). It describes
+explicit independence policies, session roles, original-source overlap and inner
+validation scope using the shared case container.
+
 
 ## EEG Data Characteristics
 | Problem               | train cases | test cases | dimensions | length  | num classes  |
