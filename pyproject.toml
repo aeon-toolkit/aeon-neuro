@@ -75,6 +75,7 @@ binder = [
 ]
 docs = [
     "aeon[docs]",
+    "sphinx-remove-toctrees",
 ]
 
 [project.urls]

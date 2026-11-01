@@ -42,6 +42,8 @@ api_reference.md
 ```{toctree}
 :caption: Developing aeon-neuro
 :hidden:
+
+README.md
 ```
 
 ```{toctree}
