@@ -37,11 +37,14 @@ https://github.com/aeon-toolkit/aeon.
 
 installation.md
 api_reference.md
+classification_records.md
 ```
 
 ```{toctree}
 :caption: Developing aeon-neuro
 :hidden:
+
+classification_records_proposal.md
 ```
 
 ```{toctree}

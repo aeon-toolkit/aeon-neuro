@@ -1,0 +1,193 @@
+{
+  "additional_models": {
+    "csp-lda": {
+      "identical_prediction_and_metric_files": true,
+      "same_estimator": true,
+      "same_fitting_assignments": true,
+      "same_problem": true
+    },
+    "knn": {
+      "identical_prediction_and_metric_files": true,
+      "same_estimator": true,
+      "same_fitting_assignments": true,
+      "same_problem": true
+    }
+  },
+  "companion": {
+    "AlexMI": {
+      "artifacts_checked": 9,
+      "assignment_checks": 4,
+      "cases": 320,
+      "excluded_records": 0,
+      "problem_id": "d65fb89ae0cfa5d29bd6ee738f421c38c121798f223b4ae4f98b8a3723159ea2",
+      "runs": {
+        "bandpower-logistic": {
+          "identical_prediction_and_metric_files": true,
+          "same_estimator": true,
+          "same_fitting_assignments": true,
+          "same_problem": true
+        },
+        "majority": {
+          "identical_prediction_and_metric_files": true,
+          "same_estimator": true,
+          "same_fitting_assignments": true,
+          "same_problem": true
+        }
+      },
+      "smoke_cases": 32,
+      "smoke_problem_id": "b789314942ee89bb99daf25d85172a9d479fe5626d10bc0821d220874c9722b2"
+    },
+    "COVID19": {
+      "artifacts_checked": 12,
+      "assignment_checks": 6,
+      "cases": 36535,
+      "excluded_records": 4120,
+      "problem_id": "fbfae88d1525fe2e300468ea3df0fde3940c44946d01b0807715dafec56a5f53",
+      "runs": {
+        "bandpower-logistic": {
+          "identical_prediction_and_metric_files": true,
+          "same_estimator": true,
+          "same_fitting_assignments": true,
+          "same_problem": true
+        },
+        "majority": {
+          "identical_prediction_and_metric_files": true,
+          "same_estimator": true,
+          "same_fitting_assignments": true,
+          "same_problem": true
+        }
+      },
+      "smoke_cases": 344,
+      "smoke_problem_id": "e987edcd78e0f7f3816fdbd7a2688568d9bab678bcad07b40e6be39b7229c42d"
+    },
+    "EEGMAT": {
+      "artifacts_checked": 9,
+      "assignment_checks": 6,
+      "cases": 2160,
+      "excluded_records": 0,
+      "problem_id": "d117702274df4d3c094561e4047a9c12a4c4f7befe84bf6375cf42840429e067",
+      "runs": {
+        "bandpower-logistic": {
+          "identical_prediction_and_metric_files": true,
+          "same_estimator": true,
+          "same_fitting_assignments": true,
+          "same_problem": true
+        },
+        "majority": {
+          "identical_prediction_and_metric_files": true,
+          "same_estimator": true,
+          "same_fitting_assignments": true,
+          "same_problem": true
+        }
+      },
+      "smoke_cases": 144,
+      "smoke_problem_id": "056f2969478e7e854047851a0c6ba50839d7c4a8238495adf923b12714a5c5af"
+    },
+    "RockPaperScissors": {
+      "artifacts_checked": 10,
+      "assignment_checks": 6,
+      "cases": 29511,
+      "excluded_records": 249,
+      "problem_id": "e42f1ffe99d91fd686f43719810ad133f9b997a425686c1341412a980c294ef1",
+      "runs": {
+        "bandpower-logistic": {
+          "identical_prediction_and_metric_files": true,
+          "same_estimator": true,
+          "same_fitting_assignments": true,
+          "same_problem": true
+        },
+        "majority": {
+          "identical_prediction_and_metric_files": true,
+          "same_estimator": true,
+          "same_fitting_assignments": true,
+          "same_problem": true
+        }
+      },
+      "smoke_cases": 186,
+      "smoke_problem_id": "60eaa5c8b6f52b3d84d6a0df6d41f497935921b8e7f7ac2e29fc852b9afc4031"
+    },
+    "Weibo2014": {
+      "artifacts_checked": 9,
+      "assignment_checks": 5,
+      "cases": 1580,
+      "excluded_records": 0,
+      "problem_id": "eb6ae12e38eee047adc6f39443f2c5a68dec69520ee81ed4e56bf236cdeea48e",
+      "runs": {
+        "bandpower-logistic": {
+          "identical_prediction_and_metric_files": true,
+          "same_estimator": true,
+          "same_fitting_assignments": true,
+          "same_problem": true
+        },
+        "majority": {
+          "identical_prediction_and_metric_files": true,
+          "same_estimator": true,
+          "same_fitting_assignments": true,
+          "same_problem": true
+        }
+      },
+      "smoke_cases": 40,
+      "smoke_problem_id": "9ce76b3b47f0e2574f0b310e3056e6fc515a59789b8d48ef4217bd122d0145ed"
+    }
+  },
+  "companion_environment": {
+    "aeon_neuro_api_sha256": {
+      "cases": "5564968f062adc2c6c5b7d123e0659b3d26be2cd187776b1d86091f8e23e2e79",
+      "splits": "106d1725409180bb5165b15d49256679c5191664cdf764a0623ffcb2bc7a8513"
+    },
+    "core_sha256": {
+      "__init__.py": "4d3a1886c87e41a01eaa36d1af487a7257a9512f1b77cf862d62dfe17d20498b",
+      "_io.py": "ba9bec5262f29c209bfd316da7d013c37e3226b4d8ba63bb501f368a106242cc",
+      "adapters.py": "8e18a8615e0506aba7568656a79084d23584ead5af712f4e9742bb71f9c188ab",
+      "cli.py": "97dc95cf81a9e90bc1f288937056368214b8f0458d972160dfb015cb2c2158a3",
+      "experiment.py": "75518cf362d81e9a59ea2bc22a4fbc7aa4e2a4968fcca70dce864efd34f095ce",
+      "models.py": "a1bcc8f6de6f9306163b0b0af08642e3f8447b1cf7472842a268b1ca6f002ebc",
+      "problem.py": "64c69e63c497f9963ca0465b6a326ad68ee8f15f42d9baa56a3456a32fce4411",
+      "signals.py": "f0eca73b6417d81f09412178c5567c7e75baa071af028596b4860089e9b12871"
+    },
+    "packages": {
+      "aeon": "1.6.0",
+      "aeon-neuro": "0.0.2",
+      "mne": "1.11.0",
+      "numpy": "2.3.5",
+      "scikit-learn": "1.9.1",
+      "scipy": "1.17.1"
+    },
+    "platform": "macOS-15.6.1-arm64-arm-64bit",
+    "python": "3.11.13"
+  },
+  "date": "2026-11-01",
+  "scope": "Reported local companion checks plus new upstream helper checks on materialized prepared derivatives; not original-source rebuilds or hosted CI.",
+  "upstream_helper_checks": {
+    "AlexMI": {
+      "assignment_checks": 4,
+      "cases": 32,
+      "problem_record_id": "171e61dd4d5a721270d8427e7e771dce4391a8cb5f820dbb89da4220da3662c2",
+      "reordered_reconstruction_passed": true
+    },
+    "COVID19": {
+      "assignment_checks": 6,
+      "cases": 344,
+      "problem_record_id": "c73e646b3df7e390d584925eb409ad418379065e9a6da0af62dcaa9e623efa4d",
+      "reordered_reconstruction_passed": true
+    },
+    "EEGMAT": {
+      "assignment_checks": 6,
+      "cases": 144,
+      "problem_record_id": "b90caa7292b1ff72cfec8fa9f90b9026fac56eee3734b4327483ee4c1e3c29e6",
+      "reordered_reconstruction_passed": true
+    },
+    "RockPaperScissors": {
+      "assignment_checks": 6,
+      "cases": 186,
+      "problem_record_id": "55d5513e28bbdf4f87e4f6a117693e4f956f4a7d248c4457793aee1b39d4806e",
+      "reordered_reconstruction_passed": true
+    },
+    "Weibo2014": {
+      "assignment_checks": 5,
+      "cases": 40,
+      "problem_record_id": "2fde2daae90aec5e15c9b22b3007125fd9e0886236504c3f0a954ccc7f726dbd",
+      "reordered_reconstruction_passed": true
+    }
+  }
+}

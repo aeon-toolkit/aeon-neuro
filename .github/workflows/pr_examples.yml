@@ -38,3 +38,7 @@ jobs:
       - name: Run example notebooks
         run: .github/utilities/run_examples.sh
         shell: bash
+
+      - name: Run reproducible classification example
+        run: python examples/reproducible_classification.py "$RUNNER_TEMP/classification-records"
+        shell: bash

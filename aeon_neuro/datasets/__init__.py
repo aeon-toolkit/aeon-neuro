@@ -12,6 +12,10 @@ __all__ = [
     "make_event_cases",
     "validate_group_split",
     "validate_classification_split",
+    "resolve_classification_split",
+    "make_classification_problem",
+    "validate_classification_problem",
+    "make_classification_experiment",
 ]
 
 from aeon_neuro.datasets._classification import (
@@ -21,6 +25,12 @@ from aeon_neuro.datasets._classification import (
     make_fixed_length_cases,
     make_recording_cases,
     validate_group_split,
+)
+from aeon_neuro.datasets._classification_records import (
+    make_classification_experiment,
+    make_classification_problem,
+    resolve_classification_split,
+    validate_classification_problem,
 )
 from aeon_neuro.datasets._classification_split import validate_classification_split
 from aeon_neuro.datasets._data_loaders import load_eeg_classification
