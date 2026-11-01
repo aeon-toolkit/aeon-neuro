@@ -13,6 +13,7 @@ __all__ = [
     "make_fixed_length_cases",
     "make_event_cases",
     "validate_group_split",
+    "validate_classification_split",
 ]
 
 from aeon_neuro.datasets._bids_prepare import BIDSPreparationError
@@ -24,6 +25,7 @@ from aeon_neuro.datasets._classification import (
     make_recording_cases,
     validate_group_split,
 )
+from aeon_neuro.datasets._classification_split import validate_classification_split
 from aeon_neuro.datasets._data_loaders import load_eeg_classification
 from aeon_neuro.datasets._openneuro import fetch_openneuro_dataset
 from aeon_neuro.datasets._single_problem_loaders import (
