@@ -64,18 +64,35 @@ def label_bids_recordings(
     Returns
     -------
     For label_level="recording":
-        X : original recordings
-        y : object ndarray, one label per recording
-        class_counts : dict
-        unmatched_count : int
-        label_info : list of dict with label provenance
+
+    X : original recordings
+
+    y : object ndarray, one label per recording
+
+    class_counts : dict
+
+    unmatched_count : int
+
+    label_info : list of dict with label provenance
 
     For label_level="event":
-        X : original recordings
-        events : pandas.DataFrame with event labels and TSV provenance
-        class_counts : dict
-        unmatched_count : int
-        label_info : list of dict with TSV provenance
+
+    X : list of np.ndarray or None
+
+        One entry per event, aligned with the events DataFrame.
+        Each valid segment has shape (channels, samples).
+        Entries are None for zero-duration or non-extractable events.
+        Events extending beyond recording boundaries raise ValueError.
+
+    events : pandas.DataFrame
+
+        Event metadata, labels and TSV provenance.
+
+    class_counts : dict
+
+    unmatched_count : int
+
+    label_info : list of dict with TSV provenance
     """
     # Validate inputs.
     if len(X) != len(metadata):
@@ -226,18 +243,16 @@ def label_bids_recordings(
 
                 segment = None
 
-                # Extract a segment only when duration is valid
-                # and the event overlaps the recording.
-                if (
-                    end_sample is not None
-                    and start_sample < n_samples
-                    and end_sample > start_sample
-                ):
-                    segment_start = max(0, start_sample)
-                    segment_end = min(n_samples, end_sample)
+                if end_sample is not None:
+                    if start_sample >= n_samples or end_sample > n_samples:
+                        raise ValueError(
+                            f"Event interval [{start_sample}, {end_sample}) "
+                            f"exceeds recording bounds [0, {n_samples}) "
+                            f"in {tsv_path!r}, row {row_index}."
+                        )
 
-                    if segment_end > segment_start:
-                        segment = recording[:, segment_start:segment_end].copy()
+                    if end_sample > start_sample:
+                        segment = recording[:, start_sample:end_sample].copy()
 
                 event = row.to_dict()
                 event.update(

@@ -398,7 +398,7 @@ def test_event_explicit_tsv_path(tmp_path):
     assert details[0]["label_source_tsv"] == "custom_events.tsv"
 
 
-def test_missing_tsv_column_raises(tmp_path):
+def test_missing_tsv_column(tmp_path):
     """Test that a missing recording TSV column raises an error."""
     metadata = [create_record(tmp_path, task="recording", condition="LeftHand")]
     tsv = recording_tsv_path(tmp_path, metadata[0])
@@ -447,7 +447,7 @@ def test_class_counts_include_all_requested_classes(tmp_path):
     assert unmatched == 0
 
 
-def test_empty_class_names_raise(tmp_path):
+def test_empty_class_names(tmp_path):
     """Test that empty class names are rejected."""
     with pytest.raises(ValueError, match="at least one"):
         label_bids_recordings(
@@ -458,7 +458,7 @@ def test_empty_class_names_raise(tmp_path):
         )
 
 
-def test_duplicate_class_names_raise(tmp_path):
+def test_duplicate_class_names(tmp_path):
     """Test that duplicate class names are rejected."""
     with pytest.raises(ValueError, match="duplicates"):
         label_bids_recordings(
@@ -469,7 +469,7 @@ def test_duplicate_class_names_raise(tmp_path):
         )
 
 
-def test_empty_class_name_raises(tmp_path):
+def test_empty_class_name(tmp_path):
     """Test that empty individual class names are rejected."""
     with pytest.raises(ValueError, match="non-empty"):
         label_bids_recordings(
@@ -480,7 +480,7 @@ def test_empty_class_name_raises(tmp_path):
         )
 
 
-def test_mismatched_input_lengths_raise(tmp_path):
+def test_mismatched_input_lengths(tmp_path):
     """Test that recordings and metadata must have equal lengths."""
     with pytest.raises(ValueError, match="same length"):
         label_bids_recordings(
@@ -491,7 +491,7 @@ def test_mismatched_input_lengths_raise(tmp_path):
         )
 
 
-def test_invalid_label_level_raises(tmp_path):
+def test_invalid_label_level(tmp_path):
     """Test that unsupported label levels are rejected."""
     with pytest.raises(ValueError, match="label_level"):
         label_bids_recordings(
@@ -574,3 +574,32 @@ def test_temp_label_counts_exclude_unmatched_recordings(tmp_path):
     assert counts["LeftHand"] == 1
     assert counts["RightHand"] == 1
     assert counts["Rest"] == 0
+
+
+def test_event_exceeding_recording_boundary(tmp_path):
+    """Test that events extending beyond recording boundaries are rejected."""
+    metadata = [
+        create_record(
+            tmp_path,
+            task="motor",
+            events={
+                "onset": [0.48],
+                "duration": [0.32],
+                "trial_type": ["LeftHand"],
+            },
+        )
+    ]
+
+    # 64 samples at 100 Hz; requested interval is [48, 80).
+    recording = np.zeros((2, 64))
+
+    with pytest.raises(
+        ValueError,
+        match=r"Event interval \[48, 80\).*recording bounds \[0, 64\)",
+    ):
+        call_labels(
+            [recording],
+            metadata,
+            tmp_path,
+            label_level="event",
+        )
