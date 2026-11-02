@@ -217,6 +217,31 @@ def test_xdf_rejects_undeclared_regular_rate(xdf_file, rate):
         load_eeg_to_mne(path)
 
 
+@pytest.mark.parametrize("dejitter", [False, True])
+@pytest.mark.parametrize("actual_rate", [98.9, 101.1, 200])
+def test_xdf_rejects_rate_inconsistent_with_nominal(xdf_file, dejitter, actual_rate):
+    """A regular grid must not conceal incorrect nominal-rate metadata."""
+    path, _, _ = xdf_file(
+        times=10 + np.arange(100) / actual_rate, rate=100, marker_times=None
+    )
+    with pytest.raises(ValueError, match="effective sampling rate.*nominal"):
+        load_eeg_to_mne(path, dejitter_timestamps=dejitter)
+
+
+@pytest.mark.parametrize("dejitter", [False, True])
+@pytest.mark.parametrize("actual_rate", [99, 101])
+def test_xdf_accepts_nominal_rate_clock_drift(xdf_file, dejitter, actual_rate):
+    """Allow one-percent clock drift while keeping the effective sample rate."""
+    path, values, _ = xdf_file(
+        times=10 + np.arange(100) / actual_rate, rate=100, marker_times=None
+    )
+    before = path.read_bytes()
+    raw = load_eeg_to_mne(path, dejitter_timestamps=dejitter)
+    assert raw.info["sfreq"] == pytest.approx(actual_rate)
+    np.testing.assert_array_equal(raw.get_data(), values.T * np.array([[1e-6], [1e-3]]))
+    assert path.read_bytes() == before
+
+
 def test_xdf_timing_tolerance_is_explicit(xdf_file):
     """Accept only bounded sub-sample deviations; do not interpolate signal values."""
     times = 10 + np.arange(100) / 100

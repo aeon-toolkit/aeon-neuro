@@ -35,11 +35,15 @@ timestamps are checked again. Both must fit a regular grid anchored at their
 first and last samples. `timing_tolerance` is the maximum deviation in sample
 periods, default 0.25, with `0 <= timing_tolerance < 0.5`; float representation
 error is accounted for separately. The effective rate must agree with the checked
-timestamps. Original adjacent timestamps more than 1.5 nominal periods apart,
-nonmonotonic clocks, detected multiple segments and insufficient timestamp
-precision fail. Clock resets and discontinuous recordings need another explicit
-representation. Relaxing PyXDF's break thresholds or disabling dejittering does
-not bypass these checks. No missing samples are filled or signals interpolated.
+timestamps and be within 1% of the declared nominal rate, allowing bounded clock
+drift in either direction. This rate check is separate from `timing_tolerance`;
+a declared 100 Hz stream with regular 200 Hz timestamps is rejected even though
+its timestamps form a regular grid. Original adjacent timestamps more than 1.5
+nominal periods apart, nonmonotonic clocks, detected multiple segments and
+insufficient timestamp precision fail. Clock resets and discontinuous recordings
+need another explicit representation. Relaxing PyXDF's break thresholds or
+disabling dejittering does not bypass these checks. No missing samples are filled
+or signals interpolated.
 
 PyXDF's clock correction, dejittering and stream-selection options still apply.
 An explicit `on_chunk` callback runs once per chunk; checks apply to the callback's

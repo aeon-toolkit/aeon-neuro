@@ -86,6 +86,12 @@ def _read_xdf(
         or not np.isclose(effective, sfreq, rtol=1e-7, atol=0)
     ):
         raise ValueError("XDF effective sampling rate disagrees with its timestamps.")
+    # A regular grid can still describe the wrong rate. Allow one-percent clock
+    # drift, with only roundoff allowance at the relative-rate boundary.
+    if not np.isclose(sfreq / nominal, 1.0, rtol=0.01, atol=1e-12):
+        raise ValueError(
+            "XDF effective sampling rate differs from the nominal rate by more than 1%."
+        )
 
     names, types, scales = _channels(info, data.shape[1])
     # Validate all dimensions before multiplication: a one-channel recording and

@@ -97,10 +97,11 @@ def load_eeg_to_mne(path, *, preload=False, **reader_kwargs):
     Original timestamps and PyXDF-corrected timestamps must fit a continuous
     regular grid. ``timing_tolerance`` is an XDF-only option, default 0.25 sample
     periods, in [0, 0.5). Gaps, nonmonotonic timestamps and markers outside the
-    EEG sample span are rejected. PyXDF clock/dejitter options are retained;
-    original timestamps are checked before dejittering can hide a gap. Signals
-    are not interpolated. Other signal streams and per-sample timestamps are not
-    retained. BVRF requires PyBVRF.
+    EEG sample span are rejected. The effective rate must be within 1% of the
+    nominal rate to allow bounded clock drift. PyXDF clock/dejitter options are
+    retained; original timestamps are checked before dejittering can hide a gap.
+    Signals are not interpolated. Other signal streams and per-sample timestamps
+    are not retained. BVRF requires PyBVRF.
     """
     readers = {
         ".vhdr": mne.io.read_raw_brainvision,
