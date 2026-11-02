@@ -16,14 +16,16 @@ class CommonSpatialPatterns(BaseCollectionTransformer):
     variance best discriminates between classes [1]_ [2]_. This transformer is a
     pure spatial filter: it projects each case onto the first ``n_components``
     filters and returns the filtered signals, of shape
-    (n_cases, n_components, n_timepoints). Feature extraction, such as the
-    classic log-variance of each component, is left to downstream transformers,
-    for example ``LogVariance``.
+    (n_cases, n_components, n_timepoints).
 
     The algorithm follows ``mne.decoding.CSP`` but is implemented with NumPy and
     SciPy only:
 
-    - Class covariances are estimated (optionally regularised) for each class.
+    - Each case has its own per-channel mean removed, so DC offsets, including
+      offsets that differ between cases or classes, do not affect the filters.
+      This matches ``LogVariance``, which also uses the centred variance.
+    - Class covariances are estimated (optionally regularised) for each class,
+      and scaled by ``n / (n - 1)`` as in MNE.
     - Two classes: the generalised eigenvalue problem
       ``C_1 w = lambda (C_1 + C_2) w`` is solved with ``scipy.linalg.eigh``.
     - More than two classes: the class covariances are jointly diagonalised with
@@ -32,6 +34,10 @@ class CommonSpatialPatterns(BaseCollectionTransformer):
     If the data is rank deficient (for example after average referencing),
     covariances are first restricted to the principal subspace of the mean class
     covariance, so at most ``rank`` filters are learned.
+
+    MNE does not remove the mean, so the filters match ``mne.decoding.CSP``
+    exactly only on input that is already centred per case (band-pass filtered
+    EEG is approximately so).
 
     Parameters
     ----------
@@ -46,10 +52,6 @@ class CommonSpatialPatterns(BaseCollectionTransformer):
           shrinkage coefficient (``sklearn.covariance.ShrunkCovariance``).
         - "ledoit_wolf": Ledoit-Wolf shrinkage (``sklearn.covariance.LedoitWolf``).
         - "oas": Oracle Approximating Shrinkage (``sklearn.covariance.OAS``).
-
-        As in MNE, covariances are computed without removing the mean
-        (``assume_centered=True``), so the input should be band-pass filtered,
-        and are scaled by ``n / (n - 1)``.
     cov_est : {"concat", "epoch"}, default="concat"
         "concat" concatenates all cases of a class before estimating its
         covariance; "epoch" averages the covariances of the individual cases.
@@ -73,12 +75,16 @@ class CommonSpatialPatterns(BaseCollectionTransformer):
     Attributes
     ----------
     filters_ : np.ndarray of shape (n_filters, n_channels)
-        All learned spatial filters, one per row, in ``component_order``.
-        ``n_filters`` is the number of channels, or the rank of the data if it is
-        rank deficient. ``transform`` uses the first ``n_components`` rows.
+        The learned spatial filters. Each row is one filter (a weight per
+        channel), ordered by ``component_order``. ``n_filters`` is the number of
+        channels, or the rank of the data if it is rank deficient.
+        ``transform`` uses the first ``n_components`` rows:
+        ``filters_[:n_components] @ X[i]`` gives the CSP components of case ``i``,
+        of shape (n_components, n_timepoints).
     patterns_ : np.ndarray of shape (n_filters, n_channels)
         The spatial patterns (pseudo-inverse of the filters), for visualising the
-        sources each filter extracts.
+        sources each filter extracts. Row ``k`` is the pattern of
+        ``filters_[k]``.
     evals_ : np.ndarray of shape (n_filters,) or None
         The generalised eigenvalues, in the same order as ``filters_``, for two
         classes. None for more than two classes.
@@ -154,12 +160,15 @@ class CommonSpatialPatterns(BaseCollectionTransformer):
 
         super().__init__()
 
-    def _fit(self, X: np.ndarray, y: np.ndarray | None = None):
-        """Learn the CSP spatial filters from a labelled 3D collection."""
-        if y is None:
-            raise ValueError("CommonSpatialPatterns requires y in fit.")
+    def _fit(self, X: np.ndarray, y: np.ndarray):
+        """Learn the CSP spatial filters from a labelled 3D collection.
+
+        ``y`` is required; the ``requires_y`` tag makes the base class ``fit``
+        and ``fit_transform`` raise if it is None.
+        """
         y = np.asarray(y)
-        X = np.asarray(X, dtype=np.float64)
+        # remove each case's per-channel mean, so offsets do not drive the filters
+        X = X - X.mean(axis=2, keepdims=True)
         self._validate_params()
 
         self.classes_ = np.unique(y)
@@ -204,12 +213,6 @@ class CommonSpatialPatterns(BaseCollectionTransformer):
 
     def _transform(self, X: np.ndarray, y: np.ndarray | None = None) -> np.ndarray:
         """Project X onto the first ``n_components`` CSP filters."""
-        X = np.asarray(X, dtype=np.float64)
-        if X.shape[1] != self.filters_.shape[1]:
-            raise ValueError(
-                f"X has {X.shape[1]} channels, but CommonSpatialPatterns was "
-                f"fitted on {self.filters_.shape[1]} channels."
-            )
         # (n_components, n_channels) @ (n_cases, n_channels, n_timepoints)
         return self.filters_[: self.n_components] @ X
 
@@ -312,7 +315,9 @@ def _covariance_estimator(reg, cov_method_params):
     params.update(store_precision=False, assume_centered=True)
 
     def _estimate(data):
-        # unbiased n / (n - 1) scaling, as in MNE
+        # n / (n - 1) scaling, kept only for exact parity with MNE. The data is
+        # already centred per case, and the estimators assume_centered so they
+        # do not subtract a second (pooled) mean.
         n_samples = data.shape[1]
         cov = estimator(**params).fit(data.T).covariance_
         return cov * (n_samples / max(n_samples - 1, 1))

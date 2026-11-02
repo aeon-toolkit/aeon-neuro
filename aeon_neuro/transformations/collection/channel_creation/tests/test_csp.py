@@ -2,7 +2,6 @@
 
 import numpy as np
 import pytest
-from aeon.testing.data_generation import make_example_3d_numpy
 
 from aeon_neuro.transformations.collection.channel_creation import (
     CommonSpatialPatterns,
@@ -11,7 +10,11 @@ from aeon_neuro.transformations.collection.channel_creation._csp import _ajd_pha
 
 
 def _data(n_classes=2, n_channels=6, n_per_class=20, average_reference=False):
-    """Return data where each class has extra power on a different channel."""
+    """Return data where each class has extra power on a different channel.
+
+    Each case is centred per channel, as CSP does internally, so covariances
+    computed in the tests (and by MNE, which does not centre) match exactly.
+    """
     rng = np.random.default_rng(0)
     y = np.repeat(np.arange(n_classes), n_per_class)
     X = rng.normal(size=(len(y), n_channels, 100))
@@ -19,6 +22,7 @@ def _data(n_classes=2, n_channels=6, n_per_class=20, average_reference=False):
         X[y == c, c] *= 3
     if average_reference:
         X -= X.mean(axis=1, keepdims=True)
+    X -= X.mean(axis=2, keepdims=True)
     return X, y
 
 
@@ -101,7 +105,11 @@ def test_ajd_pham_exact_joint_diagonaliser():
     ],
 )
 def test_csp_matches_mne(n_classes, params):
-    """Test filters and outputs match mne.decoding.CSP up to filter sign."""
+    """Test filters and outputs match mne.decoding.CSP up to filter sign.
+
+    MNE does not centre each case, so this exact match holds because ``_data``
+    returns per-case centred data.
+    """
     mne = pytest.importorskip("mne")
     from mne.decoding import CSP
 
@@ -115,6 +123,21 @@ def test_csp_matches_mne(n_classes, params):
     np.testing.assert_allclose(
         np.var(csp.transform(X), axis=2), np.var(ref.transform(X), axis=2)
     )
+
+
+@pytest.mark.parametrize("n_classes", [2, 3])
+@pytest.mark.parametrize("cov_est", ["concat", "epoch"])
+def test_csp_ignores_per_case_offsets(n_classes, cov_est):
+    """Test per-case, per-channel DC offsets do not change the learned filters."""
+    X, y = _data(n_classes)
+    offsets = np.random.default_rng(1).normal(scale=50, size=(len(y), 6, 1))
+    # class-dependent offsets would dominate an uncentred covariance
+    offsets[y == 0] += 20
+
+    csp = CommonSpatialPatterns(cov_est=cov_est).fit(X, y)
+    csp_offset = CommonSpatialPatterns(cov_est=cov_est).fit(X + offsets, y)
+
+    np.testing.assert_allclose(csp_offset.filters_, csp.filters_, atol=1e-10)
 
 
 def test_csp_rank_deficient():
@@ -166,13 +189,6 @@ def test_csp_invalid_parameters(params, y, match):
     X, y_default = _data(3, n_per_class=10)
     with pytest.raises(ValueError, match=match):
         CommonSpatialPatterns(**params).fit(X, y_default if y is None else y)
-
-
-def test_csp_requires_y():
-    """Test CSP raises if y is not given to fit."""
-    X, _ = make_example_3d_numpy(n_cases=10, n_channels=4, random_state=0)
-    with pytest.raises(ValueError):
-        CommonSpatialPatterns(n_components=2).fit(X)
 
 
 @pytest.mark.parametrize(
