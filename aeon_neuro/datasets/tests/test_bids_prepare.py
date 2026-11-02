@@ -96,8 +96,38 @@ def fetch(tmp_path, **kwargs):
         version="1.0.0",
         cache_dir=tmp_path / "cache",
         return_report=True,
+        prepare=True,
         **kwargs,
     )
+
+
+def test_default_download_preserves_source_and_separates_preparation(dataset, tmp_path):
+    """Keep original downloads distinct from explicitly prepared cache entries."""
+    source, _, _, _, _ = dataset
+    original_files = {
+        path.relative_to(source): path.read_bytes()
+        for path in source.rglob("*")
+        if path.is_file()
+    }
+    kwargs = dict(subjects="01", version="1.0.0", cache_dir=tmp_path / "cache")
+    root, report = fetch_openneuro_dataset("ds008082", return_report=True, **kwargs)
+    assert report["prepared"] is False
+    assert report["recordings"] == []
+    assert {
+        path.relative_to(root): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file()
+    } == original_files
+
+    prepared, prepared_report = fetch(tmp_path)
+    assert prepared != root
+    assert prepared_report["prepared"] is True
+    assert fetch_openneuro_dataset("ds008082", download=False, **kwargs) == root
+    assert {
+        path.relative_to(source): path.read_bytes()
+        for path in source.rglob("*")
+        if path.is_file()
+    } == original_files
 
 
 def test_prepare_without_second_signal_copy(dataset, tmp_path, monkeypatch):

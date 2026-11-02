@@ -4,15 +4,17 @@
 
 Install the optional download client with `pip install 'aeon-neuro[openneuro]'`.
 `fetch_openneuro_dataset` accepts an OpenNeuro dataset ID plus an explicit release,
-or a versioned OpenNeuro HTTPS URL. It prepares primary EEG metadata and returns
-a local BIDS folder that can be read directly. Select subjects explicitly:
+or a versioned OpenNeuro HTTPS URL. It returns a local BIDS folder, retaining
+published files without preparation by default. Select subjects explicitly and
+opt in to metadata preparation when needed for reading with MNE-BIDS:
 
 ```python
 from aeon_neuro.datasets import fetch_openneuro_dataset
 from mne_bids import BIDSPath, read_raw_bids
 
 root = fetch_openneuro_dataset(
-    "ds008082", version="1.0.0", subjects="CUCOV001", cache_dir="./openneuro-cache"
+    "ds008082", version="1.0.0", subjects="CUCOV001",
+    cache_dir="./openneuro-cache", prepare=True,
 )
 source = BIDSPath(
     root=root, subject="CUCOV001", task="COVID", datatype="eeg", suffix="eeg",
@@ -45,21 +47,26 @@ an explicit subject selection; they are included with `subjects="all"`.
 
 The helper returns a local BIDS folder. Use MNE-BIDS to read a recording;
 `convert_eeg_to_bids` is not required for these existing BIDS recordings.
-Signals are downloaded once per cache entry and metadata is prepared in place
-before the entry is published. No second conversion copy is created. There is
-no filtering, resampling, temporal cropping, re-referencing or channel removal.
+Signals are downloaded once per cache entry. With `prepare=True`, metadata is
+prepared in place before the entry is published. No second conversion copy is
+created. There is no filtering, resampling, temporal cropping, re-referencing or
+channel removal.
 Classification examples and player identities remain downstream decisions.
 
 ### Preparation and findings
 
-Request the per-recording report alongside the BIDS folder:
+Set `prepare=True` to check and correct metadata, and request the per-recording
+report alongside the BIDS folder:
 
 ```python
 root, report = fetch_openneuro_dataset(
-    "ds008082", version="1.0.0", subjects="all", return_report=True
+    "ds008082", version="1.0.0", subjects="all", prepare=True, return_report=True
 )
 print(report["summary"])
 ```
+
+Without preparation, `return_report=True` reports `prepared=False`, an empty
+recordings list and the dataset identity, without a preparation summary.
 
 Preparation reads supported primary EEG headers through MNE-BIDS without
 preloading signals. EDF/BDF layout checks reject incomplete records, incorrect
@@ -112,7 +119,7 @@ corrections = {
 }
 root, report = fetch_openneuro_dataset(
     "ds000001", version="1.0.0", subjects="01",
-    metadata_corrections=corrections, return_report=True,
+    prepare=True, metadata_corrections=corrections, return_report=True,
 )
 ```
 
@@ -122,8 +129,9 @@ fields are `PowerLineFrequency`, `EEGReference`, `EEGGround`,
 `TaskDescription`. Channel corrections require an existing channel table with
 verified units; supported types are `EEG`, `EOG`, `ECG`, `EMG`, `MISC` and `TRIG`.
 Source strings record evidence but do not authenticate it. Sampling frequency
-cannot be changed through descriptive corrections. Use `prepare=False` to fetch
-the published originals without preparation; corrections then are disallowed.
+cannot be changed through descriptive corrections. The default `prepare=False`
+fetches published originals without preparation; corrections require
+`prepare=True`.
 
 The default cache is `$AEON_DATA/openneuro`, or `~/aeon_data/openneuro` when
 `AEON_DATA` is unset. Each dataset, release and canonical subject selection has
@@ -137,7 +145,7 @@ is reused without importing the optional client or contacting the network:
 ```python
 root = fetch_openneuro_dataset(
     "ds008082", version="1.0.0", subjects="CUCOV001",
-    cache_dir="./openneuro-cache", download=False,
+    cache_dir="./openneuro-cache", prepare=True, download=False,
 )
 ```
 

@@ -13,7 +13,7 @@ from aeon_neuro.datasets import fetch_openneuro_dataset
 
 def _fetch(*args, **kwargs):
     # Transport/cache behavior is independent of the EEG preparation checks.
-    return fetch_openneuro_dataset(*args, prepare=False, **kwargs)
+    return fetch_openneuro_dataset(*args, **kwargs)
 
 
 @pytest.fixture

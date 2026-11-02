@@ -17,7 +17,7 @@ def fetch_openneuro_dataset(
     version=None,
     cache_dir=None,
     download=True,
-    prepare=True,
+    prepare=False,
     metadata_corrections=None,
     return_report=False,
 ):
@@ -46,11 +46,11 @@ def fetch_openneuro_dataset(
     download : bool, default=True
         Allow a download if this selection is absent. False requires a complete
         cache entry and never imports the download client or accesses the network.
-    prepare : bool, default=True
-        Check primary EEG recordings and correct derived metadata before caching.
-        Reject incomplete or discontinuous EDF/BDF layouts and resolve EEG JSON
-        inheritance. Signals and event tables are retained. False returns
-        downloaded originals.
+    prepare : bool, default=False
+        False retains downloaded originals. True checks primary EEG recordings
+        and corrects derived metadata before caching, rejecting incomplete or
+        discontinuous EDF/BDF layouts and resolving EEG JSON inheritance.
+        Signals and event tables are retained.
     metadata_corrections : dict or None, default=None
         Verified corrections keyed by exact relative recording filename. Each
         entry requires ``source`` and may contain ``metadata`` (descriptive EEG
@@ -58,8 +58,9 @@ def fetch_openneuro_dataset(
         See the dataset guide for supported fields. Requires ``prepare=True``.
     return_report : bool, default=False
         Return ``(root, report)`` instead of just the local root. The report
-        contains per-recording findings, corrections, original effective EEG
-        metadata, field origins and metadata materialization actions.
+        includes preparation status and dataset identity. With ``prepare=True``,
+        it also contains per-recording findings, corrections, original effective
+        EEG metadata, field origins and metadata materialization actions.
 
     Returns
     -------
