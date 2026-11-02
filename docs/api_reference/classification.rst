@@ -7,6 +7,22 @@ Classification
 (n_cases, n_channels, n_timepoints).
 
 
+Deep learning
+-------------
+
+.. currentmodule:: aeon_neuro.classification.deep_learning
+
+
+.. autosummary::
+    :toctree: auto_generated/
+    :template: class.rst
+
+    CBraModClassifier
+    DeepConvNetClassifier
+    EEGConformerClassifier
+    EEGNetClassifier
+
+
 Feature based
 -------------
 
@@ -17,4 +33,5 @@ Feature based
     :toctree: auto_generated/
     :template: class.rst
 
+    CSPClassifier
     XDAWNClassifier
