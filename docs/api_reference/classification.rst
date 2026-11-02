@@ -21,3 +21,17 @@ Deep learning
     DeepConvNetClassifier
     EEGConformerClassifier
     EEGNetClassifier
+
+
+Feature based
+-------------
+
+.. currentmodule:: aeon_neuro.classification.feature_based
+
+
+.. autosummary::
+    :toctree: auto_generated/
+    :template: class.rst
+
+    CSPClassifier
+    XDAWNClassifier
