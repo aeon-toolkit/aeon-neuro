@@ -192,8 +192,20 @@ def test_convert_event_boundaries_roundtrip(tmp_path, first_samp, event_source):
     assert len(raw.annotations) == 0
 
 
+@pytest.mark.parametrize("frequency", [float("nan"), float("inf"), 0, -50])
+def test_convert_invalid_line_frequency_before_writing(tmp_path, frequency):
+    """Reject invalid supplied mains frequency before writer side effects."""
+    raw = mne.io.RawArray(np.zeros((1, 100)), mne.create_info(["Cz"], 100, "eeg"))
+    raw.info["line_freq"] = frequency
+    destination = BIDSPath(root=tmp_path / "bids", subject="01", task="test")
+    with pytest.raises(ValueError, match="line_freq must be finite and positive"):
+        convert_eeg_to_bids(raw, destination)
+    assert not destination.root.exists()
+
+
+@pytest.mark.parametrize("frequency", [None, 50])
 @pytest.mark.parametrize("first_samp", [0, 100])
-def test_convert_raw_array_roundtrip(tmp_path, first_samp):
+def test_convert_raw_array_roundtrip(tmp_path, first_samp, frequency):
     """Export in-memory samples and acquisition metadata when explicitly enabled."""
     pytest.importorskip("pybv")
     data = np.array([[1e-6, 2e-6, 3e-6], [4e-6, 5e-6, 6e-6]])
@@ -203,7 +215,7 @@ def test_convert_raw_array_roundtrip(tmp_path, first_samp):
         first_samp=first_samp,
     )
     raw.set_meas_date(datetime(2020, 1, 1, tzinfo=timezone.utc))
-    raw.info["line_freq"] = 50
+    raw.info["line_freq"] = frequency
     raw.set_annotations(mne.Annotations([0.02], [0.01], ["annotation"]))
     destination = BIDSPath(root=tmp_path, subject="01", task="test", datatype="eeg")
 
@@ -220,7 +232,7 @@ def test_convert_raw_array_roundtrip(tmp_path, first_samp):
     # BrainVision export uses float32; compare physical values at that precision.
     assert_allclose(restored.get_data(), data, rtol=1e-7, atol=0)
     assert restored.get_channel_types() == ["eeg", "eog"]
-    assert restored.info["line_freq"] == 50
+    assert restored.info["line_freq"] == frequency
     assert_array_equal(restored.annotations.description, ["stimulus", "annotation"])
     assert_allclose(restored.annotations.onset, [0.01, 0.02], rtol=0, atol=1e-9)
     assert_allclose(restored.annotations.duration, [0, 0.01], rtol=0, atol=1e-9)
