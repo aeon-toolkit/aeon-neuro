@@ -1,4 +1,4 @@
-"""Test CSP from MNE combined with a scikit-learn classifier."""
+"""Test CSP and LogVariance features combined with a scikit-learn classifier."""
 
 import numpy as np
 import pytest
@@ -8,6 +8,9 @@ from sklearn.linear_model import RidgeClassifier
 from sklearn.svm import SVC
 
 from aeon_neuro.classification.feature_based import CSPClassifier
+from aeon_neuro.transformations.collection.channel_creation import (
+    CommonSpatialPatterns,
+)
 
 CLASSIFIERS = [
     None,
@@ -166,3 +169,88 @@ def test_csp_classifier_invalid_classifier(classifier):
 
     with pytest.raises(TypeError, match="must be a scikit-learn classifier"):
         CSPClassifier(classifier, n_components=2).fit(X, y)
+
+
+def test_csp_classifier_composes_csp_and_log_variance():
+    """Test features are LogVariance of the CSP-filtered collection."""
+    X, y = make_example_3d_numpy(
+        n_cases=12,
+        n_channels=4,
+        n_timepoints=64,
+        random_state=0,
+    )
+    clf = CSPClassifier(n_components=2).fit(X, y)
+
+    filtered = clf.csp_.transform(X)
+    assert filtered.shape == (12, 2, 64)
+    np.testing.assert_allclose(clf._csp_features(X), np.log(np.var(filtered, axis=2)))
+    np.testing.assert_array_equal(
+        clf.predict(X), clf.classifier_.predict(np.log(np.var(filtered, axis=2)))
+    )
+
+
+def test_csp_classifier_log_false():
+    """Test log=False passes raw variance features to the classifier."""
+    X, y = make_example_3d_numpy(
+        n_cases=12,
+        n_channels=4,
+        n_timepoints=64,
+        random_state=0,
+    )
+    clf = CSPClassifier(n_components=2, log=False).fit(X, y)
+
+    assert clf.log_variance_.log is False
+    np.testing.assert_allclose(
+        clf._csp_features(X), np.var(clf.csp_.transform(X), axis=2)
+    )
+
+
+@pytest.mark.parametrize("classifier", CLASSIFIERS)
+def test_csp_classifier_probability_order(classifier):
+    """Test predict_proba columns follow classes_, including string labels."""
+    X, y = make_example_3d_numpy(
+        n_cases=30,
+        n_channels=4,
+        n_timepoints=64,
+        n_labels=3,
+        random_state=0,
+    )
+    y = np.array(["c", "a", "b"])[y.astype(int)]
+
+    clf = CSPClassifier(classifier, n_components=2, random_state=0).fit(X, y)
+    probs = clf.predict_proba(X)
+
+    np.testing.assert_array_equal(clf.classes_, ["a", "b", "c"])
+    if classifier is None:
+        # LDA predict is the argmax of predict_proba, so the columns must align
+        np.testing.assert_array_equal(
+            clf.classes_[probs.argmax(axis=1)], clf.predict(X)
+        )
+    features = clf._csp_features(X)
+    raw = clf.classifier_.predict_proba(features)
+    for i, label in enumerate(clf.classifier_.classes_):
+        col = list(clf.classes_).index(label)
+        np.testing.assert_allclose(probs[:, col], raw[:, i])
+
+
+def test_csp_classifier_filters_learned_from_training_data_only():
+    """Test filters come from the training data and predict leaves them fixed."""
+    X, y = make_example_3d_numpy(
+        n_cases=20, n_channels=4, n_timepoints=64, random_state=0
+    )
+    X_test, _ = make_example_3d_numpy(
+        n_cases=8, n_channels=4, n_timepoints=64, random_state=1
+    )
+    clf = CSPClassifier(n_components=2).fit(X, y)
+    filters = clf.csp_.filters_.copy()
+
+    reference = CommonSpatialPatterns(n_components=2).fit(X, y)
+    np.testing.assert_array_equal(filters, reference.filters_)
+
+    clf.predict(X_test)
+    clf.predict_proba(X_test)
+    np.testing.assert_array_equal(clf.csp_.filters_, filters)
+    np.testing.assert_allclose(
+        clf._csp_features(X_test),
+        np.log(np.var(reference.transform(X_test), axis=2)),
+    )
