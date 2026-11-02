@@ -4,8 +4,6 @@ from __future__ import annotations
 
 __all__ = ["LabramClassifier"]
 
-from functools import cache
-
 import numpy as np
 from aeon.base._base import _clone_estimator
 from aeon.classification import BaseClassifier
@@ -110,16 +108,17 @@ class LabramClassifier(BaseClassifier):
         """Fit LabramClassifier."""
         import torch
 
-        rng = check_random_state(self.random_state)
-        torch.manual_seed(int(rng.randint(np.iinfo(np.int32).max)))
-
         X = self._pad(X)
         self.device_ = self._resolve_device()
-        self.network_ = (
-            self._build_network(n_channels=X.shape[1], n_timepoints=X.shape[2])
-            .to(self.device_)
-            .eval()
-        )
+
+        # seed the encoder initialisation without changing torch's global RNG
+        rng = check_random_state(self.random_state)
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(int(rng.randint(np.iinfo(np.int32).max)))
+            network = self._build_network(
+                n_channels=X.shape[1], n_timepoints=X.shape[2]
+            )
+        self.network_ = network.to(self.device_).eval()
 
         estimator = self.estimator
         if estimator is None:
@@ -170,7 +169,13 @@ class LabramClassifier(BaseClassifier):
         return np.pad(X, ((0, 0), (0, 0), (0, n_pad))) if n_pad else X
 
     def _build_network(self, n_channels: int, n_timepoints: int):
-        """Construct the Braindecode LaBraM encoder."""
+        """Construct the Braindecode LaBraM encoder.
+
+        Setting ``patch_embed[0].n_patchs`` makes braindecode use the first
+        ``n_patches`` temporal embeddings, as in the original LaBraM code, so
+        inputs of 1 to 16 patches are accepted.
+        """
+        from braindecode.models import Labram
         from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 
         n_patches = n_timepoints // 200
@@ -188,11 +193,10 @@ class LabramClassifier(BaseClassifier):
         else:
             self.ch_names_ = LABRAM_CHANNEL_ORDER[:n_channels]
 
-        labram = _labram_class()
         if self.pretrained:
-            network = labram.from_pretrained("braindecode/labram-pretrained")
+            network = Labram.from_pretrained("braindecode/labram-pretrained")
         else:
-            network = labram(  # same geometry as the pretrained checkpoint
+            network = Labram(  # same geometry as the pretrained checkpoint
                 n_times=3000,
                 n_outputs=0,
                 chs_info=[{"ch_name": name} for name in LABRAM_CHANNEL_ORDER],
@@ -217,29 +221,3 @@ class LabramClassifier(BaseClassifier):
     def _get_test_params(cls, parameter_set: str = "default"):
         """Return testing parameter settings for the aeon estimator checks."""
         return {"pretrained": False, "batch_size": 4, "random_state": 0}
-
-
-@cache
-def _labram_class():
-    """Braindecode Labram that sizes its embeddings from the input length.
-
-    braindecode 1.8.1 fixes the number of patches when the model is built, so the
-    pretrained checkpoint only accepts 15-patch (3000-sample) input. Like the
-    original LaBraM implementation, use the first ``n_patches`` temporal
-    embeddings, with ``n_patches`` set on ``patch_embed[0].n_patchs`` (which also
-    sizes the spatial embedding). Verified to match the original LaBraM code
-    exactly for 1-16 patches.
-    """
-    from braindecode.models import Labram
-
-    # ponytail: overrides braindecode internals (braindecode issue #1227); drop
-    # once a release sizes LaBraM's embeddings from the input.
-    class _Labram(Labram):
-        def _adj_temporal_embedding(self, num_ch, batch_size, dim_embed=None):
-            n_patches = self.patch_embed[0].n_patchs
-            time_embed = self.temporal_embedding[:, 0:n_patches, :]
-            return (
-                time_embed.unsqueeze(1).expand(batch_size, num_ch, -1, -1).flatten(1, 2)
-            )
-
-    return _Labram

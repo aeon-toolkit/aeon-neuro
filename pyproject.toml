@@ -47,7 +47,7 @@ dependencies = [
     "pyriemann",
     "umap-learn",
     "torch",
-    "braindecode",
+    "braindecode>=2.0",
 ]
 
 [project.optional-dependencies]
