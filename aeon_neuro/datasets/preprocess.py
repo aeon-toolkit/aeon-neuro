@@ -30,17 +30,28 @@ def preprocess_eeg(
         Recording metadata containing 'channel_names' and
         'sampling_frequency' (or 'sfreq').
     include_channels : list of str or None
-        Channel names to retain.
+        Channel names to retain. Channels are selected in their
+        original recording order, not the order specified in this
+        list. This argument acts as a membership filter rather
+        than defining the output channel order.
     exclude_channels : list of str or None
         Channel names to exclude.
     l_freq : float or None, default=1.0
-        High-pass cutoff frequency in Hz. None disables high-pass filtering.
+        High-pass cutoff frequency in Hz. Defaults to 1 Hz.
+        None disables high-pass filtering.
     h_freq : float or None, default=40.0
-        Low-pass cutoff frequency in Hz. None disables low-pass filtering.
+        Low-pass cutoff frequency in Hz. Defaults to 40 Hz.
+        None disables low-pass filtering.
     epoch_duration : float or None, default=None
         Epoch duration in seconds. None returns continuous recordings.
     epoch_overlap : float, default=0.0
         Overlap between epochs in seconds.
+
+    Notes
+    -----
+    By default, recordings are band-pass filtered between 1 and
+    40 Hz. Channel inclusion preserves the original recording
+    order.
 
     Returns
     -------
