@@ -11,9 +11,10 @@ python:
         - docs
 
 build:
-  os: ubuntu-20.04
+  os: ubuntu-24.04
   tools:
-    python: "3.10"
+    # Keep the interpreter within project.requires-python in pyproject.toml.
+    python: "3.12"
 
 sphinx:
   configuration: docs/conf.py

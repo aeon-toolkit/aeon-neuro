@@ -72,12 +72,14 @@ dl = [
 dev = [
     "aeon[dev]",
     "edfio",
+    "pybv>=0.7.5",
 ]
 binder = [
     "aeon[binder]",
 ]
 docs = [
     "aeon[docs]",
+    "sphinx-remove-toctrees",
 ]
 
 [project.urls]

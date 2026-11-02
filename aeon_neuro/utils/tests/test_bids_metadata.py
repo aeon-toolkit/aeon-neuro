@@ -348,19 +348,32 @@ def test_bids_source_rejects_event_overrides(recording_factory, tmp_path, overri
     assert _hashes(source.root) == before
 
 
-def test_bids_source_appends_without_losing_rows(recording_factory, tmp_path):
+@pytest.mark.parametrize("line_ending", ["\n", "\r\n"])
+def test_bids_source_appends_without_losing_rows(
+    recording_factory, tmp_path, line_ending
+):
     """Appending subjects and runs retains participant labels and prior scans."""
     sources = [
         recording_factory(),
         recording_factory(run="02"),
         recording_factory(subject="02"),
     ]
+    participants = sources[0].root / "participants.tsv"
+    participants.write_bytes(
+        participants.read_text(encoding="utf-8")
+        .replace("\n", line_ending)
+        .encode("utf-8")
+    )
+    original_participants = participants.read_bytes()
     output = tmp_path / "output"
     for source in sources:
         convert_eeg_to_bids(source, source.copy().update(root=output))
-    assert (output / "participants.tsv").read_bytes() == (
-        sources[0].root / "participants.tsv"
-    ).read_bytes()
+    # Appending rebuilds the participant table with canonical LF newlines. Its
+    # rows must match either source encoding without modifying the source bytes.
+    assert (output / "participants.tsv").read_text(encoding="utf-8") == (
+        participants.read_text(encoding="utf-8")
+    )
+    assert participants.read_bytes() == original_participants
     scans = (output / "sub-01/sub-01_scans.tsv").read_text()
     assert "run-01" in scans and "run-02" in scans
     before = _hashes(output)
