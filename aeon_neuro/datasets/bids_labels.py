@@ -77,6 +77,12 @@ def label_bids_recordings(
 
     For label_level="event":
 
+    Event onsets and durations are converted to integer sample
+    indices using Python's round() function (round-half-to-even).
+    The original onset in seconds is preserved in "onset_seconds",
+    while "start_sample" records the effective quantised sample
+    coordinate.
+
     X : list of np.ndarray or None
 
         One entry per event, aligned with the events DataFrame.
