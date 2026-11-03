@@ -7,6 +7,7 @@ Series transformers
 -------------------
 
 Transformers applied to a single series of shape ``(n_channels, n_timepoints)``.
+Transformers applied to a(n_channels,n_timepoints)``.
 
 .. currentmodule:: aeon_neuro.transformations.series
 
@@ -15,3 +16,15 @@ Transformers applied to a single series of shape ``(n_channels, n_timepoints)``.
     :template: class.rst
 
     BandPassSeriesTransformer
+
+Channel creation
+----------------
+
+.. currentmodule:: aeon_neuro.transformations.collection.channel_creation
+
+.. autosummary::
+    :toctree: auto_genera
+    :template: class.rst
+
+    CommonSpatialPatterns
+    UMAPChannelCreator

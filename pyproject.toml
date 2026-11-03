@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aeon-neuro"
-version = "0.1.0"
+version = "0.1.1"
 description = "A package for EEG classification built on the aeon toolkit."
 authors = [
     {name = "aeon developers", email = "contact@aeon-toolkit.org"},
@@ -43,11 +43,10 @@ dependencies = [
     "aeon",
     "mne",
     "mne-bids",
-    "pyprep",
     "pyriemann",
     "umap-learn",
     "torch",
-    "braindecode",
+    "braindecode>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -69,12 +68,15 @@ dl = [
 dev = [
     "aeon[dev]",
     "edfio",
+    "eeglabio",
+    "pybv>=0.7.5",
 ]
 binder = [
     "aeon[binder]",
 ]
 docs = [
     "aeon[docs]",
+    "sphinx-remove-toctrees",
 ]
 
 [project.urls]
