@@ -1,5 +1,11 @@
 # Examples
 
+`metadata_first_problem.py` plans a catalogue declaring over 128 GiB of source
+files without those files existing. A separate tiny generated fixture shows an
+empty training cache, explicit selected-recording acquisition, interval extraction
+and cache reuse. Transfers in that fixture are local copies, not network or
+large-data benchmarks. Run `python examples/metadata_first_problem.py`.
+
 `problem_loading.py` defines classification problems over already loaded
 recordings using dictionaries or the JSON files in `problem_definitions/`.
 It constructs imagery and response targets on the same event intervals, a
