@@ -85,11 +85,25 @@ def test_transform_integer_input():
         ({"l_freq": 30, "h_freq": 30}, "l_freq must be less than h_freq."),
         ({"l_freq": 40, "h_freq": 30}, "l_freq must be less than h_freq."),
         ({"method": "butter"}, "method must be 'fir' or 'iir'."),
+        ({"l_freq": 125, "h_freq": None}, "l_freq must be less than 125.0 Hz."),
+        ({"l_freq": 200, "h_freq": None}, "l_freq must be less than 125.0 Hz."),
+        ({"sfreq": 0}, "sfreq must be a finite positive number."),
+        ({"sfreq": -250}, "sfreq must be a finite positive number."),
+        ({"sfreq": np.inf}, "sfreq must be a finite positive number."),
+        ({"sfreq": np.nan}, "sfreq must be a finite positive number."),
+        ({"sfreq": "250"}, "sfreq must be a finite positive number."),
+        ({"sfreq": True}, "sfreq must be a finite positive number."),
     ],
 )
 def test_transform_invalid_params(params, match):
     """Invalid parameters raise a ValueError."""
     X = np.zeros((n_channels, len(t)))
-    transformer = BandPassSeriesTransformer(sfreq=sfreq, **params)
+    transformer = BandPassSeriesTransformer(**{"sfreq": sfreq, **params})
     with pytest.raises(ValueError, match=match):
         transformer.fit_transform(X)
+
+
+def test_sfreq_is_required():
+    """The sampling frequency has no default and must be passed."""
+    with pytest.raises(TypeError):
+        BandPassSeriesTransformer()
