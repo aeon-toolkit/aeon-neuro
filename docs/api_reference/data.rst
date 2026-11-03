@@ -10,6 +10,7 @@ Usage
    :maxdepth: 1
 
    ../classification-problems
+   ../problem-format
    ../problem-loading
 
 Classification case construction

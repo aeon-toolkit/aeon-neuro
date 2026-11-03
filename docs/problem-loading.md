@@ -1,5 +1,9 @@
 # Define a classification problem on loaded recordings
 
+The [format reference](problem-format.md) defines every supported problem/binding
+field, required/default rule and runtime input constraint. This guide introduces
+the format through usage examples.
+
 `load_classification_problem` adds a small experimental definition layer over
 the existing case builders. Start with recording arrays and aligned metadata,
 including the outputs of `load_bids_data`. Supply the choices that the recordings
