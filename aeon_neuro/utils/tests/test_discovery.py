@@ -11,7 +11,7 @@ from sklearn.base import BaseEstimator
 
 from aeon_neuro.classification import (
     HIVECOTEV2,
-    CSPSVMClassifier,
+    CSPClassifier,
     EEGNetClassifier,
     RiemannianMDMClassifier,
 )
@@ -55,7 +55,7 @@ def test_all_estimators_contents():
     """Check aeon-neuro estimators are found and aeon imports and aliases are not."""
     estimators = all_estimators(return_names=False)
 
-    assert CSPSVMClassifier in estimators
+    assert CSPClassifier in estimators
     assert RiemannianMDMClassifier in estimators
     assert EpochSeriesTransformer in estimators
 
