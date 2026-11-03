@@ -43,7 +43,6 @@ dependencies = [
     "aeon",
     "mne",
     "mne-bids",
-    "pyprep",
     "pyriemann",
     "umap-learn",
     "torch",
@@ -69,6 +68,7 @@ dl = [
 dev = [
     "aeon[dev]",
     "edfio",
+    "eeglabio",
     "pybv>=0.7.5",
 ]
 binder = [
