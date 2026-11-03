@@ -1,5 +1,11 @@
 # Classification problems on loaded recordings
 
+For large datasets, use `resolve_classification_problem` without signals,
+`plan_classification_problem` over a small metadata catalogue, then explicitly
+call `materialize_classification_problem` to open selected sources for training.
+The source opener can fetch and cache selected recordings at that boundary.
+See [metadata-only planning](../../docs/problem-planning.md).
+
 `load_classification_problem(recordings, metadata, problem, binding, events=...)`
 constructs the existing `ClassificationDataset` from explicit problem choices.
 Definitions and bindings can be dictionaries or JSON filenames. Fixed windows
