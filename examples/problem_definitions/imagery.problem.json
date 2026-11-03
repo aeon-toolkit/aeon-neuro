@@ -1,0 +1,13 @@
+{
+  "format_version": 1,
+  "id": "left-right-imagery",
+  "version": "1",
+  "question": "Classify imagined left versus right movement from a post-cue EEG interval.",
+  "class_labels": ["left_hand", "right_hand"],
+  "channels": ["C3", "C4"],
+  "segmentation": {
+    "mode": "event_epochs",
+    "tmin": 0.0,
+    "tmax": 0.5
+  }
+}

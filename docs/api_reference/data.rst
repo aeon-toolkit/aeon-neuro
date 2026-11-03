@@ -10,9 +10,12 @@ Usage
    :maxdepth: 1
 
    ../classification-problems
+   ../problem-loading
 
 Classification case construction
 --------------------------------
+
+.. autofunction:: aeon_neuro.datasets.load_classification_problem
 
 .. autoclass:: aeon_neuro.datasets.ClassificationDataset
 
