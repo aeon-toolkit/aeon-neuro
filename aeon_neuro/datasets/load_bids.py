@@ -1,7 +1,10 @@
 """Simple example of loading data from BIDS format."""
 
+import os
+
 import mne
 import numpy as np
+from mne_bids import find_matching_paths, read_raw_bids
 
 
 def load_basic_classification_problem(path="../"):
@@ -81,3 +84,116 @@ def load_basic_classification_problem(path="../"):
     X_train, X_test = np.array(X_train), np.array(X_test)
     y_train, y_test = np.array(y_train), np.array(y_test)
     return X_train, y_train, X_test, y_test
+
+
+def load_bids_data(
+    path="../",
+    subjects=None,
+    sessions=None,
+    tasks=None,
+    acqs=None,
+    runs=None,
+    formatts=(".vhdr", ".bdf", ".edf"),
+):
+    """Load EEG recordings from a BIDS dataset into an aeon-compatible collection.
+
+    Recordings are loaded using MNE and filtered by the specified subject,
+    session, task, acquisition, and run identifiers.
+
+    Returns a 3D NumPy array if all recordings have the same shape,
+    same sampling frequency and same channel names and order;
+    otherwise, returns a list of 2D NumPy arrays.
+
+    Parameters
+    ----------
+    path : str, default="../"
+        Path to the root directory of the BIDS dataset.
+    subjects : list of str or None, default=None
+        Subject identifiers, excluding the "sub-" prefix.
+    sessions : list of str or None, default=None
+        Session identifiers, excluding the "ses-" prefix.
+        If None, discover available sessions automatically.
+    tasks : list of str or None, default=None
+        Task identifiers to include. If None, include all tasks.
+    acqs : list of str or None, default=None
+        Acquisition identifiers to include. If None, include all acquisitions.
+    runs : list of str or None, default=None
+        Run identifiers to include. If None, include all runs.
+    formatts : tuple of str, default=(".vhdr", ".bdf", ".edf")
+        EEG file extensions to consider.
+
+    Returns
+    -------
+    X : np.ndarray or list of np.ndarray
+        EEG recordings. A 3D array of shape
+        (n_recordings, n_channels, n_times) is returned when all
+        recordings have the same shape, sampling rate, channel names and order.
+        Otherwise, returns a list of 2D arrays, each with shape (n_channels, n_times).
+
+    metadata : list of dict
+        Metadata for each recording, in the same order as X.
+        Each entry identifies the source recording, channel names,
+        sampling frequency, subject, session, task, acquisition and run.
+    """
+    path = os.fspath(path)
+    formatts = tuple(ext.lower() for ext in formatts)
+
+    # Discover BIDS recordings
+    bids_paths = find_matching_paths(
+        path,
+        subjects=subjects,
+        sessions=sessions,
+        tasks=tasks,
+        acquisitions=acqs,
+        runs=runs,
+        datatypes=["eeg"],
+        extensions=list(formatts),
+        check=False,
+    )
+
+    recordings = []
+    metadata = []
+
+    for bids_path in bids_paths:
+        # Load BIDS
+        raw = read_raw_bids(bids_path, verbose=False)
+
+        recordings.append(raw.get_data())
+
+        metadata.append(
+            {
+                "filepath": os.path.relpath(bids_path.fpath, path),
+                "filename": bids_path.fpath.name,
+                "subject": bids_path.subject,
+                "session": bids_path.session,
+                "task": bids_path.task,
+                "acq": bids_path.acquisition,
+                "run": bids_path.run,
+                "channel_names": list(raw.ch_names),
+                "sampling_frequency": float(raw.info["sfreq"]),
+            }
+        )
+
+    if not recordings:
+        raise ValueError(
+            f"No EEG recordings found in {path!r} "
+            "matching the specified selection criteria."
+        )
+
+    reference_channels = metadata[0]["channel_names"]
+    reference_sfreq = metadata[0]["sampling_frequency"]
+    reference_shape = recordings[0].shape
+
+    compatible = all(
+        recording.shape == reference_shape
+        and item["channel_names"] == reference_channels
+        and np.isclose(item["sampling_frequency"], reference_sfreq)
+        for recording, item in zip(recordings, metadata)
+    )
+
+    if compatible:
+        X = np.stack(recordings, axis=0)
+    else:
+        X = recordings
+
+    return X, metadata

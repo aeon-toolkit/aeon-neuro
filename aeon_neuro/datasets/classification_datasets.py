@@ -1,9 +1,8 @@
 """Datasets in the EEG classification archive."""
 
 # 31 EEG Classification problems
-
 dataset_names = [
-    "Alzhiemers",
+    "Alzheimers",
     "Blink",
     "ButtonPress",
     "Epilepsy2",
@@ -35,37 +34,40 @@ dataset_names = [
     "VIPA",
     "VisualSpeech",
 ]
-# Complete with zenodo number when available. 49 means not available yet
+# Zenodo record IDs for each dataset. Datasets not yet uploaded to Zenodo use the
+# placeholder ID 49; load_eeg_classification raises a ValueError for these unless
+# the .ts files are already present locally. Replace 49 with the real record ID
+# once a dataset is uploaded.
 dataset_map = {
-    "Alzhiemers": 49,
-    "Blink": 49,
-    "ButtonPress": 49,
+    "Alzheimers": 15500801,
+    "Blink": 18735667,
+    "ButtonPress": 15522930,
     "Epilepsy2": 49,
-    "EyesOpenShut": 49,
-    "FaceDetection": 49,
-    "FingerMovements": 49,
-    "HandMovementDirection": 49,
-    "ImaginedOpenCloseFist": 49,
+    "EyesOpenShut": 18496872,
+    "FaceDetection": 11206216,
+    "FingerMovements": 11206220,
+    "HandMovementDirection": 11206224,
+    "ImaginedOpenCloseFist": 15493010,
     "ImaginedOpenCloseFistFeet": 49,
-    "InnerSpeech": 49,
+    "InnerSpeech": 15425020,
     "Liverpool-Fibromyalgia": 49,
-    "LongIntervalTask": 49,
+    "LongIntervalTask": 15427724,
     "LowCostEEG": 49,
-    "MatchingPennies": 49,
-    "MindReading": 49,
-    "MotorImagery": 49,
+    "MatchingPennies": 15523058,
+    "MindReading": 15523138,
+    "MotorImagery": 11206246,
     "N_Back": 49,
-    "OpenCloseFist": 49,
+    "OpenCloseFist": 15492985,
     "OpenCloseFistFeet": 49,
     "Photo-Stimulation": 49,
-    "PronouncedSpeech": 49,
+    "PronouncedSpeech": 15392755,
     "PsychologyButtonPress": 49,
-    "SelfRegulationSCP1": 49,
-    "SelfRegulationSCP2": 49,
-    "ShortIntervalTask": 49,
-    "SitStand": 49,
-    "Sleep": 49,
-    "SongFamiliarity": 49,
+    "SelfRegulationSCP1": 11206265,
+    "SelfRegulationSCP2": 11206269,
+    "ShortIntervalTask": 15491177,
+    "SitStand": 15500726,
+    "Sleep": 15526565,
+    "SongFamiliarity": 15496080,
     "VIPA": 49,
-    "VisualSpeech": 49,
+    "VisualSpeech": 15366803,
 }

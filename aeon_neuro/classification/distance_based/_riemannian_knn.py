@@ -30,7 +30,7 @@ class _BaseRiemannianCovarianceClassifier(BaseClassifier):
         "capability:multivariate": True,
         "capability:unequal_length": False,
         "algorithm_type": "distance",
-        "python_dependencies": ["pyriemann"],
+        "python_dependencies": ["pyriemann", "torch"],
     }
 
     def __init__(
@@ -48,20 +48,19 @@ class _BaseRiemannianCovarianceClassifier(BaseClassifier):
 
     def _fit(self, X: np.ndarray, y: np.ndarray):
         """Fit the classifier."""
-        self.covariance_transformer_ = self._build_covariance_transformer()
-        X_cov = self.covariance_transformer_.fit_transform(X)
+        X_cov = self._compute_covariances(X, fit=True)
         self.classifier_ = self._build_classifier()
         self.classifier_.fit(X_cov, y)
         return self
 
     def _predict(self, X: np.ndarray) -> np.ndarray:
         """Predict class labels for X."""
-        X_cov = self.covariance_transformer_.transform(X)
+        X_cov = self._compute_covariances(X)
         return np.asarray(self.classifier_.predict(X_cov))
 
     def _predict_proba(self, X: np.ndarray) -> np.ndarray:
         """Predict class probabilities for X."""
-        X_cov = self.covariance_transformer_.transform(X)
+        X_cov = self._compute_covariances(X)
         probs = np.asarray(self.classifier_.predict_proba(X_cov), dtype=float)
 
         clf_classes = np.asarray(self.classifier_.classes_)
@@ -79,6 +78,29 @@ class _BaseRiemannianCovarianceClassifier(BaseClassifier):
 
         kwargs = {} if self.covariance_params is None else dict(self.covariance_params)
         return Covariances(estimator=self.covariance_estimator, **kwargs)
+
+    def _compute_covariances(self, X, fit=False):
+        """Estimate covariance matrices, on GPU if available.
+
+        Covariances are computed on CUDA when available, then returned as a
+        numpy array for the pyRiemann classifier.
+        """
+        import torch
+
+        if fit:
+            self.covariance_transformer_ = self._build_covariance_transformer()
+
+        if torch.cuda.is_available():
+            X = torch.as_tensor(X, dtype=torch.float64, device="cuda")
+
+        if fit:
+            X_cov = self.covariance_transformer_.fit_transform(X)
+        else:
+            X_cov = self.covariance_transformer_.transform(X)
+
+        if torch.is_tensor(X_cov):
+            X_cov = X_cov.cpu().numpy()
+        return X_cov
 
     def _build_classifier(self):
         """Construct the underlying pyRiemann classifier."""
