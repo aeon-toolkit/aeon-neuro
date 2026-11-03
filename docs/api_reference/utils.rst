@@ -109,7 +109,9 @@ Supported formats
    * - Recorder 2 / BVRF
      - ``.bvrh``/``.bvrd``/``.bvrm``/``.bvri`` via optional PyBVRF.
    * - XDF
-     - ``.xdf``/``.xdfz`` via optional PyXDF; one EEG stream plus markers.
+     - ``.xdf``/``.xdfz`` via optional PyXDF; one validated continuous voltage EEG
+       stream plus finite, in-bounds markers. See the ingestion guide for the
+       timestamp tolerance and explicit preloaded BIDS export.
 
 Keep companion files together.
 
