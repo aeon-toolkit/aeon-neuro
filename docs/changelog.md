@@ -11,3 +11,4 @@ To stay up to date with aeon-neuro releases, subscribe to aeon-neuro
 
 - [Version 0.0.1](changelogs/v0.0.1)
 - [Version 0.0.2](changelogs/v0.0.2)
+- [Version 0.1.1](changelogs/v0.1.1)
