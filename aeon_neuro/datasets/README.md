@@ -12,8 +12,9 @@ Definitions and bindings can be dictionaries or JSON filenames. Fixed windows
 use recording targets; event epochs can use event or recording targets.
 
 The first format is experimental. It reuses the existing case builders and adds
-no runtime dependencies. See the [loaded-problem guide](../../docs/problem-loading.md)
-for all supported fields, timing conventions, exclusions and provenance limits.
+no runtime dependencies. The [format reference](../../docs/problem-format.md)
+lists every supported field and its constraints. See the
+[loaded-problem guide](../../docs/problem-loading.md) for usage examples.
 
 Run `python examples/problem_loading.py` from a source checkout for a generated
 example with two event targets, a cohort-window problem and a separately

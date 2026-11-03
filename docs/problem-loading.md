@@ -1,5 +1,9 @@
 # Define a classification problem on loaded recordings
 
+The [format reference](problem-format.md) defines every supported problem/binding
+field, required/default rule and runtime input constraint. This guide introduces
+the format through usage examples.
+
 To define problems before signal files are downloaded, start with
 [metadata-only planning and deferred materialization](problem-planning.md).
 The definition and binding vocabulary below is shared by both routes; this page
