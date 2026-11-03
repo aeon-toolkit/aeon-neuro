@@ -5,6 +5,16 @@ For constructed recording/window/event cases, see
 explicit independence policies, session roles, original-source overlap and inner
 validation scope using the shared case container.
 
+## Selecting recordings from a local BIDS folder
+
+`aeon_neuro.datasets.load_bids.load_bids_data` matches subject, session, task,
+acquisition and run identifiers exactly, without prefixes or automatic zero
+padding. Every requested value must match at least one recording after all
+filters are applied. For example, `subjects=["1,", "2"]` raises for `"1,"` even
+when subject `"2"` exists. The error names all unmatched values and lists
+available dataset identifiers before reading any signals. Every combination
+of requested values need not exist; `None` means no filter for that entity.
+
 
 ## EEG Data Characteristics
 | Problem               | train cases | test cases | dimensions | length  | num classes  |
