@@ -108,6 +108,16 @@ decisions.
 
 ## Native filenames and Raw
 
+BrainVision companion inputs (`.eeg`, `.vmrk`, `.amrk`) are resolved only through
+a sibling `.vhdr`/`.ahdr` that references them. Discovery honours the header's
+declared `Codepage`, including ANSI, and the legacy Latin-1 decoding fallback.
+It accepts MNE's NeurOne `[Common infos]` section spelling as well as
+`[Common Infos]`. This keeps companion loading consistent with direct header
+loading for supported encodings and non-ASCII filenames. Ambiguous references
+still require an explicit header; the native decoder remains MNE and its format
+limitations still apply. A malformed unrelated sibling does not determine the
+encoding of a valid header.
+
 A plain filename reads BrainVision `.vhdr`, EDF `.edf`, BioSemi `.bdf` or
 continuous EEGLAB `.set` through the corresponding MNE reader. Required companion
 files must be available. This route imports native metadata and annotations;

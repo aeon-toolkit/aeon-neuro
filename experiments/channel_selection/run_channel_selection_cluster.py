@@ -121,8 +121,6 @@ def _make_transformer(algorithm, n_channels):
     if algorithm == "CSP":
         return CommonSpatialPatterns(
             n_components=n_components,
-            log=None,
-            transform_into="csp_space",
             random_state=SEED,
         )
     if algorithm == "UMAP":

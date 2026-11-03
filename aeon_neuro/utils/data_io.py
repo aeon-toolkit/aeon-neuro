@@ -174,14 +174,27 @@ def _brainvision_header(path):
         if header.suffix.lower() not in {".vhdr", ".ahdr"} or not header.is_file():
             continue
         contents = header.read_bytes()
+        codepage = re.search(rb"(?mi)^[ \t]*Codepage[ \t]*=[ \t]*([^\r\n]+)", contents)
+        encoding = (
+            codepage[1].decode("ascii", errors="replace").strip()
+            if codepage
+            else "utf-8-sig"
+        )
+        if encoding == "ANSI":
+            encoding = "cp1252"
         try:
-            text = contents.decode("utf-8-sig")
-        except UnicodeDecodeError:
-            text = contents.decode("cp1252")
-        if "[Common Infos]" not in text:
+            text = contents.decode(encoding)
+        except (UnicodeDecodeError, LookupError):
+            # Match MNE's legacy fallback, which also avoids an unrelated
+            # undecodable header breaking discovery of a readable companion.
+            text = contents.decode("latin-1")
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        common = re.search(
+            r"(?ms)^[ \t]*\[Common [Ii]nfos\][ \t]*\n(.*?)(?=^[ \t]*\[|\Z)", text
+        )
+        if common is None:
             continue
-        common = text.split("[Common Infos]", 1)[1].split("\n[", 1)[0]
-        match = re.search(rf"(?mi)^\s*{key}\s*=\s*(.+?)\s*$", common)
+        match = re.search(rf"(?mi)^[ \t]*{key}[ \t]*=[ \t]*(.+?)[ \t]*$", common[1])
         if match:
             linked = header.parent / match[1].replace("\\", "/")
             if linked.resolve() == path.resolve():

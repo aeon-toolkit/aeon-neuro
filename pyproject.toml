@@ -47,7 +47,7 @@ dependencies = [
     "pyriemann",
     "umap-learn",
     "torch",
-    "braindecode",
+    "braindecode>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -69,12 +69,14 @@ dl = [
 dev = [
     "aeon[dev]",
     "edfio",
+    "pybv>=0.7.5",
 ]
 binder = [
     "aeon[binder]",
 ]
 docs = [
     "aeon[docs]",
+    "sphinx-remove-toctrees",
 ]
 
 [project.urls]

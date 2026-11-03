@@ -9,6 +9,7 @@ from aeon.base._base import _clone_estimator
 from aeon.classification import BaseClassifier
 from sklearn.base import BaseEstimator, is_classifier
 
+from aeon_neuro.transformations.collection import LogVariance
 from aeon_neuro.transformations.collection.channel_creation import (
     CommonSpatialPatterns,
 )
@@ -17,14 +18,22 @@ from aeon_neuro.transformations.collection.channel_creation import (
 class CSPClassifier(BaseClassifier):
     """Common Spatial Patterns plus a scikit-learn classifier.
 
-    This estimator applies the ``CommonSpatialPatterns`` transformer, which wraps
-    ``mne.decoding.CSP``, to multivariate equal-length time series, then
-    classifies the resulting average power features with a scikit-learn
-    classifier, by default ``LinearDiscriminantAnalysis`` (the classic CSP+LDA
-    pipeline).
+    This estimator composes three steps:
+
+    ``CommonSpatialPatterns`` -> ``LogVariance`` -> classifier
+
+    ``CommonSpatialPatterns`` (a NumPy/SciPy implementation of CSP) spatially
+    filters multivariate equal-length time series into ``n_components`` CSP
+    components, ``LogVariance`` reduces each component to its log-variance over
+    time, and a scikit-learn classifier, by default
+    ``LinearDiscriminantAnalysis`` (the classic CSP+LDA pipeline), is fitted on
+    the resulting (n_cases, n_components) features.
 
     The input shape is aeon's standard collection format:
     (n_cases, n_channels, n_timepoints).
+
+    The CSP filters are learned in ``fit`` from the training data only;
+    ``predict`` and ``predict_proba`` apply the fitted filters to new data.
 
     Parameters
     ----------
@@ -36,18 +45,21 @@ class CSPClassifier(BaseClassifier):
     n_components : int, default=4
         Number of CSP components.
     reg : float, str or None, default=None
-        Regularisation passed to ``mne.decoding.CSP``.
-    log : bool or None, default=True
-        Whether to apply log transform to the average power features. Passed
-        to ``mne.decoding.CSP``.
+        Covariance regularisation for CSP: None, a shrinkage float in [0, 1],
+        "empirical", "ledoit_wolf" or "oas". See ``CommonSpatialPatterns``.
+    log : bool, default=True
+        Whether to take the logarithm of the variance features. Passed to
+        ``LogVariance``. If False, the raw variance is used.
     cov_est : {"concat", "epoch"}, default="concat"
         Covariance estimation mode for CSP.
     norm_trace : bool, default=False
         Whether to normalise class covariance by trace in CSP.
     cov_method_params : dict or None, default=None
-        Extra covariance estimation keyword arguments for CSP.
+        Extra keyword arguments for the scikit-learn covariance estimator
+        selected by ``reg``.
     component_order : str, default="mutual_info"
-        Component ordering strategy for CSP.
+        Component ordering strategy for CSP, "mutual_info" or "alternate"
+        (two classes only).
     random_state : int or None, default=None
         Seed used to set the cloned classifier's ``random_state`` parameters, if it
         has any. If None, the classifier's own setting is kept. Has no effect
@@ -56,7 +68,9 @@ class CSPClassifier(BaseClassifier):
     Attributes
     ----------
     csp_ : CommonSpatialPatterns
-        The fitted CSP transformer.
+        The fitted CSP spatial filter.
+    log_variance_ : LogVariance
+        The (log-)variance feature extractor applied to the CSP components.
     classifier_ : sklearn classifier
         The fitted clone of ``classifier``.
 
@@ -108,7 +122,7 @@ class CSPClassifier(BaseClassifier):
         classifier=None,
         n_components: int = 4,
         reg: float | str | None = None,
-        log: bool | None = True,
+        log: bool = True,
         cov_est: str = "concat",
         norm_trace: bool = False,
         cov_method_params: dict | None = None,
@@ -132,13 +146,12 @@ class CSPClassifier(BaseClassifier):
         self.csp_ = CommonSpatialPatterns(
             n_components=self.n_components,
             reg=self.reg,
-            log=self.log,
             cov_est=self.cov_est,
-            transform_into="average_power",
             norm_trace=self.norm_trace,
             cov_method_params=self.cov_method_params,
             component_order=self.component_order,
         )
+        self.log_variance_ = LogVariance(log=self.log)
         self.classifier_ = self._build_classifier()
         self.classifier_.fit(self._csp_features(X, y), y)
         return self
@@ -186,15 +199,14 @@ class CSPClassifier(BaseClassifier):
         return aligned
 
     def _csp_features(self, X: np.ndarray, y: np.ndarray | None = None) -> np.ndarray:
-        """Return CSP average power features of shape (n_cases, n_components).
+        """Return CSP log-variance features of shape (n_cases, n_components).
 
-        Fits the CSP transformer when ``y`` is given, otherwise uses the fitted one.
+        Fits the CSP and LogVariance transformers when ``y`` is given, otherwise
+        uses the fitted ones.
         """
         if y is not None:
-            Xt = self.csp_.fit_transform(X, y)
-        else:
-            Xt = self.csp_.transform(X)
-        return Xt[:, :, 0]
+            return self.log_variance_.fit_transform(self.csp_.fit_transform(X, y))
+        return self.log_variance_.transform(self.csp_.transform(X))
 
     @classmethod
     def _get_test_params(cls, parameter_set: str = "default"):
