@@ -13,4 +13,5 @@ Channel creation
     :toctree: auto_generated/
     :template: class.rst
 
+    ERPCovariances
     XDAWN
