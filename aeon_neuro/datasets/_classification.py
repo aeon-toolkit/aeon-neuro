@@ -110,20 +110,6 @@ def make_fixed_length_cases(
     ``included=False`` and ``exclusion_reason`` on rejected windows.
     """
     _, info = _recordings(X, metadata)
-    return _fixed_length_cases(
-        info,
-        labels=labels,
-        groups=groups,
-        window_size=window_size,
-        step_size=step_size,
-        start=start,
-        stop=stop,
-    )
-
-
-def _fixed_length_cases(
-    info, *, labels, groups, window_size, step_size=None, start=0.0, stop=None
-):
     labels, groups = _recording_targets(info, labels, groups)
     step_size = window_size if step_size is None else step_size
     rows = []
@@ -181,10 +167,6 @@ def make_event_cases(X, metadata, events, *, tmin, tmax):
     by the recipe. No event column is automatically interpreted as a target.
     """
     _, info = _recordings(X, metadata)
-    return _event_cases(info, events, tmin=tmin, tmax=tmax)
-
-
-def _event_cases(info, events, *, tmin, tmax):
     offsets = {}
     rows = []
     # Validate offsets even when events is empty.
@@ -257,52 +239,18 @@ def build_classification_dataset(X, metadata, cases, *, on_out_of_bounds="raise"
     separately. Output signals and metadata do not share mutable state with the
     inputs. Labels and groups must each be uniformly strings or integers.
     """
-    recordings, info = _recordings(X, metadata)
-    included, excluded, output_channels, output_sfreq = _prepare_cases(
-        info, cases, on_out_of_bounds=on_out_of_bounds
-    )
-    lookup = {item["recording_id"]: (x, item) for x, item in zip(recordings, info)}
-    signals = []
-    for row in included:
-        recording, item = lookup[row["recording_id"]]
-        picks = [item["channel_names"].index(name) for name in row["channel_names"]]
-        # Advanced indexing copies, so callers retain their loaded source arrays.
-        signal = recording[picks, row["start_sample"] : row["stop_sample"]]
-        if not np.isfinite(signal).all():
-            raise ValueError(
-                f"{row['case_id']}: extracted signal contains non-finite values."
-            )
-        signals.append(signal)
-    if all(x.shape == signals[0].shape for x in signals):
-        signals = np.stack(signals)
-    return ClassificationDataset(
-        X=signals,
-        y=_identifiers([row["label"] for row in included], "labels"),
-        groups=_identifiers([row["group_id"] for row in included], "groups"),
-        cases=included,
-        exclusions=excluded,
-        metadata={
-            "recordings": info,
-            "channel_names": output_channels,
-            "sampling_frequency": output_sfreq,
-            "sample_coordinates": "zero-based, stop-exclusive; supplied recordings",
-        },
-    )
-
-
-def _prepare_cases(info, cases, *, on_out_of_bounds="raise", require_compatible=True):
-    # Validate source bounds and identities from descriptors before any signal
-    # access. Both eager extraction and deferred plans use this same authority.
     if on_out_of_bounds not in {"raise", "exclude"}:
         raise ValueError("on_out_of_bounds must be 'raise' or 'exclude'.")
+    recordings, info = _recordings(X, metadata)
     lookup = {
         item["recording_id"]: (
+            x,
             item,
             {name: i for i, name in enumerate(item["channel_names"])},
         )
-        for item in info
+        for x, item in zip(recordings, info)
     }
-    included, excluded, ids = [], [], set()
+    signals, included, excluded, ids = [], [], [], set()
     output_channels, output_sfreq = None, None
     for candidate in cases:
         row = deepcopy(dict(candidate))
@@ -324,7 +272,7 @@ def _prepare_cases(info, cases, *, on_out_of_bounds="raise", require_compatible=
         recording_id = row["recording_id"]
         if not isinstance(recording_id, str) or recording_id not in lookup:
             raise ValueError(f"Unknown recording_id: {recording_id!r}.")
-        item, channel_indices = lookup[recording_id]
+        recording, item, channel_indices = lookup[recording_id]
         start = _integer(row["start_sample"], "start_sample")
         stop = _integer(row["stop_sample"], "stop_sample")
         if stop <= start:
@@ -348,7 +296,7 @@ def _prepare_cases(info, cases, *, on_out_of_bounds="raise", require_compatible=
         row["source_sampling_frequency"] = item["sampling_frequency"]
         row["source_file"] = item.get("filepath", recording_id)
         row.pop("row", None)
-        if start < 0 or stop > item["n_samples"]:
+        if start < 0 or stop > recording.shape[1]:
             if keep and on_out_of_bounds == "raise":
                 raise ValueError(f"{case_id}: interval is outside recording bounds.")
             if keep:
@@ -369,20 +317,38 @@ def _prepare_cases(info, cases, *, on_out_of_bounds="raise", require_compatible=
             )
         if output_channels is None:
             output_channels, output_sfreq = renamed, item["sampling_frequency"]
-        if require_compatible and (
-            renamed != output_channels or item["sampling_frequency"] != output_sfreq
-        ):
+        if renamed != output_channels or item["sampling_frequency"] != output_sfreq:
             raise ValueError(
                 "Included cases must have the same output channel names/order and "
                 "sampling frequency. Select/reorder channels or resample explicitly."
             )
+        picks = [channel_indices[name] for name in names]
+        # Advanced indexing already copies, including for unequal-length output.
+        signal = recording[picks, start:stop]
+        if not np.isfinite(signal).all():
+            raise ValueError(f"{case_id}: extracted signal contains non-finite values.")
         row.update(channel_names=names, output_channel_names=renamed, row=len(included))
         included.append(row)
-    if not included:
+        signals.append(signal)
+    if not signals:
         raise ValueError("No included cases remain; inspect the candidate case table.")
-    _identifiers([row["label"] for row in included], "labels")
-    _identifiers([row["group_id"] for row in included], "groups")
-    return included, excluded, output_channels, output_sfreq
+    y = _identifiers([row["label"] for row in included], "labels")
+    groups = _identifiers([row["group_id"] for row in included], "groups")
+    if all(x.shape == signals[0].shape for x in signals):
+        signals = np.stack(signals)
+    return ClassificationDataset(
+        X=signals,
+        y=y,
+        groups=groups,
+        cases=included,
+        exclusions=excluded,
+        metadata={
+            "recordings": info,
+            "channel_names": output_channels,
+            "sampling_frequency": output_sfreq,
+            "sample_coordinates": "zero-based, stop-exclusive; supplied recordings",
+        },
+    )
 
 
 def validate_group_split(dataset, train_indices, test_indices):
@@ -436,7 +402,7 @@ def _recordings(X, metadata):
         raise ValueError("X must be a nonempty collection of 2D recordings.")
     if len(X) != len(metadata):
         raise ValueError("X and recording metadata must have the same length.")
-    prepared = []
+    info, ids = [], set()
     for recording, entry in zip(X, metadata):
         if (
             not isinstance(recording, np.ndarray)
@@ -445,28 +411,6 @@ def _recordings(X, metadata):
             or recording.dtype.kind not in "fiu"
         ):
             raise ValueError("Each recording must be a nonempty real numeric 2D array.")
-        item = deepcopy(dict(entry))
-        if (
-            "n_samples" in item
-            and _integer(item["n_samples"], "n_samples") != recording.shape[1]
-        ):
-            raise ValueError("n_samples does not match X.")
-        item["n_samples"] = recording.shape[1]
-        prepared.append(item)
-    info = _recording_info(prepared)
-    for recording, item in zip(X, info):
-        if len(item["channel_names"]) != recording.shape[0]:
-            raise ValueError(
-                f"{item['recording_id']}: channel metadata does not match X."
-            )
-    return X, info
-
-
-def _recording_info(metadata):
-    if not isinstance(metadata, (list, tuple)) or not metadata:
-        raise ValueError("Supply nonempty recording descriptors.")
-    info, ids = [], set()
-    for entry in metadata:
         item = deepcopy(dict(entry))
         _required(item, ("channel_names", "sampling_frequency"))
         recording_id = item.get("recording_id", item.get("filepath"))
@@ -481,6 +425,8 @@ def _recording_info(metadata):
         ids.add(recording_id)
         item["recording_id"] = recording_id
         item["channel_names"] = _channels(item["channel_names"])
+        if len(item["channel_names"]) != recording.shape[0]:
+            raise ValueError(f"{recording_id}: channel metadata does not match X.")
         rate = item["sampling_frequency"]
         if (
             not isinstance(rate, Real)
@@ -490,12 +436,14 @@ def _recording_info(metadata):
         ):
             raise ValueError("sampling_frequency must be finite and positive.")
         item["sampling_frequency"] = float(rate)
-        _required(item, ("n_samples",))
-        item["n_samples"] = _integer(item["n_samples"], "n_samples")
-        if item["n_samples"] < 1:
-            raise ValueError("n_samples must be positive.")
+        if (
+            "n_samples" in item
+            and _integer(item["n_samples"], "n_samples") != recording.shape[1]
+        ):
+            raise ValueError(f"{recording_id}: n_samples does not match X.")
+        item["n_samples"] = recording.shape[1]
         info.append(item)
-    return info
+    return X, info
 
 
 def _required(row, keys):

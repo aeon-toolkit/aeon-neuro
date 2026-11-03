@@ -10,11 +10,11 @@ import numpy as np
 
 from aeon_neuro.datasets._classification import (
     _channels,
-    _event_cases,
-    _fixed_length_cases,
     _identifier,
     _recordings,
     build_classification_dataset,
+    make_event_cases,
+    make_fixed_length_cases,
 )
 
 
@@ -265,13 +265,6 @@ def load_classification_problem(X, metadata, problem, binding, *, events=None):
     """
     problem, binding = _resolve(problem, binding)
     _, info = _recordings(X, metadata)
-    cases, boundary = _problem_cases(info, problem, binding, events)
-    dataset = build_classification_dataset(X, info, cases, on_out_of_bounds=boundary)
-    dataset.metadata["problem"] = _configuration(problem, binding)
-    return dataset
-
-
-def _problem_cases(info, problem, binding, events):
     lookup = {item["recording_id"]: item for item in info}
     segment = problem["segmentation"]
     if segment["mode"] == "fixed_windows":
@@ -279,7 +272,8 @@ def _problem_cases(info, problem, binding, events):
             raise ValueError("events are only used by event_epochs segmentation")
         # Map targets after enumeration so an explicitly unmapped recording can
         # retain all of its excluded windows in the ordinary case table.
-        rows = _fixed_length_cases(
+        rows = make_fixed_length_cases(
+            X,
             info,
             labels=[
                 str(_identifier(_value(item, None, binding["target"]), "target value"))
@@ -334,13 +328,12 @@ def _problem_cases(info, problem, binding, events):
                 "source_event": event,
             }
             prepared.append(_decorate(row, item, event, problem, binding))
-        cases = _event_cases(info, prepared, tmin=segment["tmin"], tmax=segment["tmax"])
+        cases = make_event_cases(
+            X, info, prepared, tmin=segment["tmin"], tmax=segment["tmax"]
+        )
         boundary = segment["on_out_of_bounds"]
-    return cases, boundary
-
-
-def _configuration(problem, binding):
-    return {
+    dataset = build_classification_dataset(X, info, cases, on_out_of_bounds=boundary)
+    dataset.metadata["problem"] = {
         "definition": problem,
         "binding": binding,
         **{
@@ -350,3 +343,4 @@ def _configuration(problem, binding):
             for name, value in (("definition", problem), ("binding", binding))
         },
     }
+    return dataset

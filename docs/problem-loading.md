@@ -1,10 +1,5 @@
 # Define a classification problem on loaded recordings
 
-To define problems before signal files are downloaded, start with
-[metadata-only planning and deferred materialization](problem-planning.md).
-The definition and binding vocabulary below is shared by both routes; this page
-describes the eager convenience function for arrays already in memory.
-
 `load_classification_problem` adds a small experimental definition layer over
 the existing case builders. Start with recording arrays and aligned metadata,
 including the outputs of `load_bids_data`. Supply the choices that the recordings

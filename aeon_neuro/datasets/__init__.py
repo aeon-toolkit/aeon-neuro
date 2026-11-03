@@ -13,9 +13,6 @@ __all__ = [
     "validate_group_split",
     "validate_classification_split",
     "load_classification_problem",
-    "resolve_classification_problem",
-    "plan_classification_problem",
-    "materialize_classification_problem",
 ]
 
 from aeon_neuro.datasets._classification import (
@@ -29,11 +26,6 @@ from aeon_neuro.datasets._classification import (
 from aeon_neuro.datasets._classification_split import validate_classification_split
 from aeon_neuro.datasets._data_loaders import load_eeg_classification
 from aeon_neuro.datasets._problem import load_classification_problem
-from aeon_neuro.datasets._problem_plan import (
-    materialize_classification_problem,
-    plan_classification_problem,
-    resolve_classification_problem,
-)
 from aeon_neuro.datasets._single_problem_loaders import (
     load_kdd_example,
     load_kdd_full_example,
