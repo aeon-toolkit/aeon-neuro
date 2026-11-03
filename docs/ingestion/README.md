@@ -5,6 +5,87 @@ BIDS recordings identified by `mne_bids.BIDSPath`. It returns the written
 `BIDSPath`. Conversion retains all channels and performs no filtering,
 resampling, re-referencing, epoching or classification-label selection.
 
+## Continuous XDF input
+
+Install the optional readers with `pip install 'aeon-neuro[eeg_io]'`. XDF and
+compressed XDFZ input use PyXDF, selecting exactly one EEG stream and any desired
+marker streams. Select streams explicitly when a file contains multiple EEG
+recordings or unrelated markers:
+
+```python
+from aeon_neuro.utils.data_io import load_eeg_to_mne
+
+raw = load_eeg_to_mne(
+    "recording.xdf",
+    select_streams=[{"type": "EEG"}, {"type": "Markers"}],
+    timing_tolerance=0.25,
+)
+```
+
+The supported EEG stream has at least two finite samples, unique channel labels,
+consistent declared channel counts and voltage channel types. EEG, EOG, ECG,
+EMG, SEEG, ECoG, DBS and BIO types are accepted; dimensionless STIM channels and
+other measurements need a separate explicit adapter. Known V/mV/uV/µV/μV/nV
+units are converted to MNE's volts. No channel identities or unknown units are
+inferred, and descriptor-count mismatches fail before calibration can broadcast
+one signal into several channels.
+
+Original timestamps are inspected before PyXDF dejittering, then the corrected
+timestamps are checked again. Both must fit a regular grid anchored at their
+first and last samples. `timing_tolerance` is the maximum deviation in sample
+periods, default 0.25, with `0 <= timing_tolerance < 0.5`; float representation
+error is accounted for separately. The effective rate must agree with the checked
+timestamps and be within 1% of the declared nominal rate, allowing bounded clock
+drift in either direction. This rate check is separate from `timing_tolerance`;
+a declared 100 Hz stream with regular 200 Hz timestamps is rejected even though
+its timestamps form a regular grid. Original adjacent timestamps more than 1.5
+nominal periods apart, nonmonotonic clocks, detected multiple segments and
+insufficient timestamp precision fail. Clock resets and discontinuous recordings
+need another explicit representation. Relaxing PyXDF's break thresholds or
+disabling dejittering does not bypass these checks. No missing samples are filled
+or signals interpolated.
+
+PyXDF's clock correction, dejittering and stream-selection options still apply.
+An explicit `on_chunk` callback runs once per chunk; checks apply to the callback's
+output before dejittering. A failed callback is surfaced rather than accepted as
+partial data. Original EEG timestamp vectors are retained and concatenated for
+these checks, adding temporary timestamp storage without copying the signal
+array for timestamp validation. XDF
+remains fully preloaded even with `preload=False`; memory-map filenames are not
+supported. Other signal streams and original per-sample timestamps are not
+retained in the returned Raw. Validation covers the decoded streams, not every
+possible file corruption or the correctness of acquisition/clock metadata.
+
+Markers use corrected timestamps relative to the selected EEG's first timestamp.
+Their sample counts must align and their times must be finite and fall between
+the first and last EEG samples. Out-of-range markers fail before MNE can discard
+them. Explicit selection can omit an unwanted marker stream; markers are not
+silently filtered by their meaning. Recording wall-clock dates, references and
+electrode positions are not invented.
+
+### Exporting preloaded XDF to BIDS
+
+Choose an output encoding and permit export of the preloaded recording:
+
+```python
+from mne_bids import BIDSPath
+from aeon_neuro.utils.bids import convert_eeg_to_bids
+
+destination = BIDSPath(root="output-bids", subject="01", task="experiment")
+written = convert_eeg_to_bids(
+    raw, destination, format="EDF", allow_preload=True
+)
+```
+
+EDF export needs the optional `edfio` exporter (`pip install edfio`). Review
+available acquisition metadata and provide event-code mappings when the
+experiment defines them. EDF introduces amplitude quantisation; BrainVision is
+another explicit export choice when its exporter is installed. MNE-BIDS maps
+annotation times to samples, so fractional marker latencies may round. This is a
+derived encoding, not a byte-preserving copy of XDF or a structural BIDS validator.
+The source file remains unchanged. See the
+[PyXDF importer](https://github.com/xdf-modules/pyxdf) for backend options.
+
 ## Existing BIDS input
 
 Download the desired dataset release, including the signal and applicable

@@ -5,6 +5,8 @@ __all__ = [
     "load_kdd_example",
     "load_kdd_full_example",
     "load_eeg_classification",
+    "fetch_openneuro_dataset",
+    "BIDSPreparationError",
     "ClassificationDataset",
     "build_classification_dataset",
     "make_recording_cases",
@@ -14,6 +16,7 @@ __all__ = [
     "validate_classification_split",
 ]
 
+from aeon_neuro.datasets._bids_prepare import BIDSPreparationError
 from aeon_neuro.datasets._classification import (
     ClassificationDataset,
     build_classification_dataset,
@@ -24,6 +27,7 @@ from aeon_neuro.datasets._classification import (
 )
 from aeon_neuro.datasets._classification_split import validate_classification_split
 from aeon_neuro.datasets._data_loaders import load_eeg_classification
+from aeon_neuro.datasets._openneuro import fetch_openneuro_dataset
 from aeon_neuro.datasets._single_problem_loaders import (
     load_kdd_example,
     load_kdd_full_example,
