@@ -1,5 +1,15 @@
 # Classification problems on loaded recordings
 
+`inspect_bids_eeg` reads local EDF/BDF headers and BIDS sidecars without loading
+signal arrays. `load_bids_dataset` loads those sources with `EEGDatasetInfo`,
+preserving dataset/participant facts, channel/event tables and source snapshots.
+`info.select(X, selector)` copies signals and their metadata together.
+`info.with_history(...)` appends caller-reported processing to a detached view;
+it does not perform processing or update derived layouts.
+See the [source inspection guide](../../docs/bids-problem-input.md) and
+[loaded metadata guide](../../docs/bids-dataset-info.md). Both routes reuse the
+existing source reader and preserve the legacy `load_bids_data` interface.
+
 `load_classification_problem(recordings, metadata, problem, binding, events=...)`
 constructs the existing `ClassificationDataset` from explicit problem choices.
 Definitions and bindings can be dictionaries or JSON filenames. Fixed windows

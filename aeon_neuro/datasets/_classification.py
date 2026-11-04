@@ -416,7 +416,7 @@ def _recordings(X, metadata):
         raise ValueError("X must be a nonempty collection of 2D recordings.")
     if len(X) != len(metadata):
         raise ValueError("X and recording metadata must have the same length.")
-    info, ids = [], set()
+    prepared = []
     for recording, entry in zip(X, metadata):
         if (
             not isinstance(recording, np.ndarray)
@@ -425,6 +425,30 @@ def _recordings(X, metadata):
             or recording.dtype.kind not in "fiu"
         ):
             raise ValueError("Each recording must be a nonempty real numeric 2D array.")
+        item = deepcopy(dict(entry))
+        if (
+            "n_samples" in item
+            and _integer(item["n_samples"], "n_samples") != recording.shape[1]
+        ):
+            raise ValueError("n_samples does not match X.")
+        item["n_samples"] = recording.shape[1]
+        prepared.append(item)
+    info = _recording_info(prepared)
+    for recording, item in zip(X, info):
+        if len(item["channel_names"]) != recording.shape[0]:
+            raise ValueError(
+                f"{item['recording_id']}: channel metadata does not match X."
+            )
+    return X, info
+
+
+def _recording_info(metadata):
+    # Inspecting source metadata and checking loaded arrays must use the same
+    # identity/layout rules, without requiring dummy signals for inspection.
+    if not isinstance(metadata, (list, tuple)) or not metadata:
+        raise ValueError("Supply nonempty recording descriptors.")
+    info, ids = [], set()
+    for entry in metadata:
         item = deepcopy(dict(entry))
         _required(item, ("channel_names", "sampling_frequency"))
         recording_id = item.get("recording_id", item.get("filepath"))
@@ -439,8 +463,6 @@ def _recordings(X, metadata):
         ids.add(recording_id)
         item["recording_id"] = recording_id
         item["channel_names"] = _channels(item["channel_names"])
-        if len(item["channel_names"]) != recording.shape[0]:
-            raise ValueError(f"{recording_id}: channel metadata does not match X.")
         rate = item["sampling_frequency"]
         if (
             not isinstance(rate, Real)
@@ -450,14 +472,12 @@ def _recordings(X, metadata):
         ):
             raise ValueError("sampling_frequency must be finite and positive.")
         item["sampling_frequency"] = float(rate)
-        if (
-            "n_samples" in item
-            and _integer(item["n_samples"], "n_samples") != recording.shape[1]
-        ):
-            raise ValueError(f"{recording_id}: n_samples does not match X.")
-        item["n_samples"] = recording.shape[1]
+        _required(item, ("n_samples",))
+        item["n_samples"] = _integer(item["n_samples"], "n_samples")
+        if item["n_samples"] < 1:
+            raise ValueError("n_samples must be positive.")
         info.append(item)
-    return X, info
+    return info
 
 
 def _required(row, keys):
