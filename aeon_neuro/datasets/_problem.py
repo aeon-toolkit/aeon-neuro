@@ -44,12 +44,18 @@ def _document(value, name):
 
 
 def _keys(value, required, optional, name):
-    if (
-        not isinstance(value, dict)
-        or not set(required) <= value.keys()
-        or value.keys() - set(required) - set(optional)
-    ):
-        raise ValueError(f"Unsupported or missing fields in {name}")
+    if not isinstance(value, dict):
+        raise ValueError(f"{name} must be a dictionary")
+    missing = set(required) - value.keys()
+    unsupported = value.keys() - set(required) - set(optional)
+    # A misspelling can cause both errors; report them together in stable order.
+    details = []
+    if missing:
+        details.append(f"missing {sorted(missing)}")
+    if unsupported:
+        details.append(f"unsupported {sorted(unsupported)}")
+    if details:
+        raise ValueError(f"Invalid fields in {name}: {'; '.join(details)}")
 
 
 def _text(value, name):
@@ -98,13 +104,13 @@ def _resolve(problem, binding):
         problem["channels"] = _channels(problem["channels"])
     segment = problem["segmentation"]
     if not isinstance(segment, dict):
-        raise ValueError("Supply a segmentation dictionary")
+        raise ValueError("problem.segmentation must be a dictionary")
     if segment.get("mode") == "fixed_windows":
         _keys(
             segment,
             {"mode", "window_size"},
             {"step_size", "start", "stop"},
-            "segmentation",
+            "problem.segmentation",
         )
         segment.setdefault("step_size", segment["window_size"])
         segment.setdefault("start", 0.0)
@@ -113,7 +119,12 @@ def _resolve(problem, binding):
         if "events" in binding:
             raise ValueError("Event bindings require event_epochs segmentation")
     elif segment.get("mode") == "event_epochs":
-        _keys(segment, {"mode", "tmin", "tmax"}, {"on_out_of_bounds"}, "segmentation")
+        _keys(
+            segment,
+            {"mode", "tmin", "tmax"},
+            {"on_out_of_bounds"},
+            "problem.segmentation",
+        )
         segment.setdefault("on_out_of_bounds", "raise")
         if segment["on_out_of_bounds"] not in ("raise", "exclude"):
             raise ValueError("on_out_of_bounds must be 'raise' or 'exclude'")
@@ -125,7 +136,9 @@ def _resolve(problem, binding):
         raise ValueError("segmentation.mode must be fixed_windows or event_epochs")
     target = binding["target"]
     _keys(target, {"source", "column", "mapping"}, {"on_unmapped"}, "binding.target")
-    _selector({key: target[key] for key in ("source", "column")}, sources, "target")
+    _selector(
+        {key: target[key] for key in ("source", "column")}, sources, "binding.target"
+    )
     mapping = target["mapping"]
     if (
         not isinstance(mapping, dict)
@@ -138,7 +151,7 @@ def _resolve(problem, binding):
     target.setdefault("on_unmapped", "raise")
     if target["on_unmapped"] not in ("raise", "exclude"):
         raise ValueError("on_unmapped must be 'raise' or 'exclude'")
-    _selector(binding["group"], sources, "group")
+    _selector(binding["group"], sources, "binding.group")
     fields = binding.setdefault("case_fields", {})
     if not isinstance(fields, dict):
         raise ValueError("case_fields must map output field names to selectors")
@@ -165,7 +178,7 @@ def _resolve(problem, binding):
         _text(name, "case field name")
         if name in reserved:
             raise ValueError(f"Reserved case field: {name}")
-        _selector(selector, sources, f"case_fields.{name}")
+        _selector(selector, sources, f"binding.case_fields.{name}")
     return problem, binding
 
 

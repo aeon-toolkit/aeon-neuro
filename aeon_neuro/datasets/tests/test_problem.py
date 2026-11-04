@@ -391,3 +391,47 @@ def test_python_mapping_keys_cannot_collide_during_json_normalisation(recordings
         load_classification_problem(
             X, metadata, definition("event_epochs"), fields, events=events()
         )
+
+
+@pytest.mark.parametrize(
+    "scope,missing,unsupported",
+    [
+        ("problem", ["id", "question"], ["name", "title"]),
+        ("binding", ["group", "target"], ["groups", "labels"]),
+        ("problem.segmentation", ["tmin", "tmax"], ["start", "stop"]),
+        ("binding.target", ["mapping", "column"], ["labels", "field"]),
+        ("binding.group", ["column"], ["field"]),
+        ("binding.events", ["onset", "id"], ["sample", "identity"]),
+        ("binding.case_fields.session", ["column"], ["field"]),
+    ],
+)
+def test_schema_errors_name_each_missing_and_unsupported_field(
+    recordings, scope, missing, unsupported
+):
+    """A typo should identify all affected keys in the offending object."""
+    X, metadata = recordings
+    problem, fields = definition("event_epochs"), binding("event_epochs")
+    documents = {"problem": problem, "binding": fields}
+    value = documents
+    for name in scope.split("."):
+        value = value[name]
+    for name in missing:
+        value.pop(name)
+    for name in unsupported:
+        value[name] = None
+    with pytest.raises(ValueError) as caught:
+        load_classification_problem(X, metadata, problem, fields, events=events())
+    assert str(caught.value) == (
+        f"Invalid fields in {scope}: missing {sorted(missing)}; "
+        f"unsupported {sorted(unsupported)}"
+    )
+
+
+@pytest.mark.parametrize("scope", ["binding.target", "binding.group", "binding.events"])
+def test_schema_errors_identify_non_dictionary_objects(recordings, scope):
+    """Malformed nested values need a type error rather than a list of key errors."""
+    X, metadata = recordings
+    problem, fields = definition("event_epochs"), binding("event_epochs")
+    fields[scope.split(".")[1]] = None
+    with pytest.raises(ValueError, match=rf"{scope} must be a dictionary"):
+        load_classification_problem(X, metadata, problem, fields, events=events())

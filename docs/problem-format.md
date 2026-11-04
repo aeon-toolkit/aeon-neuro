@@ -23,6 +23,10 @@ numbers are rejected. `target.mapping` and `case_fields` have explicitly variabl
 keys. There is no `$schema` property or remote schema retrieval in this format;
 validation is implemented in Python, without a standalone JSON Schema file.
 
+Object-field errors name the affected object and list all missing and unsupported
+keys in sorted order. A typo can appear in both lists. A non-dictionary nested
+value instead reports the required object type.
+
 The tables use JSON types. Python dictionaries are normalized through JSON;
 use ordinary JSON-compatible values. Text must contain a non-whitespace
 character. Its spelling, case and surrounding whitespace are preserved rather
