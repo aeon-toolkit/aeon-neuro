@@ -167,6 +167,7 @@ class EEGNetClassifier(BaseClassifier):
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
 
+        self.n_timepoints_ = X.shape[2]
         self.device_ = self._resolve_device()
         self.network_ = self._build_network(
             n_channels=X.shape[1], n_timepoints=X.shape[2]
@@ -215,6 +216,13 @@ class EEGNetClassifier(BaseClassifier):
         """Predict class probabilities for X."""
         import torch
         from torch.utils.data import DataLoader, TensorDataset
+
+        if X.shape[2] != self.n_timepoints_:
+            raise ValueError(
+                f"EEGNetClassifier was fitted on series of length "
+                f"{self.n_timepoints_}, got {X.shape[2]}. The network's final "
+                f"layer depends on the series length used in fit."
+            )
 
         X = np.asarray(X, dtype=np.float32, order="C")
         dataset = TensorDataset(torch.from_numpy(X))
