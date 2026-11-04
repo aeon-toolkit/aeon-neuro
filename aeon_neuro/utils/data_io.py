@@ -9,6 +9,8 @@ from pathlib import Path
 import mne
 import numpy as np
 
+from aeon_neuro.utils._xdf import _read_xdf
+
 
 def _check_edf_layout(path, bytes_per_sample):
     """Reject incomplete records and unsupported discontinuities before decoding."""
@@ -91,9 +93,15 @@ def load_eeg_to_mne(path, *, preload=False, **reader_kwargs):
     acquisition-appropriate settings when an explicit event table is needed.
     Native reading does not import existing BIDS sidecars or repair metadata.
 
-    XDF requires channel labels and voltage units. PyXDF corrects timestamps;
-    the EEG samples are represented on MNE's regular time grid. Other signal
-    streams and per-sample timestamps are not retained. BVRF requires PyBVRF.
+    XDF requires unique channel labels and calibrated voltage channel types/units.
+    Original timestamps and PyXDF-corrected timestamps must fit a continuous
+    regular grid. ``timing_tolerance`` is an XDF-only option, default 0.25 sample
+    periods, in [0, 0.5). Gaps, nonmonotonic timestamps and markers outside the
+    EEG sample span are rejected. The effective rate must be within 1% of the
+    nominal rate to allow bounded clock drift. PyXDF clock/dejitter options are
+    retained; original timestamps are checked before dejittering can hide a gap.
+    Signals are not interpolated. Other signal streams and per-sample timestamps
+    are not retained. BVRF requires PyBVRF.
     """
     readers = {
         ".vhdr": mne.io.read_raw_brainvision,
@@ -216,52 +224,6 @@ def _read_bvrf(path, *, preload=False, **reader_kwargs):
     import pybvrf
 
     return pybvrf.read_raw_bvrf(path, **reader_kwargs)
-
-
-def _read_xdf(path, *, preload=False, verbose=None, **reader_kwargs):
-    """Read one continuous EEG stream and its markers with PyXDF."""
-    if not isinstance(preload, bool):
-        raise ValueError("XDF always loads into memory; preload must be a bool.")
-
-    import pyxdf
-
-    streams, _ = pyxdf.load_xdf(str(path), **reader_kwargs)
-    eeg = [s for s in streams if (s["info"]["type"][0] or "").lower() == "eeg"]
-    if len(eeg) != 1:
-        raise ValueError("Select exactly one EEG stream using select_streams.")
-
-    stream = eeg[0]
-    info = stream["info"]
-    if len(info.get("segments", [])) > 1:
-        raise ValueError("XDF EEG has recording gaps; continuous data is required.")
-
-    channels = info["desc"][0]["channels"][0]["channel"]
-    names = [channel["label"][0] for channel in channels]
-    types = [
-        (channel.get("type", [None])[0] or info["type"][0]).lower()
-        for channel in channels
-    ]
-    units = [channel.get("unit", [""])[0] or "" for channel in channels]
-    units = [unit.strip().lower().replace("µ", "u").replace("μ", "u") for unit in units]
-    scales = {"v": 1.0, "mv": 1e-3, "uv": 1e-6, "nv": 1e-9}
-    if any(unit not in scales for unit in units):
-        raise ValueError("XDF channels need voltage units: V, mV, uV/µV or nV.")
-
-    data = np.asarray(stream["time_series"], dtype=float).T
-    data = data * np.array([scales[unit] for unit in units])[:, None]
-    sfreq = info.get("effective_srate") or float(info["nominal_srate"][0])
-    raw = mne.io.RawArray(data, mne.create_info(names, sfreq, types), verbose=verbose)
-
-    onsets, descriptions = [], []
-    for other in streams:
-        kind = (other["info"]["type"][0] or "").lower()
-        if kind in {"marker", "markers", "event", "events"}:
-            onsets.extend(np.asarray(other["time_stamps"]) - stream["time_stamps"][0])
-            descriptions.extend(
-                "/".join(map(str, marker)) for marker in other["time_series"]
-            )
-    raw.set_annotations(mne.Annotations(onsets, np.zeros(len(onsets)), descriptions))
-    return raw
 
 
 def load_auxiliary_info(path, dataset_name):
