@@ -8,7 +8,6 @@ by package.
 ```{toctree}
 :maxdepth: 1
 
-api_reference/benchmarking
 api_reference/classification
 api_reference/data
 api_reference/data_scripts
