@@ -6,6 +6,30 @@ from numbers import Integral, Real
 
 import numpy as np
 
+# Problem bindings may add metadata, but must not shadow the builder's fields.
+# Keep required names shared with validation so the two contracts stay aligned.
+_CASE_REQUIRED_FIELDS = (
+    "case_id",
+    "recording_id",
+    "start_sample",
+    "stop_sample",
+    "label",
+    "group_id",
+)
+_CASE_RESERVED_FIELDS = frozenset(_CASE_REQUIRED_FIELDS) | {
+    "onset",
+    "included",
+    "exclusion_reason",
+    "channel_names",
+    "output_channel_names",
+    "row",
+    "source_file",
+    "source_sampling_frequency",
+    "source_event",
+    "source_event_row",
+    "event_id",
+}
+
 
 @dataclass
 class ClassificationDataset:
@@ -254,17 +278,7 @@ def build_classification_dataset(X, metadata, cases, *, on_out_of_bounds="raise"
     output_channels, output_sfreq = None, None
     for candidate in cases:
         row = deepcopy(dict(candidate))
-        _required(
-            row,
-            (
-                "case_id",
-                "recording_id",
-                "start_sample",
-                "stop_sample",
-                "label",
-                "group_id",
-            ),
-        )
+        _required(row, _CASE_REQUIRED_FIELDS)
         case_id = row["case_id"]
         if not isinstance(case_id, str) or not case_id.strip() or case_id in ids:
             raise ValueError(f"case_id must be a unique nonempty string: {case_id!r}.")

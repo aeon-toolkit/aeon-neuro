@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 
 from aeon_neuro.datasets._classification import (
+    _CASE_RESERVED_FIELDS,
     _channels,
     _identifier,
     _recordings,
@@ -155,28 +156,9 @@ def _resolve(problem, binding):
     fields = binding.setdefault("case_fields", {})
     if not isinstance(fields, dict):
         raise ValueError("case_fields must map output field names to selectors")
-    reserved = {
-        "case_id",
-        "recording_id",
-        "start_sample",
-        "stop_sample",
-        "onset",
-        "label",
-        "group_id",
-        "included",
-        "exclusion_reason",
-        "channel_names",
-        "output_channel_names",
-        "row",
-        "source_file",
-        "source_sampling_frequency",
-        "source_event",
-        "source_event_row",
-        "event_id",
-    }
     for name, selector in fields.items():
         _text(name, "case field name")
-        if name in reserved:
+        if name in _CASE_RESERVED_FIELDS:
             raise ValueError(f"Reserved case field: {name}")
         _selector(selector, sources, f"binding.case_fields.{name}")
     return problem, binding
