@@ -291,3 +291,65 @@ def test_relative_dataset_path(tmp_path, monkeypatch):
     assert len(X) == 1
     assert len(metadata) == 1
     assert os.path.isfile(dataset_dir / metadata[0]["filepath"])
+
+
+@pytest.mark.parametrize(
+    "name, present",
+    [
+        ("subjects", "01"),
+        ("sessions", "01"),
+        ("tasks", "rest"),
+        ("acqs", "standard"),
+        ("runs", "01"),
+    ],
+)
+def test_unmatched_filter_values_fail_before_reading(
+    tmp_path, monkeypatch, name, present
+):
+    """A partly valid filter must name all unmatched values before decoding."""
+    create_recording(tmp_path, acq="standard")
+
+    def unexpected_read(*args, **kwargs):
+        raise AssertionError("Selection was not validated before reading")
+
+    monkeypatch.setattr("aeon_neuro.datasets.load_bids.read_raw_bids", unexpected_read)
+    with pytest.raises(ValueError) as caught:
+        load_bids_data(tmp_path, **{name: [present, "missing", "typo"]})
+    message = str(caught.value)
+    assert all(value in message for value in (name, "missing", "typo", present))
+
+
+def test_zero_padding_is_not_silently_corrected(tmp_path, monkeypatch):
+    """Exact source identifiers distinguish sub-1 from sub-01."""
+    create_recording(tmp_path, subject="1")
+    create_recording(tmp_path, subject="2")
+
+    def unexpected_read(*args, **kwargs):
+        raise AssertionError("A partly matched selection reached the reader")
+
+    monkeypatch.setattr("aeon_neuro.datasets.load_bids.read_raw_bids", unexpected_read)
+    with pytest.raises(ValueError) as caught:
+        load_bids_data(tmp_path, subjects=["01", "2"])
+    assert "subjects" in str(caught.value) and "01" in str(caught.value)
+    assert "dataset values" in str(caught.value)
+
+
+def test_empty_combined_selection_lists_each_missing_filter(tmp_path):
+    """An empty intersection reports every requested filter without guessing."""
+    create_recording(tmp_path, subject="01", task="rest")
+    with pytest.raises(ValueError) as caught:
+        load_bids_data(tmp_path, subjects=["missing-person"], tasks=["missing-task"])
+    assert all(
+        text in str(caught.value)
+        for text in ["subjects", "tasks", "missing-person", "missing-task"]
+    )
+
+
+def test_filter_values_need_matches_not_every_combination(tmp_path):
+    """Valid scalar/list filters do not require a full Cartesian product."""
+    create_recording(tmp_path, subject="01", session="01")
+    create_recording(tmp_path, subject="02", session="02")
+    X, metadata = load_bids_data(
+        tmp_path, subjects=["01", "02"], sessions=["01", "02"], tasks="rest"
+    )
+    assert len(X) == len(metadata) == 2

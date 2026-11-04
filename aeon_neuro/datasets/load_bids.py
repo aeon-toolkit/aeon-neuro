@@ -4,7 +4,9 @@ import os
 
 import mne
 import numpy as np
-from mne_bids import find_matching_paths, read_raw_bids
+from mne_bids import read_raw_bids
+
+from aeon_neuro.datasets._bids_selection import _find_bids_paths
 
 
 def load_basic_classification_problem(path="../"):
@@ -112,7 +114,7 @@ def load_bids_data(
         Subject identifiers, excluding the "sub-" prefix.
     sessions : list of str or None, default=None
         Session identifiers, excluding the "ses-" prefix.
-        If None, discover available sessions automatically.
+        If None, do not filter by session, as for the other entity filters.
     tasks : list of str or None, default=None
         Task identifiers to include. If None, include all tasks.
     acqs : list of str or None, default=None
@@ -134,21 +136,32 @@ def load_bids_data(
         Metadata for each recording, in the same order as X.
         Each entry identifies the source recording, channel names,
         sampling frequency, subject, session, task, acquisition and run.
+
+    Raises
+    ------
+    ValueError
+        If no recordings match, or any requested subject, session, task,
+        acquisition or run value has no match under the combined filters.
+        The error names all unmatched values before any recording is opened.
+
+    Notes
+    -----
+    Identifier matching is exact, including case and zero padding. Every
+    requested filter value needs at least one matching recording; every
+    combination of values need not exist. Errors list available dataset values,
+    which may themselves be excluded by the other supplied filters.
     """
     path = os.fspath(path)
     formatts = tuple(ext.lower() for ext in formatts)
 
-    # Discover BIDS recordings
-    bids_paths = find_matching_paths(
+    bids_paths = _find_bids_paths(
         path,
         subjects=subjects,
         sessions=sessions,
         tasks=tasks,
-        acquisitions=acqs,
+        acqs=acqs,
         runs=runs,
-        datatypes=["eeg"],
-        extensions=list(formatts),
-        check=False,
+        extensions=formatts,
     )
 
     recordings = []

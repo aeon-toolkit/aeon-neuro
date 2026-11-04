@@ -165,6 +165,17 @@ For constructed recording/window/event cases, see
 explicit independence policies, session roles, original-source overlap and inner
 validation scope using the shared case container.
 
+## Selecting recordings from a local BIDS folder
+
+`aeon_neuro.datasets.load_bids.load_bids_data` matches subject, session, task,
+acquisition and run identifiers exactly, without prefixes or automatic zero
+padding. Every requested value must match at least one recording after all
+filters are applied. For example, `subjects=["1,", "2"]` raises for `"1,"` even
+when subject `"2"` exists. The error names all unmatched values and lists
+available dataset identifiers before reading any signals. Every combination
+of requested values need not exist; `None` means no filter for that entity.
+
+
 ## EEG Data Characteristics
 | Problem               | train cases | test cases | dimensions | length  | num classes  |
 |---                    |---    |---    |---    |---    |---|
@@ -179,32 +190,25 @@ validation scope using the shared case container.
 | SelfRegulationSCP2    | 200   | 180   | 7   | 1152  |  2 |
 
 ## Classification
-Benchmark classification experiments, results generated with code like this
+Benchmark classification experiments, for example with aeon directly:
 
 ```python
-        dataset = "EyesOpenShut"
-        results_dir = "C:/temp/" # where to results
-        data_dir = "C:/temp/" # Location of data in ts format data_dir/<dataset>/
-        resample = 0        # 0 indicates default train test
-        cls_name = "RocketClassifier" # name used for results name
-        from aeon.classification.kernel_based import RocketClassifier
-        from aeon.benchmarking.experiments import \
-            load_and_run_classification_experiment
-        classifier = RocketClassifier()
-        load_and_run_classification_experiment(
-            overwrite=False,
-            problem_path=data_dir,
-            results_path=results_dir,
-            cls_name=cls_name,
-            classifier=classifier,
-            dataset=dataset,
-            resample_id=resample,
-            build_train=False,
-            predefined_resample=False,
-        )
+from aeon.classification.convolution_based import RocketClassifier
+from aeon.datasets import load_from_ts_file
+
+# Load a dataset in .ts format (train and test splits live side by side).
+X_train, y_train = load_from_ts_file("./EyesOpenShut/EyesOpenShut_TRAIN.ts")
+X_test, y_test = load_from_ts_file("./EyesOpenShut/EyesOpenShut_TEST.ts")
+
+classifier = RocketClassifier()
+classifier.fit(X_train, y_train)
+print(classifier.score(X_test, y_test))
 ```
 
-This generates a result file called testResample0.csv. Some exploratory results:
+For full benchmarking experiments (resampling, results files, critical
+difference diagrams), see
+[tsml-eval](https://github.com/time-series-machine-learning/tsml-eval).
+Some exploratory results:
 
 ### Best classifier accuracies (default train split,  default classifier settings)
 
