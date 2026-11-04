@@ -1,7 +1,7 @@
 # Validating classification assignments
 
 For a dict/JSON definition over already loaded recordings, start with
-[loading a classification problem](problem-loading.md). Construction returns
+[loading a classification problem](problem-format.md). Construction returns
 the same case container used by the validators below.
 
 Recordings and classification cases do not choose an evaluation protocol.

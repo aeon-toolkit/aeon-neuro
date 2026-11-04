@@ -18,7 +18,6 @@ Usage
 
    ../classification-problems
    ../problem-format
-   ../problem-loading
 
 Classification case construction
 --------------------------------

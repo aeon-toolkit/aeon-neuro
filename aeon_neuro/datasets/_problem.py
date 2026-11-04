@@ -250,6 +250,7 @@ def load_classification_problem(X, metadata, problem, binding, *, events=None):
 
     Notes
     -----
+    The version-1 problem/binding format is experimental.
     Bounds are zero-based, stop-exclusive on the supplied recording grid, with
     no silent rounding, clipping or padding of epochs. Fixed-window stop/tail
     behaviour follows make_fixed_length_cases. Source target codes are string

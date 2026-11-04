@@ -1,14 +1,92 @@
-# Problem and binding format reference, version 1
-
-This reference defines the authored documents accepted by
-`load_classification_problem`. The [loading guide](problem-loading.md) shows how
-to use them with recording arrays. The format is experimental and is not a BIDS
-standard or a general experiment configuration language.
+# Define classification problems on loaded recordings
 
 A **problem** describes the prediction question and the construction of one
 case. A **binding** connects that problem to explicit recording/event fields.
-The documents can be Python dictionaries or paths to UTF-8 JSON files. They do
-not contain the recording arrays, event table or evaluation assignments.
+`load_classification_problem` applies them to arrays already in memory, including
+outputs from `load_bids_data`. The version-1 format is experimental. It adds no
+dependencies and does not discover files, preprocess signals or choose a split.
+
+## Complete event problem and binding
+
+This runnable example makes half-second post-cue cases from generated signals:
+
+```python
+import numpy as np
+from aeon_neuro.datasets import load_classification_problem
+
+recordings = np.arange(64, dtype=float).reshape(2, 2, 16)
+metadata = [
+    {"recording_id": f"R{i}", "subject": f"P{i}",
+     "channel_names": ["C3", "C4"], "sampling_frequency": 4}
+    for i in range(2)
+]
+event_rows = [
+    {"recording_id": f"R{i}", "cue_seconds": onset,
+     "trial_id": trial, "condition": code}
+    for i in range(2)
+    for onset, trial, code in [(0.5, "T1", 11), (2.5, "T2", 22)]
+]
+problem = {
+    "format_version": 1, "id": "left-right-imagery", "version": "1",
+    "question": "Classify declared left versus right imagery from post-cue EEG",
+    "class_labels": ["left_hand", "right_hand"], "channels": ["C3", "C4"],
+    "segmentation": {"mode": "event_epochs", "tmin": 0.0, "tmax": 0.5},
+}
+binding = {
+    "format_version": 1,
+    "problem": {"id": "left-right-imagery", "version": "1"},
+    "target": {"source": "event", "column": "condition",
+               "mapping": {"11": "left_hand", "22": "right_hand"}},
+    "group": {"source": "recording", "column": "subject"},
+    "case_fields": {"participant_id": {"source": "recording", "column": "subject"}},
+    "events": {"onset": "cue_seconds", "id": "trial_id"},
+}
+dataset = load_classification_problem(
+    recordings, metadata, problem, binding, events=event_rows
+)
+assert dataset.X.shape == (4, 2, 2)
+assert dataset.y.tolist() == ["left_hand", "right_hand"] * 2
+```
+
+The documents can also be UTF-8 JSON filenames. Run
+`python examples/problem_loading.py` for two targets on the same intervals,
+a cohort problem and a participant-held-out assignment check. All inputs are
+generated; the example downloads no data and makes no EEG performance claim.
+
+## Fixed windows over recording targets
+
+For a cohort question, supply an explicit cohort attribute and change the rule:
+
+```python
+cohort_metadata = [
+    {**row, "cohort": cohort}
+    for row, cohort in zip(metadata, ["control", "condition"], strict=True)
+]
+cohort_problem = {
+    "format_version": 1, "id": "cohort-windows", "version": "1",
+    "question": "Classify the declared cohort using one-second EEG windows",
+    "class_labels": ["control", "condition"],
+    "segmentation": {"mode": "fixed_windows", "window_size": 1.0},
+}
+cohort_binding = {
+    "format_version": 1,
+    "problem": {"id": "cohort-windows", "version": "1"},
+    "target": {"source": "recording", "column": "cohort",
+               "mapping": {"control": "control", "condition": "condition"}},
+    "group": {"source": "recording", "column": "subject"},
+}
+cohort = load_classification_problem(
+    recordings, cohort_metadata, cohort_problem, cohort_binding
+)
+assert cohort.X.shape == (8, 2, 4)
+```
+
+The result is the existing `ClassificationDataset`: `X`, `y`, `groups`, `cases`,
+`exclusions` and metadata. Class meanings, source eligibility and evaluation
+groups remain explicit. Use [assignment validation](classification-problems.md)
+before fitting; grouping fields alone do not enforce an evaluation protocol.
+
+The following tables are the complete version-1 field reference.
 
 ## Document rules and versions
 
@@ -128,6 +206,11 @@ source_file, source_sampling_frequency, source_event, source_event_row, event_id
 Participant, session and trial roles are not inferred from filenames. Copy
 the identities needed for an evaluation through `case_fields` explicitly.
 
+Optional BIDS entities such as `session` can be `None` when absent. A selector
+used for a group or custom identity then raises. Omit an optional `case_fields`
+entry when that identity is unavailable, or choose another valid grouping key.
+Do not turn `None` into a string to invent an identity.
+
 ### Target mapping
 
 | Field | Type and presence | Meaning and constraints |
@@ -142,6 +225,27 @@ Codes are compared using their string spelling: integer `11` and string `"11"`
 use the same mapping key, while `"011"` is distinct. Dictionary keys that collide
 during JSON normalization are rejected. Missing target columns and invalid code
 types still raise under `on_unmapped="exclude"`.
+
+Pandas can represent integer codes with blanks as floats, so `11.0` is rejected
+by the same rule. Convert a genuinely numeric code column explicitly with the
+nullable `Int64` dtype before `to_dict("records")`. Fractional values raise during
+conversion. Keep textual codes such as `"011"` as strings when padding matters.
+Missing targets still need a policy. For a protocol that excludes them:
+
+```python
+import pandas as pd
+
+event_table = pd.DataFrame(event_rows)
+event_table["condition"] = event_table["condition"].astype("Int64")
+missing = event_table["condition"].isna()
+converted_rows = event_table.to_dict("records")
+for row, is_missing in zip(converted_rows, missing, strict=True):
+    if is_missing:
+        row.update(included=False, exclusion_reason="missing_target")
+```
+
+Pass `converted_rows` to the loader. Excluded rows retain their identities and
+timing, while other missing fields and malformed values still raise.
 
 Fixed-window candidates inherit their recording target. An explicitly unmapped
 recording retains its generated windows as exclusions. An event already excluded
@@ -198,46 +302,6 @@ It does not intentionally quantize arbitrary off-grid times. Different included
 sources must yield identical output channel names/order and sampling rate;
 there is no implicit harmonization. Extracted samples must be finite. Native
 values are retained, with no inferred unit conversion.
-
-## Complete event problem and binding
-
-Problem document:
-
-```json
-{
-  "format_version": 1,
-  "id": "left-right-imagery",
-  "version": "1",
-  "question": "Classify left versus right imagery from post-cue EEG.",
-  "class_labels": ["left_hand", "right_hand"],
-  "channels": ["C3", "C4"],
-  "segmentation": {"mode": "event_epochs", "tmin": 0.0, "tmax": 0.5}
-}
-```
-
-Binding document:
-
-```json
-{
-  "format_version": 1,
-  "problem": {"id": "left-right-imagery", "version": "1"},
-  "target": {
-    "source": "event",
-    "column": "condition",
-    "mapping": {"11": "left_hand", "22": "right_hand"}
-  },
-  "group": {"source": "recording", "column": "subject"},
-  "case_fields": {
-    "participant_id": {"source": "recording", "column": "subject"},
-    "session": {"source": "recording", "column": "session"}
-  },
-  "events": {"onset": "cue_seconds", "id": "trial_id"}
-}
-```
-
-The [loading guide](problem-loading.md) supplies a complete fixed-window example
-and the public function call. `examples/problem_loading.py` also demonstrates
-two targets over the same events with generated arrays.
 
 ## Constructed cases and effective configuration
 
