@@ -246,12 +246,13 @@ def test_changed_header_closes_the_newly_owned_handle(bids, monkeypatch):
     assert closed == [True]
 
 
-def test_dataset_sidecars_retain_complete_population_and_selected_scope(bids):
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_dataset_sidecars_retain_complete_population_and_selected_scope(bids, newline):
     """Selecting signals must not rewrite the population described by the source."""
     root, paths = bids
-    (root / "README.md").write_text(
-        "# Generated study\nCaf\u00e9 metadata.\n", encoding="utf-8"
-    )
+    readme = "# Generated study\nCaf\u00e9 metadata.\n"
+    # Select the source bytes explicitly rather than inherit host text translation.
+    (root / "README.md").write_text(readme, encoding="utf-8", newline=newline)
     dictionary = {"cohort": {"Levels": {"control": "Comparison group"}}}
     (root / "participants.json").write_text(json.dumps(dictionary), encoding="utf-8")
     report = inspect_bids_eeg(root, subjects=["02"])
@@ -260,7 +261,7 @@ def test_dataset_sidecars_retain_complete_population_and_selected_scope(bids):
     assert dataset["description"] == json.loads(
         (root / "dataset_description.json").read_text()
     )
-    assert dataset["readme"] == "# Generated study\nCaf\u00e9 metadata.\n"
+    assert dataset["readme"] == readme.replace("\n", newline)
     assert dataset["participants"] == {
         "columns": ["participant_id", "cohort"],
         "rows": [

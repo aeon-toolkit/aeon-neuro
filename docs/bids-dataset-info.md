@@ -36,7 +36,7 @@ Unknown optional facts stay `None`; source rows and `n/a` values retain their me
 
 | View | Contents |
 | --- | --- |
-| `info.description`, `info.readme` | Complete source dataset description and README. |
+| `info.description`, `info.readme` | Complete source dataset description and README, retaining the README's original line endings. |
 | `info.participants`, `info.participants_json` | Complete source participant table (`columns`/`rows`) and column dictionary, including unselected participants. |
 | `info.dataset` | Dataset facts, file identities and selected participant scope. |
 | `info.source_ids` | Source recording IDs in signal order. |

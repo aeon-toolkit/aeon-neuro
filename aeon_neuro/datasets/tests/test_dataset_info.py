@@ -70,9 +70,13 @@ def source(tmp_path, request):
     return tmp_path, paths
 
 
-def test_load_preserves_exact_samples_metadata_and_source_population(source):
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_load_preserves_exact_samples_metadata_and_source_population(source, newline):
     """Loading preserves source units, identity and the complete participant table."""
     root, paths = source
+    # Exact source text includes its line endings on every host platform.
+    readme = f"Generated metadata example{newline}"
+    (root / "README.md").write_bytes(readme.encode("utf-8"))
     X, info = load_bids_dataset(root)
     assert X.shape == (2, 2, 256)
     assert isinstance(info, EEGDatasetInfo) and len(info) == 2
@@ -81,7 +85,7 @@ def test_load_preserves_exact_samples_metadata_and_source_population(source):
     assert info.participant_ids == ("sub-01", "sub-02")
     assert len(info.participants["rows"]) == 3
     assert info.description["Name"] == "Generated study"
-    assert info.readme == "Generated metadata example\n"
+    assert info.readme == readme
     assert info.participants_json["group"]["Description"] == "Source group"
     for index, path in enumerate(paths):
         recording = info.recordings[index]
