@@ -387,6 +387,19 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
     Full references are in the braindecode documentation for each model. Most
     models size their layers for a particular sampling rate, so pass ``sfreq``.
 
+    braindecode names the model inputs differently from aeon. The adaptor sets
+    them from the training data and the arguments below:
+
+    =====================  ========================================================
+    braindecode argument   Set from
+    =====================  ========================================================
+    ``n_chans``            number of channels, ``n_channels`` (``X.shape[1]``)
+    ``n_times``            series length, ``n_timepoints`` (``X.shape[2]``)
+    ``n_outputs``          number of classes in ``y`` (``n_classes_``)
+    ``sfreq``              the ``sfreq`` argument
+    ``chs_info``           the ``channel_names`` argument, with montage positions
+    =====================  ========================================================
+
     Other braindecode model names, or a braindecode model class, are accepted
     but not tested. Foundation models (e.g. ``"Labram"``, ``"REVE"``) build and
     train from random weights here; loading pretrained weights is not
@@ -401,9 +414,9 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
         or a braindecode model class.
     model_params : dict or None, default=None
         Extra keyword arguments for the model constructor, e.g.
-        ``{"drop_prob": 0.25}``. ``n_chans``, ``n_outputs`` and ``n_times`` are
-        set from the data, and ``sfreq`` and ``chs_info`` from the arguments
-        below, so they cannot be given here.
+        ``{"drop_prob": 0.25}``. The inputs in the table above (``n_chans``,
+        ``n_times``, ``n_outputs``, ``sfreq`` and ``chs_info``) are set by the
+        adaptor, so they cannot be given here.
     sfreq : float or None, default=None
         Sampling frequency of the data in Hz. Passed to models that accept it.
         Some models (e.g. FBCNet, IFNet, TSception) need it to size their
@@ -523,9 +536,11 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
             reserved = sorted(set(self.model_params) & set(_RESERVED_PARAMS))
             if reserved:
                 raise ValueError(
-                    f"model_params cannot set {reserved}. n_chans, n_outputs and "
-                    "n_times come from the data, and sfreq and chs_info from the "
-                    "sfreq and channel_names arguments."
+                    f"model_params cannot set {reserved}. The adaptor sets "
+                    "n_chans to the number of channels in X, n_times to the "
+                    "series length, n_outputs to the number of classes in y, and "
+                    "sfreq and chs_info from the sfreq and channel_names "
+                    "arguments."
                 )
         if self.channel_names is None and self.model in _NEEDS_CHANNEL_NAMES:
             raise ValueError(
