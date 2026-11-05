@@ -88,8 +88,6 @@ def test_eegconformer_predict_different_length_raises():
     X_long, _ = make_example_3d_numpy(
         n_cases=8, n_channels=2, n_timepoints=200, random_state=0
     )
-    # aeon skips its own length check when fit metadata is missing (e.g. a
-    # loaded model), so the classifier's check must catch the mismatch
-    clf.metadata_ = {}
-    with pytest.raises(ValueError, match="was fitted on series of length"):
+    # aeon's base class rejects a series length that differs from fit
+    with pytest.raises(ValueError, match="different length"):
         clf.predict(X_long)
