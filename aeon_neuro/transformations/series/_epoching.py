@@ -1,9 +1,19 @@
 """Epoching transformations."""
 
+import math
+
 import numpy as np
 from aeon.transformations.series.base import BaseSeriesTransformer
 
 __all__ = ["EpochSeriesTransformer"]
+
+
+def _truncate_near_integer(value):
+    """Truncate a value unless it is within floating-point tolerance of an integer."""
+    nearest = round(value)
+    return (
+        nearest if math.isclose(value, nearest, rel_tol=0, abs_tol=1e-9) else int(value)
+    )
 
 
 class EpochSeriesTransformer(BaseSeriesTransformer):
@@ -76,9 +86,13 @@ class EpochSeriesTransformer(BaseSeriesTransformer):
         n_channels, n_timepoints = X.shape
 
         if self.epoch_size is not None:
-            n_timepoints_per_epoch = int(self.epoch_size * self.sfreq / 1000)
+            n_timepoints_per_epoch = _truncate_near_integer(
+                self.epoch_size * self.sfreq / 1000
+            )
         elif self.percent is not None:
-            n_timepoints_per_epoch = int(n_timepoints * self.percent / 100)
+            n_timepoints_per_epoch = _truncate_near_integer(
+                n_timepoints * self.percent / 100
+            )
         else:  # unreachable: __init__ requires one of the two
             raise ValueError("Either 'epoch_size' or 'percent' must be provided.")
 
