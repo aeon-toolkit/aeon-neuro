@@ -13,6 +13,7 @@ recursive-exclude .github *
 recursive-exclude build_tools *
 recursive-exclude docs *
 recursive-exclude examples *
+exclude .all-contributorsrc
 exclude .codecov.yml
 exclude .gitattributes
 exclude .gitignore
@@ -20,3 +21,4 @@ exclude .pre-commit-config.yaml
 exclude .readthedocs.yml
 exclude CHANGELOG.md
 exclude CODE_OF_CONDUCT.md
+exclude CONTRIBUTORS.md
