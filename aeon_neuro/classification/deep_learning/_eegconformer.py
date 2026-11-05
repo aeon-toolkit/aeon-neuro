@@ -27,7 +27,7 @@ class EEGConformerClassifier(_BaseBraindecodeClassifier):
     ----------
     batch_size : int, default=64
         Mini-batch size used for training and inference.
-    n_epochs : int, default=20
+    n_epochs : int, default=200
         Number of training epochs.
     lr : float, default=1e-3
         Learning rate.
@@ -76,7 +76,7 @@ class EEGConformerClassifier(_BaseBraindecodeClassifier):
     def __init__(
         self,
         batch_size: int = 64,
-        n_epochs: int = 20,
+        n_epochs: int = 200,
         lr: float = 1e-3,
         optimizer: str = "adam",
         weight_decay: float = 0.0,
@@ -114,18 +114,16 @@ class EEGConformerClassifier(_BaseBraindecodeClassifier):
             random_state=random_state,
         )
 
-    def _validate_input(self, X) -> None:
-        """Check the series are long enough for the convolution and pooling."""
+    def _build_network(self, n_channels: int, n_timepoints: int):
+        """Construct the Braindecode EEGConformer model."""
         min_timepoints = self.filter_time_length + self.pool_time_length - 1
-        if X.shape[2] < min_timepoints:
+        if n_timepoints < min_timepoints:
             raise ValueError(
                 f"EEGConformerClassifier requires at least {min_timepoints} "
                 f"timepoints (filter_time_length + pool_time_length - 1), "
-                f"got {X.shape[2]}."
+                f"got {n_timepoints}."
             )
 
-    def _build_network(self, n_channels: int, n_timepoints: int):
-        """Construct the Braindecode EEGConformer model."""
         from braindecode.models import EEGConformer
 
         return EEGConformer(

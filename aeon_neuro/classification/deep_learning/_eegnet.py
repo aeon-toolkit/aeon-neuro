@@ -24,7 +24,7 @@ class EEGNetClassifier(_BaseBraindecodeClassifier):
     ----------
     batch_size : int, default=64
         Mini-batch size used for training and inference.
-    n_epochs : int, default=20
+    n_epochs : int, default=200
         Number of training epochs.
     lr : float, default=1e-3
         Learning rate.
@@ -87,7 +87,7 @@ class EEGNetClassifier(_BaseBraindecodeClassifier):
     def __init__(
         self,
         batch_size: int = 64,
-        n_epochs: int = 20,
+        n_epochs: int = 200,
         lr: float = 1e-3,
         optimizer: str = "adam",
         weight_decay: float = 0.0,

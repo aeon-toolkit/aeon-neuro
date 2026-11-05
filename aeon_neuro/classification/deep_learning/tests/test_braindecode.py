@@ -224,6 +224,33 @@ def test_reproducible():
     np.testing.assert_allclose(probs1, probs2)
 
 
+def _record_batch_sizes(coerce_logits, sizes):
+    """Wrap _coerce_logits to record the size of each batch it sees."""
+
+    def wrapper(logits):
+        sizes.append(logits.shape[0])
+        return coerce_logits(logits)
+
+    return wrapper
+
+
+def test_incomplete_last_batch_is_dropped():
+    """Check training drops the incomplete last batch but predicts every case."""
+    X, y = make_example_3d_numpy(
+        n_cases=9, n_channels=2, n_timepoints=128, random_state=0
+    )
+    clf = BraindecodeClassifier(
+        model="ShallowFBCSPNet", batch_size=4, n_epochs=2, random_state=0
+    )
+    batch_sizes = []
+    clf._coerce_logits = _record_batch_sizes(clf._coerce_logits, batch_sizes)
+    clf.fit(X, y)
+
+    # 9 cases in batches of 4: two full batches per epoch, the last case dropped
+    assert batch_sizes == [4, 4, 4, 4]
+    assert clf.predict_proba(X).shape == (9, 2)
+
+
 def test_summary():
     """Check summary returns the training losses, or None before fit."""
     X, y = make_example_3d_numpy(

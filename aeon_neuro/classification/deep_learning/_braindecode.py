@@ -68,13 +68,14 @@ _RESERVED_PARAMS = ("n_chans", "n_outputs", "n_times", "sfreq", "chs_info")
 class _BaseBraindecodeClassifier(BaseClassifier):
     """Shared training and prediction code for braindecode based classifiers.
 
-    Subclasses implement ``_build_network`` and can override ``_validate_input``.
+    Subclasses implement ``_build_network``, which also checks any parameters
+    that depend on the data.
 
     Parameters
     ----------
     batch_size : int, default=64
         Mini-batch size used for training and inference.
-    n_epochs : int, default=20
+    n_epochs : int, default=200
         Number of training epochs.
     lr : float, default=1e-3
         Learning rate.
@@ -102,7 +103,7 @@ class _BaseBraindecodeClassifier(BaseClassifier):
     def __init__(
         self,
         batch_size: int = 64,
-        n_epochs: int = 20,
+        n_epochs: int = 200,
         lr: float = 1e-3,
         optimizer: str = "adam",
         weight_decay: float = 0.0,
@@ -125,16 +126,11 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         """Construct the torch network for data of the given shape."""
         raise NotImplementedError("Subclasses must implement _build_network.")
 
-    def _validate_input(self, X: np.ndarray) -> None:
-        """Check the training data before the network is built."""
-
     def _fit(self, X: np.ndarray, y: np.ndarray):
         """Build the network and train it on X and y."""
         import torch
         from torch import nn
         from torch.utils.data import DataLoader, TensorDataset
-
-        self._validate_input(X)
 
         X = np.asarray(X, dtype=np.float32, order="C")
         y_int = np.asarray(
@@ -159,7 +155,11 @@ class _BaseBraindecodeClassifier(BaseClassifier):
             dataset,
             batch_size=min(self.batch_size, len(dataset)),
             shuffle=True,
-            drop_last=False,
+            # As in braindecode's EEGClassifier: drop the incomplete last batch
+            # in training, which avoids a noisy update from a tiny batch (and
+            # batch norm failing on a batch of one case). Shuffling means a
+            # different few cases sit out each epoch.
+            drop_last=True,
         )
 
         self.history_ = []
@@ -167,6 +167,7 @@ class _BaseBraindecodeClassifier(BaseClassifier):
 
         for epoch in range(self.n_epochs):
             epoch_loss = 0.0
+            n_seen = 0
 
             for xb, yb in loader:
                 xb = xb.to(self.device_)
@@ -179,8 +180,9 @@ class _BaseBraindecodeClassifier(BaseClassifier):
                 self.optimizer_.step()
 
                 epoch_loss += loss.item() * xb.shape[0]
+                n_seen += xb.shape[0]
 
-            epoch_loss /= len(dataset)
+            epoch_loss /= n_seen
             self.history_.append(epoch_loss)
 
             if self.verbose:
@@ -427,8 +429,11 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
         positions of the ``standard_1005`` montage for these names.
     batch_size : int, default=64
         Mini-batch size used for training and inference.
-    n_epochs : int, default=20
-        Number of training epochs.
+    n_epochs : int, default=200
+        Number of training epochs. There is no early stopping or learning rate
+        schedule, so every epoch is run. 200 is a compromise between the
+        several hundred epochs typical in EEG deep learning papers and the
+        training time on small EEG datasets; tune it for each problem.
     lr : float, default=1e-3
         Learning rate.
     optimizer : {"adam", "sgd"}, default="adam"
@@ -476,7 +481,7 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
         sfreq: float | None = None,
         channel_names: list[str] | None = None,
         batch_size: int = 64,
-        n_epochs: int = 20,
+        n_epochs: int = 200,
         lr: float = 1e-3,
         optimizer: str = "adam",
         weight_decay: float = 0.0,
@@ -526,8 +531,24 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
             f"subclass, got {self.model!r}."
         )
 
-    def _validate_input(self, X: np.ndarray) -> None:
-        """Check the channel names match the data and the parameters are valid."""
+    def _channel_info(self):
+        """Return braindecode ``chs_info`` for ``channel_names``."""
+        import mne
+
+        info = mne.create_info(
+            list(self.channel_names), sfreq=self.sfreq or 1.0, ch_types="eeg"
+        )
+        try:
+            info.set_montage(mne.channels.make_standard_montage("standard_1005"))
+        except ValueError as exc:
+            raise ValueError(
+                "Some channel_names are not in the standard_1005 montage, so their "
+                f"electrode positions are unknown: {exc}"
+            ) from exc
+        return info["chs"]
+
+    def _build_network(self, n_channels: int, n_timepoints: int):
+        """Construct the braindecode model for data of the given shape."""
         if self.model_params is not None:
             if not isinstance(self.model_params, dict):
                 raise ValueError(
@@ -547,30 +568,12 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
                 f"{self.model} needs electrode positions; pass channel_names with "
                 "the standard 10-05 name of each channel in X."
             )
-        if self.channel_names is not None and len(self.channel_names) != X.shape[1]:
+        if self.channel_names is not None and len(self.channel_names) != n_channels:
             raise ValueError(
                 f"channel_names has {len(self.channel_names)} names but X has "
-                f"{X.shape[1]} channels."
+                f"{n_channels} channels."
             )
 
-    def _channel_info(self):
-        """Return braindecode ``chs_info`` for ``channel_names``."""
-        import mne
-
-        info = mne.create_info(
-            list(self.channel_names), sfreq=self.sfreq or 1.0, ch_types="eeg"
-        )
-        try:
-            info.set_montage(mne.channels.make_standard_montage("standard_1005"))
-        except ValueError as exc:
-            raise ValueError(
-                "Some channel_names are not in the standard_1005 montage, so their "
-                f"electrode positions are unknown: {exc}"
-            ) from exc
-        return info["chs"]
-
-    def _build_network(self, n_channels: int, n_timepoints: int):
-        """Construct the braindecode model for data of the given shape."""
         model_class = self._resolve_model()
         accepted = inspect.signature(model_class.__init__).parameters
 
