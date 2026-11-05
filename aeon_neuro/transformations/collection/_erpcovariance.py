@@ -13,7 +13,8 @@ class ERPCovariances(BaseCollectionTransformer):
 
     Computes a covariance matrix for each case that captures how its channels
     relate to each other and how strongly it contains each class's ERP. During
-    `fit`, an ERP is estimated for each class by averaging its cases over time.
+    `fit`, an ERP is estimated for each class by averaging the cases of that
+    class at each time point.
     During `transform`, the ERPs are concatenated with the channels of each case
     and the covariance of the combined series is computed. Uses
     `pyriemann.estimation.ERPCovariances`.
@@ -39,7 +40,6 @@ class ERPCovariances(BaseCollectionTransformer):
         "capability:multivariate": True,
         "requires_y": True,
         "fit_is_empty": False,
-        "python_dependencies": "pyriemann",
     }
 
     def __init__(self, classes=None, estimator="scm", svd=None, estimator_params=None):

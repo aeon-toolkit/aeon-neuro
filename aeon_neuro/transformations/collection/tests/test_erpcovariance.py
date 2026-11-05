@@ -6,7 +6,7 @@ from pyriemann.classification import MDM
 from pyriemann.estimation import ERPCovariances as PyriemannERPCovariances
 from sklearn.pipeline import make_pipeline
 
-from aeon_neuro.transformations.collection.channel_creation import ERPCovariances
+from aeon_neuro.transformations.collection import ERPCovariances
 
 n_cases, n_channels, n_timepoints = 60, 4, 100
 
