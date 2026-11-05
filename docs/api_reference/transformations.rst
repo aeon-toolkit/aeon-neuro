@@ -27,7 +27,9 @@ Collection
     :toctree: auto_generated/
     :template: class.rst
 
+    DownsampleCollectionTransformer
     ERPCovariances
+    LogVariance
 
 Channel creation
 ----------------
