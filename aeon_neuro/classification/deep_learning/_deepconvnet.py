@@ -18,6 +18,9 @@ class DeepConvNetClassifier(BaseClassifier):
     time series in aeon's standard shape:
     (n_cases, n_channels, n_timepoints). Braindecode also uses this shape.
 
+    The network is built for the series length seen in ``fit``, so ``predict`` must
+    be called with series of the same length.
+
     Parameters
     ----------
     batch_size : int, default=64

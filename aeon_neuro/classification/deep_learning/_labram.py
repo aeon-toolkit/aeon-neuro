@@ -26,6 +26,9 @@ class LabramClassifier(BaseClassifier):
     This classifier is for equal-length collection data and accepts multivariate
     time series in aeon's standard shape: (n_cases, n_channels, n_timepoints).
 
+    The network is built for the series length seen in ``fit``, so ``predict`` must
+    be called with series of the same length.
+
     LaBraM splits each channel into patches of 200 samples, so series are
     zero-padded at the end to the next multiple of 200. The pretrained weights
     expect data sampled at 200 Hz; resampling is left to the user. Inputs of at

@@ -16,6 +16,9 @@ class EEGNetClassifier(BaseClassifier):
     standard collection shape:
     (n_cases, n_channels, n_timepoints).
 
+    The network is built for the series length seen in ``fit``, so ``predict`` must
+    be called with series of the same length.
+
     Parameters
     ----------
     batch_size : int, default=64
