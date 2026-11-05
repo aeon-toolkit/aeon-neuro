@@ -143,17 +143,6 @@ If you want to contribute, start with:
 - the discussions page,
 - or the community Slack.
 
-We follow the [all-contributors specification](https://allcontributors.org) and
-recognise various types of contributions. Take a look at our past and current
-[contributors](CONTRIBUTORS.md)!
-
-If you are a new contributor, make sure we add you to our list of contributors. All
-contributions are recorded in [.all-contributorsrc](.all-contributorsrc).
-Alternatively, you can use the [@all-contributors](https://allcontributors.org/docs/en/bot/usage)
-bot to do this for you. If the contribution is contained in a PR, please only @ the bot
-when the PR has been merged. A list of relevant tags can be found
-[here](https://allcontributors.org/en/reference/emoji-key/).
-
 ## Acknowledgements
 
 This work is supported by the UK Engineering and Physical Sciences Research Council
