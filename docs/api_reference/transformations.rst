@@ -16,6 +16,17 @@ Transformers applied to a single series of shape ``(n_channels, n_timepoints)``.
 
     BandPassSeriesTransformer
 
+Collection transformers
+-----------------------
+
+.. currentmodule:: aeon_neuro.transformations.collection
+
+.. autosummary::
+    :toctree: auto_generated/
+    :template: class.rst
+
+    TimeCrop
+
 Channel creation
 ----------------
 
