@@ -34,4 +34,5 @@ Feature based
     :template: class.rst
 
     CSPClassifier
+    SSVEPCCAClassifier
     XDAWNClassifier

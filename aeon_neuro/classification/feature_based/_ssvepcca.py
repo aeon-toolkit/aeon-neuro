@@ -74,15 +74,20 @@ class SSVEPCCAClassifier(BaseClassifier):
         self.n_harmonics = n_harmonics
         super().__init__()
 
-    def _fit(self, X, y):
+    def _fit(self, X, y=None):
         """Validate parameters and build a reference signal for each class.
+
+        The classifier is training-free: references are built from
+        ``class_frequencies`` and the series length only, so ``y`` is not used
+        here (the class set and ordering come from ``self.classes_``). It is
+        accepted for compatibility with the classifier API.
 
         Parameters
         ----------
         X : np.ndarray of shape (n_cases, n_channels, n_timepoints)
             Training cases.
-        y : np.ndarray of shape (n_cases,)
-            Class labels, each of which must be a key of ``class_frequencies``.
+        y : np.ndarray of shape (n_cases,), optional
+            Class labels. Unused; present only for API compatibility.
 
         Returns
         -------
