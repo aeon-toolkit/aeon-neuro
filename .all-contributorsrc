@@ -147,7 +147,8 @@
         "doc",
         "infra",
         "maintenance",
-        "review"
+        "review",
+        "test"
       ]
     },
     {
