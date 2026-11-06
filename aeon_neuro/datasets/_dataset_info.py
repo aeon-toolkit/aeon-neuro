@@ -5,12 +5,15 @@ from math import isfinite
 
 import numpy as np
 
-from aeon_neuro.datasets._bids_input import inspect_bids_eeg, open_bids_eeg_recording
+from aeon_neuro.datasets._bids_input import (
+    _event_sample,
+    inspect_bids_eeg,
+    open_bids_eeg_recording,
+)
 from aeon_neuro.datasets._classification import (
     _integer,
     _recording_info,
     _recordings,
-    _samples,
 )
 
 
@@ -213,13 +216,12 @@ class EEGDatasetInfo:
                 recording_id = row["recording_id"]
                 if recording_id not in grouped:
                     raise ValueError("Event refers to an unselected recording")
-                sample = _integer(row["bids_onset_sample"], "bids_onset_sample")
-                if not 0 <= sample < by_id[recording_id]["n_samples"]:
-                    raise ValueError("Event sample is outside its recording")
-                expected = _samples(
+                sample = row["bids_onset_sample"]
+                if sample is not None:
+                    sample = _integer(sample, "bids_onset_sample")
+                expected = _event_sample(
                     float(row["onset"]),
                     by_id[recording_id]["sampling_frequency"],
-                    "event onset",
                 )
                 if sample != expected:
                     raise ValueError("Event sample disagrees with its source onset")

@@ -588,3 +588,52 @@ def test_existing_version_one_source_descriptor_still_opens(bids):
     with open_bids_eeg_recording(root, json.loads(json.dumps(descriptor))) as raw:
         assert raw.n_times == descriptor["n_samples"]
         assert not raw.preload
+
+
+@pytest.mark.parametrize(
+    "onset,sample,warning",
+    [
+        ("-1", -32, "event_outside_recording"),
+        ("0.01", None, "event_off_grid"),
+    ],
+)
+def test_source_events_preserve_valid_context_before_case_selection(
+    bids, onset, sample, warning
+):
+    """Source inspection must retain valid BIDS events outside an epoch recipe."""
+    root, paths = bids
+    events = paths[0].with_name(paths[0].name.replace("_eeg.bdf", "_events.tsv"))
+    events.write_text(f"onset\tduration\ttrial_type\n{onset}\t0\tcontext\n1\t1\tleft\n")
+    report = inspect_bids_eeg(root, subjects=["01"])
+    assert report["ready"]
+    assert report["events"][0]["onset"] == onset
+    assert report["events"][0]["bids_onset_sample"] == sample
+    assert warning in {row["code"] for row in report["issues"]}
+    info = EEGDatasetInfo(report)
+    assert info.recordings[0].events[0]["onset"] == onset
+
+
+def test_eeg_json_snapshot_stays_bound_to_the_values_returned_by_its_reader(
+    bids, monkeypatch
+):
+    """A change after parsing must invalidate loading rather than pin newer bytes."""
+    root, _ = bids
+    original = adapter._read_eeg_json
+
+    def read_then_change(path, **kwargs):
+        parsed, origins = original(path, **kwargs)
+        source = root / origins["sources"][0]
+        changed = json.loads(source.read_text())
+        changed["EEGReference"] = "Changed after parsing"
+        source.write_text(json.dumps(changed))
+        return parsed, origins
+
+    monkeypatch.setattr(adapter, "_read_eeg_json", read_then_change)
+    report = inspect_bids_eeg(root, subjects=["01"])
+    if report["ready"]:
+        descriptor = report["recordings"][0]
+        assert "EEGReference" not in descriptor["eeg_metadata"]
+        with pytest.raises(ValueError, match="Inspected source changed"):
+            open_bids_eeg_recording(root, descriptor)
+    else:
+        assert "changed" in report["issues"][-1]["message"].lower()

@@ -47,7 +47,7 @@ Unknown optional facts stay `None`; source rows and `n/a` values retain their me
 | `recording.entities` | Source subject/session/task/acquisition/run values, without prefixes. |
 | `recording.sfreq`, `recording.channel_names` | Decoded rate and ordered source channel names. |
 | `recording.channels`, `recording.eeg_json` | Original channel rows and resolved source EEG JSON. |
-| `recording.events` | Source event rows, including exact `bids_onset_sample` coordinates. |
+| `recording.events` | Source event rows, including exact `bids_onset_sample` coordinates where available. |
 | `recording.electrodes`, `recording.coordsystem`, `recording.scan` | Optional source geometry and matched scans row. |
 
 `recording.bad_channels()` returns only channels explicitly marked `bad`, raising

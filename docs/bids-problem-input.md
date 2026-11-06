@@ -66,12 +66,17 @@ attributes use literal flat keys such as `participant.cohort`; these are ordinar
 binding column names rather than dotted lookup expressions.
 
 Event rows retain their original columns, adding `recording_id`, `bids_event_id`,
-zero-based `bids_event_row` and integer `bids_onset_sample`. These IDs identify rows of the published table,
-not recovered original acquisition trials. `onset` must be finite and on-grid;
-any supplied `sample` and `onset_sample` must agree with it and one another.
+zero-based `bids_event_row` and an exact integer `bids_onset_sample` where the
+onset lies on the decoded sample grid. These IDs identify rows of the published table,
+not recovered original acquisition trials. `onset` must be finite. Negative
+onsets are retained as valid source context, with a warning when outside the
+recording. Off-grid onsets retain `bids_onset_sample=None` and a warning; no
+rounding is inferred. Supplied sample columns must be integers, agree with one
+another, and match onset when it has an exact grid coordinate.
 `bids_onset_sample` is computed from onset seconds and the decoded rate, measured
-from the recording's first stored sample. It is present even when the published
-table has no sample column. The four added names are reserved: an existing source
+from the recording's first stored sample. An exact coordinate is provided even when the published table has no sample
+column. Select source events and an explicit epoch recipe before extraction;
+the case engine still rejects intervals without exact sample bounds. The four added names are reserved: an existing source
 column with one of those names blocks inspection rather than being overwritten.
 Unknown `duration="n/a"` is preserved. Quality annotations require a separately
 reviewed interpretation; their mere absence never means that trials are clean.

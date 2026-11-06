@@ -269,8 +269,20 @@ def _recording_sidecars(root, bids_path, descriptor, files, issues):
         )
 
 
-def _events(rows, recording_id, sfreq, n_samples):
+def _event_sample(onset, sfreq):
+    """Return an exact grid coordinate, or None without rounding source facts."""
+    onset = float(onset)
+    if not np.isfinite(onset):
+        raise ValueError("Event onset must be finite")
+    try:
+        return _samples(onset, sfreq, "event onset")
+    except ValueError:
+        return None
+
+
+def _events(rows, recording_id, sfreq, n_samples, issues):
     events = []
+    off_grid, outside = 0, 0
     for index, original in enumerate(rows):
         row = dict(original)
         reserved = {
@@ -285,16 +297,20 @@ def _events(rows, recording_id, sfreq, n_samples):
             )
         try:
             onset = float(row["onset"])
-            sample = _samples(onset, sfreq, "event onset")
+            sample = _event_sample(onset, sfreq)
             duration = row["duration"]
             length = None if duration == "n/a" else float(duration)
-            valid = 0 <= sample < n_samples and (
-                length is None or (np.isfinite(length) and length >= 0)
-            )
+            valid = length is None or (np.isfinite(length) and length >= 0)
+            declared = []
             for column in ("sample", "onset_sample"):
                 if row.get(column, "n/a") != "n/a":
                     position = float(row[column])
-                    valid = valid and position.is_integer() and position == sample
+                    valid = valid and np.isfinite(position) and position.is_integer()
+                    declared.append(position)
+                    if sample is not None:
+                        valid = valid and position == sample
+            if declared:
+                valid = valid and all(value == declared[0] for value in declared)
             if not valid:
                 raise ValueError("Inconsistent event timing")
         except (KeyError, TypeError, ValueError, OverflowError) as exc:
@@ -310,6 +326,25 @@ def _events(rows, recording_id, sfreq, n_samples):
             bids_onset_sample=sample,
         )
         events.append(row)
+        off_grid += sample is None
+        outside += not 0 <= onset < n_samples / sfreq
+    # BIDS permits pre-recording events and continuous-valued onsets. Retain them
+    # for explicit selection; exact epoch extraction remains the case engine's job.
+    if off_grid:
+        _issue(
+            issues,
+            recording_id,
+            "event_off_grid",
+            f"{off_grid} event onsets lack exact sample coordinates; "
+            "source rows retained",
+        )
+    if outside:
+        _issue(
+            issues,
+            recording_id,
+            "event_outside_recording",
+            f"{outside} event onsets are outside the recording; source rows retained",
+        )
     return events
 
 
@@ -324,15 +359,10 @@ def _inspect(root, bids_path, issues, dataset):
         )
     signal = _path(root, recording_id)
     initial = _snapshot(signal)
-    metadata, origins = _read_eeg_json(bids_path)
     files = {**deepcopy(dataset["files"]), recording_id: initial}
-
-    def remember(path):
-        name = path.relative_to(root).as_posix()
-        files[name] = _snapshot(_path(root, name), metadata=True)
-
-    for name in origins["sources"]:
-        remember(root / name)
+    metadata, origins = _read_eeg_json(
+        bids_path, read_json=lambda path: _metadata(root, path, files, _json_object)
+    )
     descriptor = {
         "recording_id": recording_id,
         "filepath": recording_id,
@@ -432,7 +462,9 @@ def _inspect(root, bids_path, issues, dataset):
         if channel_rows and [row["name"] for row in channel_rows] != raw.ch_names:
             raise ValueError("Channel table order/names disagree with decoded header")
         descriptor["channel_metadata"] = channel_rows
-        events = _events(event_rows, recording_id, raw.info["sfreq"], raw.n_times)
+        events = _events(
+            event_rows, recording_id, raw.info["sfreq"], raw.n_times, issues
+        )
         if any(
             row["duration"] != "n/a"
             and float(row["onset"]) + float(row["duration"])
@@ -511,7 +543,8 @@ def inspect_bids_eeg(
         original tables and local file snapshots. Participant attributes use
         literal flat keys such as participant.group. Events preserve columns
         and add bids_event_id/bids_event_row, identifying published table rows,
-        plus exact zero-based integer bids_onset_sample coordinates.
+        plus exact integer bids_onset_sample coordinates where available. Off-grid
+        onsets retain None; negative/outside onsets remain source context.
         Recording descriptors retain optional electrodes/coordsystem sidecars,
         a matching scans row and sidecar paths. TSV values stay strings; geometry
         values and row order do not alter the decoded channel layout or units.

@@ -25,3 +25,8 @@ optional estimator calls, subject validation, detached table views, serializatio
 and `.ts` history comments. Direct `info.current_metadata` and
 `info.events_for_cases()` remain available for plain-descriptor integrations;
 pass the object itself to retain its complete source/history context.
+
+Source events are retained before scientific selection. Negative/outside onsets
+produce warnings; off-grid events keep an unknown exact sample coordinate.
+Case extraction still requires explicit, exact bounds. EEG JSON inheritance
+uses the same parsed-byte snapshots as the other inspected metadata.
