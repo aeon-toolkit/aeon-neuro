@@ -1,0 +1,208 @@
+{
+  "projectName": "aeon-neuro",
+  "projectOwner": "aeon-toolkit",
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "files": [
+    "CONTRIBUTORS.md"
+  ],
+  "imageSize": 80,
+  "commit": "false",
+  "commitConvention": "atom",
+  "contributorsPerLine": 8,
+  "contributorsSortAlphabetically": true,
+  "badgeTemplate": "[![All Contributors](https://img.shields.io/badge/all_contributors-<%= contributors.length %>-orange.svg)](#contributors)",
+  "linkToUsage": true,
+  "skipCi": true,
+  "contributors": [
+    {
+      "login": "AidenRushbrooke",
+      "name": "AidenRushbrooke",
+      "avatar_url": "https://avatars0.githubusercontent.com/u/72034940?v=4",
+      "profile": "https://github.com/AidenRushbrooke",
+      "contributions": [
+        "code",
+        "data",
+        "review"
+      ]
+    },
+    {
+      "login": "AInan05",
+      "name": "AInan05",
+      "avatar_url": "https://avatars.githubusercontent.com/u/147404730?v=4",
+      "profile": "https://github.com/AInan05",
+      "contributions": [
+        "code",
+        "doc",
+        "test"
+      ]
+    },
+    {
+      "login": "CRYPTONIKAV",
+      "name": "CRYPTONIKAV",
+      "avatar_url": "https://avatars.githubusercontent.com/u/29835619?v=4",
+      "profile": "https://github.com/CRYPTONIKAV",
+      "contributions": [
+        "bug",
+        "code",
+        "doc",
+        "test"
+      ]
+    },
+    {
+      "login": "emaanbaluj",
+      "name": "Emaan Baluj",
+      "avatar_url": "https://avatars.githubusercontent.com/u/141520910?v=4",
+      "profile": "https://github.com/emaanbaluj",
+      "contributions": [
+        "bug",
+        "code",
+        "test"
+      ]
+    },
+    {
+      "login": "Flow-Glow",
+      "name": "Ziv Landau",
+      "avatar_url": "https://avatars.githubusercontent.com/u/89105476?v=4",
+      "profile": "https://github.com/Flow-Glow",
+      "contributions": [
+        "doc"
+      ]
+    },
+    {
+      "login": "flynnlaw",
+      "name": "Flynn Law",
+      "avatar_url": "https://avatars.githubusercontent.com/u/101016231?v=4",
+      "profile": "https://github.com/flynnlaw",
+      "contributions": [
+        "code",
+        "test"
+      ]
+    },
+    {
+      "login": "futuer-szd",
+      "name": "Futuer",
+      "avatar_url": "https://avatars.githubusercontent.com/u/57895730?v=4",
+      "profile": "https://github.com/futuer-szd",
+      "contributions": [
+        "bug",
+        "doc",
+        "test"
+      ]
+    },
+    {
+      "login": "griegner",
+      "name": "Gabriel Riegner",
+      "avatar_url": "https://avatars.githubusercontent.com/u/54326829?v=4",
+      "profile": "https://github.com/griegner",
+      "contributions": [
+        "bug",
+        "code",
+        "doc",
+        "example",
+        "infra",
+        "maintenance",
+        "test"
+      ]
+    },
+    {
+      "login": "hadifawaz1999",
+      "name": "Ali Ismail-Fawaz",
+      "avatar_url": "https://avatars.githubusercontent.com/u/54309336",
+      "profile": "https://github.com/hadifawaz1999",
+      "contributions": [
+        "code",
+        "maintenance",
+        "test"
+      ]
+    },
+    {
+      "login": "htoor2026",
+      "name": "Harkamal S",
+      "avatar_url": "https://avatars.githubusercontent.com/u/250502158?v=4",
+      "profile": "https://github.com/htoor2026",
+      "contributions": [
+        "bug",
+        "code",
+        "test"
+      ]
+    },
+    {
+      "login": "LetMeSleep8h",
+      "name": "Sleep8h",
+      "avatar_url": "https://avatars.githubusercontent.com/u/183817470?v=4",
+      "profile": "https://github.com/LetMeSleep8h",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+    {
+      "login": "MatthewMiddlehurst",
+      "name": "Matthew Middlehurst",
+      "avatar_url": "https://avatars0.githubusercontent.com/u/25731235?v=4",
+      "profile": "https://github.com/MatthewMiddlehurst",
+      "contributions": [
+        "code",
+        "doc",
+        "infra",
+        "maintenance",
+        "review"
+      ]
+    },
+    {
+      "login": "parthiv481",
+      "name": "parthiv",
+      "avatar_url": "https://avatars.githubusercontent.com/u/115283280?v=4",
+      "profile": "https://github.com/parthiv481",
+      "contributions": [
+        "code",
+        "test"
+      ]
+    },
+    {
+      "login": "RaghuVatsavai",
+      "name": "RaghuVatsavai",
+      "avatar_url": "https://avatars.githubusercontent.com/u/48869528?v=4",
+      "profile": "https://github.com/RaghuVatsavai",
+      "contributions": [
+        "code",
+        "review",
+        "test"
+      ]
+    },
+    {
+      "login": "Strawma",
+      "name": "Ramis",
+      "avatar_url": "https://avatars.githubusercontent.com/u/111586342?v=4",
+      "profile": "https://ramisbhatty.com/",
+      "contributions": [
+        "bug",
+        "code",
+        "doc",
+        "example",
+        "infra",
+        "review",
+        "test"
+      ]
+    },
+    {
+      "login": "TonyBagnall",
+      "name": "Tony Bagnall",
+      "avatar_url": "https://avatars1.githubusercontent.com/u/9594042?v=4",
+      "profile": "http://www.timeseriesclassification.com",
+      "contributions": [
+        "bug",
+        "code",
+        "data",
+        "doc",
+        "example",
+        "infra",
+        "maintenance",
+        "review",
+        "test"
+      ]
+    }
+  ],
+  "commitType": "docs"
+}
