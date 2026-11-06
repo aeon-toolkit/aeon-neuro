@@ -16,6 +16,9 @@ class EEGConformerClassifier(BaseClassifier):
     standard collection shape:
     (n_cases, n_channels, n_timepoints).
 
+    The network is built for the series length seen in ``fit``, so ``predict`` must
+    be called with series of the same length.
+
     Series must have at least ``filter_time_length + pool_time_length - 1``
     timepoints (99 with the default parameters).
 
