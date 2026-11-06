@@ -56,6 +56,11 @@ def test_epoch_series_by_time():
             np.zeros((2, 100)),
             (3, 2, 29),
         ),
+        (
+            EpochSeriesTransformer(sfreq=100, epoch_size=295),
+            np.zeros((2, 100)),
+            (3, 2, 29),
+        ),
         (EpochSeriesTransformer(percent=58), np.zeros((2, 50)), (1, 2, 29)),
         (EpochSeriesTransformer(percent=18.4), np.zeros((2, 375)), (5, 2, 69)),
     ],

@@ -12,7 +12,9 @@ def _truncate_near_integer(value):
     """Truncate a value unless it is within floating-point tolerance of an integer."""
     nearest = round(value)
     return (
-        nearest if math.isclose(value, nearest, rel_tol=0, abs_tol=1e-9) else int(value)
+        nearest
+        if math.isclose(value, nearest, rel_tol=1e-12, abs_tol=1e-9)
+        else int(value)
     )
 
 
@@ -21,6 +23,8 @@ class EpochSeriesTransformer(BaseSeriesTransformer):
 
     Transform a series into a collection of smaller segments,
     epoched by time or percent.
+    Partial samples are truncated; values within floating-point tolerance of an
+    integer are rounded to that integer.
 
     Parameters
     ----------
