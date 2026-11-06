@@ -265,6 +265,115 @@ def test_summary():
     assert len(clf.summary()["loss"]) == 2
 
 
+def test_early_stopping_keeps_best_epoch():
+    """Check early stopping stops on patience and restores the best weights."""
+    X, y = make_example_3d_numpy(
+        n_cases=20, n_channels=2, n_timepoints=128, random_state=0
+    )
+    clf = BraindecodeClassifier(
+        model="ShallowFBCSPNet",
+        n_epochs=30,
+        validation_size=0.25,
+        early_stopping_patience=2,
+        random_state=0,
+    )
+    clf.fit(X, y)
+
+    n_run = len(clf.history_)
+    assert len(clf.validation_history_) == n_run
+    assert clf.validation_history_[clf.best_epoch_] == max(clf.validation_history_)
+    if n_run < 30:
+        # stopped because the last `patience` epochs did not improve
+        assert n_run - 1 - clf.best_epoch_ == 2
+
+
+def test_validation_trains_on_remaining_cases():
+    """Check the held out validation cases are not used for training."""
+    X, y = make_example_3d_numpy(
+        n_cases=20, n_channels=2, n_timepoints=128, random_state=0
+    )
+    clf = BraindecodeClassifier(
+        model="ShallowFBCSPNet",
+        batch_size=64,
+        n_epochs=1,
+        validation_size=0.25,
+        random_state=0,
+    )
+    batch_sizes = []
+    clf._coerce_logits = _record_batch_sizes(clf._coerce_logits, batch_sizes)
+    clf.fit(X, y)
+
+    # one training batch of the 15 remaining cases, then the 5 validation cases
+    assert batch_sizes == [15, 5]
+
+
+def test_balanced_class_weights():
+    """Check balanced weights are n_cases / (n_classes * class count)."""
+    X, y = make_example_3d_numpy(
+        n_cases=12, n_channels=2, n_timepoints=128, random_state=0
+    )
+    y = np.array([0] * 9 + [1] * 3)
+    clf = BraindecodeClassifier(
+        model="ShallowFBCSPNet",
+        n_epochs=1,
+        class_weight="balanced",
+        label_smoothing=0.1,
+        random_state=0,
+    )
+    clf.fit(X, y)
+
+    np.testing.assert_allclose(
+        clf.loss_.weight.cpu().numpy(), [12 / (2 * 9), 12 / (2 * 3)], rtol=1e-6
+    )
+    assert clf.loss_.label_smoothing == 0.1
+
+
+def test_onecycle_schedule_and_adamw():
+    """Check AdamW and the one-cycle schedule, stepped once per batch."""
+    import torch
+
+    X, y = make_example_3d_numpy(
+        n_cases=16, n_channels=2, n_timepoints=128, random_state=0
+    )
+    clf = BraindecodeClassifier(
+        model="ShallowFBCSPNet",
+        batch_size=4,
+        n_epochs=3,
+        lr=1e-3,
+        optimizer="adamw",
+        lr_scheduler="onecycle",
+        gradient_clip=1.0,
+        random_state=0,
+    )
+    clf.fit(X, y)
+
+    assert isinstance(clf.optimizer_, torch.optim.AdamW)
+    assert clf.scheduler_.total_steps == 3 * 4
+    assert clf.scheduler_.last_epoch == 3 * 4
+    # the clone and the pickled classifier keep working
+    assert clone(clf).get_params()["lr_scheduler"] == "onecycle"
+    loaded = pickle.loads(pickle.dumps(clf))
+    np.testing.assert_allclose(loaded.predict_proba(X), clf.predict_proba(X))
+
+
+@pytest.mark.parametrize(
+    "params, match",
+    [
+        ({"validation_size": 1.5}, "validation_size"),
+        ({"class_weight": "inverse"}, "class_weight"),
+        ({"lr_scheduler": "cosine"}, "lr_scheduler"),
+    ],
+)
+def test_invalid_training_options_raise(params, match):
+    """Check unknown training options raise a ValueError."""
+    X, y = make_example_3d_numpy(
+        n_cases=8, n_channels=2, n_timepoints=128, random_state=0
+    )
+    clf = BraindecodeClassifier(model="ShallowFBCSPNet", n_epochs=1, **params)
+    with pytest.raises(ValueError, match=match):
+        clf.fit(X, y)
+
+
 def test_aeon_estimator_checks():
     """Run aeon's estimator checks on the adaptor."""
     check_estimator(BraindecodeClassifier, raise_exceptions=True)

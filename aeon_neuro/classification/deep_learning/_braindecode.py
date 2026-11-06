@@ -79,7 +79,7 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         Number of training epochs.
     lr : float, default=1e-3
         Learning rate.
-    optimizer : {"adam", "sgd"}, default="adam"
+    optimizer : {"adam", "adamw", "sgd"}, default="adam"
         Optimiser used for training.
     weight_decay : float, default=0.0
         L2 penalty passed to the optimiser.
@@ -89,6 +89,26 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         If True, print epoch losses during training.
     random_state : int or None, default=None
         Random seed.
+    lr_scheduler : {None, "onecycle"}, default=None
+        Learning rate schedule. ``"onecycle"`` uses torch's ``OneCycleLR`` with
+        ``max_lr=lr``, 10% warmup and cosine annealing, stepped every batch and
+        planned over all ``n_epochs`` (early stopping may end it sooner).
+    gradient_clip : float or None, default=None
+        If set, clip the gradient norm to this value before each step.
+    class_weight : {None, "balanced"}, default=None
+        If ``"balanced"``, weight the loss by inverse class frequency in the
+        training cases, as sklearn's ``compute_class_weight("balanced")``.
+    label_smoothing : float, default=0.0
+        Label smoothing passed to ``torch.nn.CrossEntropyLoss``.
+    validation_size : float or None, default=None
+        If set, hold out this fraction of the training cases, stratified by
+        class, as a validation set. Its balanced accuracy is measured after
+        every epoch and the weights from the best epoch are kept. The split is
+        random over cases, not by subject.
+    early_stopping_patience : int or None, default=None
+        With ``validation_size``, stop when validation balanced accuracy has
+        not improved for this many epochs. If None, train all ``n_epochs`` and
+        keep the best epoch.
     """
 
     _tags = {
@@ -110,6 +130,12 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         device: str | None = None,
         verbose: bool = False,
         random_state: int | None = None,
+        lr_scheduler: str | None = None,
+        gradient_clip: float | None = None,
+        class_weight: str | None = None,
+        label_smoothing: float = 0.0,
+        validation_size: float | None = None,
+        early_stopping_patience: int | None = None,
     ):
         self.batch_size = batch_size
         self.n_epochs = n_epochs
@@ -119,6 +145,12 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         self.device = device
         self.verbose = verbose
         self.random_state = random_state
+        self.lr_scheduler = lr_scheduler
+        self.gradient_clip = gradient_clip
+        self.class_weight = class_weight
+        self.label_smoothing = label_smoothing
+        self.validation_size = validation_size
+        self.early_stopping_patience = early_stopping_patience
 
         super().__init__()
 
@@ -143,12 +175,19 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
 
+        X_val = y_val = None
+        if self.validation_size is not None:
+            X, X_val, y_int, y_val = self._validation_split(X, y_int, rng)
+
         self.device_ = self._resolve_device()
         self.network_ = self._build_network(
             n_channels=X.shape[1], n_timepoints=X.shape[2]
         ).to(self.device_)
         self.optimizer_ = self._build_optimizer(self.network_.parameters())
-        self.loss_ = nn.CrossEntropyLoss()
+        self.loss_ = nn.CrossEntropyLoss(
+            weight=self._loss_class_weights(y_int),
+            label_smoothing=self.label_smoothing,
+        )
 
         dataset = TensorDataset(torch.from_numpy(X), torch.from_numpy(y_int))
         loader = DataLoader(
@@ -162,10 +201,15 @@ class _BaseBraindecodeClassifier(BaseClassifier):
             drop_last=True,
         )
 
+        self.scheduler_ = self._build_scheduler(len(loader))
+
         self.history_ = []
-        self.network_.train()
+        self.validation_history_ = []
+        self.best_epoch_ = None
+        best_score, best_state, stale = -np.inf, None, 0
 
         for epoch in range(self.n_epochs):
+            self.network_.train()
             epoch_loss = 0.0
             n_seen = 0
 
@@ -177,7 +221,13 @@ class _BaseBraindecodeClassifier(BaseClassifier):
                 logits = self._coerce_logits(self.network_(xb))
                 loss = self.loss_(logits, yb)
                 loss.backward()
+                if self.gradient_clip is not None:
+                    nn.utils.clip_grad_norm_(
+                        self.network_.parameters(), self.gradient_clip
+                    )
                 self.optimizer_.step()
+                if self.scheduler_ is not None:
+                    self.scheduler_.step()
 
                 epoch_loss += loss.item() * xb.shape[0]
                 n_seen += xb.shape[0]
@@ -185,16 +235,105 @@ class _BaseBraindecodeClassifier(BaseClassifier):
             epoch_loss /= n_seen
             self.history_.append(epoch_loss)
 
+            message = f"Epoch {epoch + 1}/{self.n_epochs} - training loss: "
+            message += f"{epoch_loss:.6f}"
+            stop = False
+            if X_val is not None:
+                score = self._balanced_accuracy(X_val, y_val)
+                self.validation_history_.append(score)
+                message += f" - validation balanced accuracy: {score:.4f}"
+                if score > best_score:
+                    best_score, stale = score, 0
+                    self.best_epoch_ = epoch
+                    best_state = {
+                        key: value.detach().clone()
+                        for key, value in self.network_.state_dict().items()
+                    }
+                else:
+                    stale += 1
+                    stop = (
+                        self.early_stopping_patience is not None
+                        and stale >= self.early_stopping_patience
+                    )
+
             if self.verbose:
-                print(  # noqa: T201
-                    f"Epoch {epoch + 1}/{self.n_epochs} - "
-                    f"training loss: {epoch_loss:.6f}"
-                )
+                print(message)  # noqa: T201
+            if stop:
+                break
+
+        if best_state is not None:
+            self.network_.load_state_dict(best_state)
 
         # Leave the network in eval mode so predict does not mutate fitted state.
         self.network_.eval()
 
         return self
+
+    def _validation_split(self, X, y_int, rng):
+        """Hold out ``validation_size`` of the cases, stratified if possible."""
+        from sklearn.model_selection import train_test_split
+
+        if not 0 < self.validation_size < 1:
+            raise ValueError(
+                f"validation_size must be between 0 and 1, got {self.validation_size}."
+            )
+        seed = int(rng.randint(np.iinfo(np.int32).max))
+        try:
+            return train_test_split(
+                X,
+                y_int,
+                test_size=self.validation_size,
+                random_state=seed,
+                stratify=y_int,
+            )
+        except ValueError:
+            # too few cases of some class to stratify; split at random instead
+            return train_test_split(
+                X, y_int, test_size=self.validation_size, random_state=seed
+            )
+
+    def _loss_class_weights(self, y_int):
+        """Return the cross-entropy class weights, or None."""
+        import torch
+
+        if self.class_weight is None:
+            return None
+        if self.class_weight != "balanced":
+            raise ValueError(
+                f"class_weight must be None or 'balanced', got {self.class_weight!r}."
+            )
+        counts = np.bincount(y_int, minlength=self.n_classes_).astype(np.float64)
+        weights = np.ones(self.n_classes_)
+        present = counts > 0
+        # sklearn's "balanced": n_cases / (n_classes * count), over the classes
+        # present in the training cases; absent classes keep weight one
+        weights[present] = counts.sum() / (present.sum() * counts[present])
+        return torch.tensor(weights, dtype=torch.float32, device=self.device_)
+
+    def _build_scheduler(self, steps_per_epoch):
+        """Construct the learning rate scheduler, or None."""
+        import torch
+
+        if self.lr_scheduler is None:
+            return None
+        if self.lr_scheduler != "onecycle":
+            raise ValueError(
+                f"lr_scheduler must be None or 'onecycle', got {self.lr_scheduler!r}."
+            )
+        return torch.optim.lr_scheduler.OneCycleLR(
+            self.optimizer_,
+            max_lr=self.lr,
+            total_steps=self.n_epochs * steps_per_epoch,
+            pct_start=0.1,
+            anneal_strategy="cos",
+        )
+
+    def _balanced_accuracy(self, X, y_int):
+        """Balanced accuracy of the current network on X."""
+        from sklearn.metrics import balanced_accuracy_score
+
+        probs = self._predict_proba(X)
+        return balanced_accuracy_score(y_int, probs.argmax(axis=1))
 
     def _predict_proba(self, X: np.ndarray) -> np.ndarray:
         """Predict class probabilities for X."""
@@ -265,9 +404,10 @@ class _BaseBraindecodeClassifier(BaseClassifier):
             state["_network_state"] = {
                 key: value.detach().cpu() for key, value in network.state_dict().items()
             }
-            # the optimiser refers to the network's parameters; it is only
-            # needed during fit
+            # the optimiser and scheduler refer to the network's parameters;
+            # they are only needed during fit
             state["optimizer_"] = None
+            state["scheduler_"] = None
         return state
 
     def __setstate__(self, state):
@@ -295,6 +435,10 @@ class _BaseBraindecodeClassifier(BaseClassifier):
             return torch.optim.Adam(
                 parameters, lr=self.lr, weight_decay=self.weight_decay
             )
+        if optimizer == "adamw":
+            return torch.optim.AdamW(
+                parameters, lr=self.lr, weight_decay=self.weight_decay
+            )
         if optimizer == "sgd":
             return torch.optim.SGD(
                 parameters, lr=self.lr, weight_decay=self.weight_decay
@@ -302,7 +446,7 @@ class _BaseBraindecodeClassifier(BaseClassifier):
 
         raise ValueError(
             f"Unknown optimizer='{self.optimizer}'. "
-            "Supported values are {'adam', 'sgd'}."
+            "Supported values are {'adam', 'adamw', 'sgd'}."
         )
 
     def _resolve_device(self):
@@ -430,13 +574,13 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
     batch_size : int, default=64
         Mini-batch size used for training and inference.
     n_epochs : int, default=200
-        Number of training epochs. There is no early stopping or learning rate
-        schedule, so every epoch is run. 200 is a compromise between the
-        several hundred epochs typical in EEG deep learning papers and the
-        training time on small EEG datasets; tune it for each problem.
+        Number of training epochs. By default there is no early stopping or
+        learning rate schedule, so every epoch is run. 200 is a compromise
+        between the several hundred epochs typical in EEG deep learning papers
+        and the training time on small EEG datasets; tune it for each problem.
     lr : float, default=1e-3
-        Learning rate.
-    optimizer : {"adam", "sgd"}, default="adam"
+        Learning rate (the peak rate with ``lr_scheduler="onecycle"``).
+    optimizer : {"adam", "adamw", "sgd"}, default="adam"
         Optimiser used for training.
     weight_decay : float, default=0.0
         L2 penalty passed to the optimiser.
@@ -446,6 +590,26 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
         If True, print epoch losses during training.
     random_state : int or None, default=None
         Random seed.
+    lr_scheduler : {None, "onecycle"}, default=None
+        Learning rate schedule. ``"onecycle"`` uses torch's ``OneCycleLR`` with
+        ``max_lr=lr``, 10% warmup and cosine annealing, stepped every batch and
+        planned over all ``n_epochs`` (early stopping may end it sooner).
+    gradient_clip : float or None, default=None
+        If set, clip the gradient norm to this value before each step.
+    class_weight : {None, "balanced"}, default=None
+        If ``"balanced"``, weight the loss by inverse class frequency in the
+        training cases.
+    label_smoothing : float, default=0.0
+        Label smoothing passed to ``torch.nn.CrossEntropyLoss``.
+    validation_size : float or None, default=None
+        If set, hold out this fraction of the training cases, stratified by
+        class, as a validation set. Its balanced accuracy is measured after
+        every epoch and the weights from the best epoch are kept. The split is
+        random over cases, not by subject.
+    early_stopping_patience : int or None, default=None
+        With ``validation_size``, stop when validation balanced accuracy has
+        not improved for this many epochs. If None, train all ``n_epochs`` and
+        keep the best epoch.
 
     Attributes
     ----------
@@ -453,6 +617,12 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
         The trained braindecode network.
     history_ : list of float
         Mean training loss for each epoch.
+    validation_history_ : list of float
+        Validation balanced accuracy for each epoch; empty without
+        ``validation_size``.
+    best_epoch_ : int or None
+        Zero-based epoch whose weights were kept, or None without
+        ``validation_size``.
 
     Notes
     -----
@@ -488,6 +658,12 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
         device: str | None = None,
         verbose: bool = False,
         random_state: int | None = None,
+        lr_scheduler: str | None = None,
+        gradient_clip: float | None = None,
+        class_weight: str | None = None,
+        label_smoothing: float = 0.0,
+        validation_size: float | None = None,
+        early_stopping_patience: int | None = None,
     ):
         self.model = model
         self.model_params = model_params
@@ -503,6 +679,12 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
             device=device,
             verbose=verbose,
             random_state=random_state,
+            lr_scheduler=lr_scheduler,
+            gradient_clip=gradient_clip,
+            class_weight=class_weight,
+            label_smoothing=label_smoothing,
+            validation_size=validation_size,
+            early_stopping_patience=early_stopping_patience,
         )
 
     def _resolve_model(self):
@@ -615,5 +797,24 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
                     "pool2_kernel_size": 2,
                 },
                 **small,
+            },
+            {
+                "model": "ShallowFBCSPNet",
+                "model_params": {
+                    "n_filters_time": 4,
+                    "filter_time_length": 5,
+                    "n_filters_spat": 4,
+                    "pool_time_length": 5,
+                    "pool_time_stride": 2,
+                },
+                **small,
+                "n_epochs": 2,
+                "optimizer": "adamw",
+                "lr_scheduler": "onecycle",
+                "gradient_clip": 1.0,
+                "class_weight": "balanced",
+                "label_smoothing": 0.1,
+                "validation_size": 0.3,
+                "early_stopping_patience": 1,
             },
         ]
