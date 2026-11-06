@@ -58,6 +58,7 @@ contributors.md
 :hidden:
 
 changelog.md
+benchmarks.md
 datasets.md
 papers.md
 ```
