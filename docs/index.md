@@ -49,6 +49,8 @@ README.md
 ```{toctree}
 :caption: The aeon-neuro team
 :hidden:
+
+contributors.md
 ```
 
 ```{toctree}
