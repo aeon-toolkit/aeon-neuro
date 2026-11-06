@@ -32,6 +32,7 @@ __all__ = [
     "TimeCNNClassifier",
     "CSPClassifier",
     "XDAWNClassifier",
+    "TRACE",
 ]
 
 from aeon.classification.convolution_based import MultiRocketHydraClassifier
@@ -44,6 +45,7 @@ from aeon_neuro.classification.deep_learning import (
     EEGNetClassifier,
 )
 from aeon_neuro.classification.distance_based import (
+    TRACE,
     RiemannianKNNClassifier,
     RiemannianMDMClassifier,
 )
