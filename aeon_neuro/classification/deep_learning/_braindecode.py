@@ -5,10 +5,12 @@ from __future__ import annotations
 __all__ = ["BraindecodeClassifier", "SUPPORTED_MODELS"]
 
 import inspect
+from numbers import Integral
 
 import numpy as np
-from aeon.classification import BaseClassifier
 from sklearn.utils import check_random_state
+
+from aeon_neuro.classification.base import BaseEEGClassifier
 
 # braindecode models tested with BraindecodeClassifier: each builds, fits and
 # predicts one label per case with the default settings, given ``sfreq`` and,
@@ -65,7 +67,7 @@ _NEEDS_CHANNEL_NAMES = ("DGCNN", "EEGSym")
 _RESERVED_PARAMS = ("n_chans", "n_outputs", "n_times", "sfreq", "chs_info")
 
 
-class _BaseBraindecodeClassifier(BaseClassifier):
+class _BaseBraindecodeClassifier(BaseEEGClassifier):
     """Shared training and prediction code for braindecode based classifiers.
 
     Subclasses implement ``_build_network``, which also checks any parameters
@@ -89,6 +91,15 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         If True, print epoch losses during training.
     random_state : int or None, default=None
         Random seed.
+    validation_size : float or None, default=None
+        Optional inner validation fraction. With information, holds out entire
+        subjects; without it, stratifies cases. None trains without validation.
+    patience : int, default=5
+        Stop after this many epochs without improved validation loss and restore
+        the best weights. Used only when validation_size is set.
+    validation_strategy : {"auto", "subject", "stratified"}, default="auto"
+        Auto uses subjects with information and stratifies cases without it.
+        Stratified explicitly permits within-person validation with metadata.
     """
 
     _tags = {
@@ -110,6 +121,9 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         device: str | None = None,
         verbose: bool = False,
         random_state: int | None = None,
+        validation_size: float | None = None,
+        patience: int = 5,
+        validation_strategy: str = "auto",
     ):
         self.batch_size = batch_size
         self.n_epochs = n_epochs
@@ -119,6 +133,9 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         self.device = device
         self.verbose = verbose
         self.random_state = random_state
+        self.validation_size = validation_size
+        self.patience = patience
+        self.validation_strategy = validation_strategy
 
         super().__init__()
 
@@ -127,7 +144,7 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         raise NotImplementedError("Subclasses must implement _build_network.")
 
     def _fit(self, X: np.ndarray, y: np.ndarray):
-        """Build the network and train it on X and y."""
+        """Train on fitting rows and optionally validate on a separate partition."""
         import torch
         from torch import nn
         from torch.utils.data import DataLoader, TensorDataset
@@ -143,6 +160,34 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
 
+        self.training_indices_ = np.arange(len(X))
+        self.validation_indices_ = np.array([], dtype=int)
+        self.validation_history_ = []
+        self.best_epoch_ = None
+        if self.validation_size is not None:
+            if (
+                isinstance(self.patience, bool)
+                or not isinstance(self.patience, Integral)
+                or self.patience < 1
+            ):
+                raise ValueError("patience must be a positive integer")
+            self.training_indices_, self.validation_indices_ = self.validation_split(
+                y,
+                validation_size=self.validation_size,
+                random_state=seed,
+                strategy=self.validation_strategy,
+            )
+        self.validation_policy_ = (
+            "none"
+            if self.validation_size is None
+            else (
+                "subject"
+                if self.validation_strategy == "subject"
+                or (self.validation_strategy == "auto" and self.info_ is not None)
+                else "stratified cases"
+            )
+        )
+
         self.device_ = self._resolve_device()
         self.network_ = self._build_network(
             n_channels=X.shape[1], n_timepoints=X.shape[2]
@@ -150,24 +195,25 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         self.optimizer_ = self._build_optimizer(self.network_.parameters())
         self.loss_ = nn.CrossEntropyLoss()
 
-        dataset = TensorDataset(torch.from_numpy(X), torch.from_numpy(y_int))
+        train = self.training_indices_
+        dataset = TensorDataset(
+            torch.from_numpy(X[train]), torch.from_numpy(y_int[train])
+        )
         loader = DataLoader(
             dataset,
             batch_size=min(self.batch_size, len(dataset)),
             shuffle=True,
-            # As in braindecode's EEGClassifier: drop the incomplete last batch
-            # in training, which avoids a noisy update from a tiny batch (and
-            # batch norm failing on a batch of one case). Shuffling means a
-            # different few cases sit out each epoch.
+            # Preserve the shared adapter's training batch policy.
             drop_last=True,
         )
 
         self.history_ = []
         self.network_.train()
+        best_loss, best_state, stale = float("inf"), None, 0
 
         for epoch in range(self.n_epochs):
-            epoch_loss = 0.0
-            n_seen = 0
+            epoch_loss, n_seen = 0.0, 0
+            self.network_.train()
 
             for xb, yb in loader:
                 xb = xb.to(self.device_)
@@ -180,10 +226,44 @@ class _BaseBraindecodeClassifier(BaseClassifier):
                 self.optimizer_.step()
 
                 epoch_loss += loss.item() * xb.shape[0]
-                n_seen += xb.shape[0]
+                n_seen += len(xb)
 
             epoch_loss /= n_seen
             self.history_.append(epoch_loss)
+
+            if self.validation_size is not None:
+                validation = TensorDataset(
+                    torch.from_numpy(X[self.validation_indices_]),
+                    torch.from_numpy(y_int[self.validation_indices_]),
+                )
+                validation_loader = DataLoader(
+                    validation,
+                    batch_size=min(self.batch_size, len(validation)),
+                    shuffle=False,
+                    drop_last=False,
+                )
+                self.network_.eval()
+                total = 0.0
+                with torch.no_grad():
+                    for xb, yb in validation_loader:
+                        logits = self._coerce_logits(self.network_(xb.to(self.device_)))
+                        loss = self.loss_(logits, yb.to(self.device_))
+                        total += loss.item() * len(xb)
+                validation_loss = total / len(validation)
+                if not np.isfinite(validation_loss):
+                    raise ValueError("Validation loss is not finite")
+                self.validation_history_.append(validation_loss)
+                if validation_loss < best_loss:
+                    best_loss, stale = validation_loss, 0
+                    best_state = {
+                        key: value.detach().clone()
+                        for key, value in self.network_.state_dict().items()
+                    }
+                    self.best_epoch_ = epoch + 1
+                else:
+                    stale += 1
+                if stale >= self.patience:
+                    break
 
             if self.verbose:
                 print(  # noqa: T201
@@ -191,9 +271,9 @@ class _BaseBraindecodeClassifier(BaseClassifier):
                     f"training loss: {epoch_loss:.6f}"
                 )
 
-        # Leave the network in eval mode so predict does not mutate fitted state.
+        if best_state is not None:
+            self.network_.load_state_dict(best_state)
         self.network_.eval()
-
         return self
 
     def _predict_proba(self, X: np.ndarray) -> np.ndarray:
@@ -398,8 +478,8 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
     ``n_chans``            number of channels, ``n_channels`` (``X.shape[1]``)
     ``n_times``            series length, ``n_timepoints`` (``X.shape[2]``)
     ``n_outputs``          number of classes in ``y`` (``n_classes_``)
-    ``sfreq``              the ``sfreq`` argument
-    ``chs_info``           the ``channel_names`` argument, with montage positions
+    ``sfreq``              aligned information or the ``sfreq`` argument
+    ``chs_info``           aligned channel names, with explicit template positions
     =====================  ========================================================
 
     Other braindecode model names, or a braindecode model class, are accepted
@@ -430,8 +510,8 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
     batch_size : int, default=64
         Mini-batch size used for training and inference.
     n_epochs : int, default=200
-        Number of training epochs. There is no early stopping or learning rate
-        schedule, so every epoch is run. 200 is a compromise between the
+        Maximum number of training epochs. With validation_size=None every
+        epoch is run. 200 is a compromise between the
         several hundred epochs typical in EEG deep learning papers and the
         training time on small EEG datasets; tune it for each problem.
     lr : float, default=1e-3
@@ -446,6 +526,15 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
         If True, print epoch losses during training.
     random_state : int or None, default=None
         Random seed.
+    validation_size : float or None, default=None
+        Optional inner validation fraction. With information, holds out entire
+        subjects; without it, stratifies cases. None trains without validation.
+    patience : int, default=5
+        Stop after this many epochs without improved validation loss and restore
+        the best weights. Used only when validation_size is set.
+    validation_strategy : {"auto", "subject", "stratified"}, default="auto"
+        Auto uses subjects with information and stratifies cases without it.
+        Stratified explicitly permits within-person validation with metadata.
 
     Attributes
     ----------
@@ -456,9 +545,18 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
 
     Notes
     -----
-    ``sfreq`` and ``channel_names`` describe the recordings rather than the
-    model. They are plain parameters for now. Once the sidecar information
-    class from issue #283 is available, they will be taken from it instead.
+    Optional ``info`` in fit/predict supplies current rate and ordered channel
+    names without changing constructor parameters. Explicit conflicting
+    parameters raise. Information-derived names alone do not assert measured
+    positions. For spatial models requiring coordinates, or when channel_names
+    is explicitly set, positions use the standard_1005 template, never measured
+    source electrodes. ``channel_geometry_`` records names_only or standard_1005
+    when the model accepts chs_info. Unknown template names raise.
+
+    Optional validation holds out subjects with information, or stratifies cases
+    without it. An explicit stratified strategy supports within-person questions.
+    Training retains the shared incomplete-batch policy; validation and prediction
+    include every row. Pickling restores the selected weights and information.
 
     Examples
     --------
@@ -488,6 +586,9 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
         device: str | None = None,
         verbose: bool = False,
         random_state: int | None = None,
+        validation_size: float | None = None,
+        patience: int = 5,
+        validation_strategy: str = "auto",
     ):
         self.model = model
         self.model_params = model_params
@@ -503,6 +604,9 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
             device=device,
             verbose=verbose,
             random_state=random_state,
+            validation_size=validation_size,
+            patience=patience,
+            validation_strategy=validation_strategy,
         )
 
     def _resolve_model(self):
@@ -536,8 +640,16 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
         import mne
 
         info = mne.create_info(
-            list(self.channel_names), sfreq=self.sfreq or 1.0, ch_types="eeg"
+            list(self.channel_names_), sfreq=self.sfreq_ or 1.0, ch_types="eeg"
         )
+        model_name = self.model if isinstance(self.model, str) else self.model.__name__
+        # Names carried by data do not establish measured positions. Preserve
+        # the existing template policy only when explicitly requested through
+        # channel_names or required by a spatial model.
+        if self.channel_names is None and model_name not in _NEEDS_CHANNEL_NAMES:
+            self.channel_geometry_ = "names_only"
+            return info["chs"]
+        self.channel_geometry_ = "standard_1005"
         try:
             info.set_montage(mne.channels.make_standard_montage("standard_1005"))
         except ValueError as exc:
@@ -563,18 +675,19 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
                     "sfreq and chs_info from the sfreq and channel_names "
                     "arguments."
                 )
-        if self.channel_names is None and self.model in _NEEDS_CHANNEL_NAMES:
+        model_class = self._resolve_model()
+        model_name = model_class.__name__
+        if self.channel_names_ is None and model_name in _NEEDS_CHANNEL_NAMES:
             raise ValueError(
                 f"{self.model} needs electrode positions; pass channel_names with "
                 "the standard 10-05 name of each channel in X."
             )
-        if self.channel_names is not None and len(self.channel_names) != n_channels:
+        if self.channel_names_ is not None and len(self.channel_names_) != n_channels:
             raise ValueError(
-                f"channel_names has {len(self.channel_names)} names but X has "
+                f"channel_names has {len(self.channel_names_)} names but X has "
                 f"{n_channels} channels."
             )
 
-        model_class = self._resolve_model()
         accepted = inspect.signature(model_class.__init__).parameters
 
         kwargs = {
@@ -582,9 +695,10 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
             "n_outputs": self.n_classes_,
             "n_times": n_timepoints,
         }
-        if self.sfreq is not None and "sfreq" in accepted:
-            kwargs["sfreq"] = self.sfreq
-        if self.channel_names is not None and "chs_info" in accepted:
+        if self.sfreq_ is not None and "sfreq" in accepted:
+            kwargs["sfreq"] = self.sfreq_
+        self.channel_geometry_ = None
+        if self.channel_names_ is not None and "chs_info" in accepted:
             kwargs["chs_info"] = self._channel_info()
         kwargs.update(self.model_params or {})
 

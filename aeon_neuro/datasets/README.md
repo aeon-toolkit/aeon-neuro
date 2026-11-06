@@ -1,0 +1,27 @@
+# Shared EEG information and classification cases
+
+`inspect_bids_eeg` reads local EDF/BDF headers and sidecars without loading signal
+samples. `load_bids_dataset` reuses the source opener to return recordings with
+`EEGDatasetInfo`, preserving dataset/participant facts, channels, events, source
+geometry and file snapshots. The existing `load_bids_data` interface remains
+available. See the [source inspection guide](../../docs/bids-problem-input.md)
+and [loaded metadata guide](../../docs/bids-dataset-info.md).
+
+The existing `make_recording_cases`, `make_fixed_length_cases`, `make_event_cases`
+and `build_classification_dataset` accept shared information as their metadata
+argument. Case labels/groups remain explicit. The builder retains detached
+source/history/construction provenance and exposes case-aligned `dataset.info`;
+no authored problem definition or JSON schema is required.
+
+`info.select(X, selector)` copies signals with their matching information.
+`info.process` executes supported channel selection, scaling, crop, resample,
+filter and reference operations, updating current layouts and history together.
+`with_history` records an external account without claiming an operation ran.
+Original acquisition facts remain separate from current channels, rate, units
+and sample support. Logical case-channel aliases preserve original channel picks.
+
+The [EEG information guide](../../docs/eeg-information.md) covers case construction,
+optional estimator calls, subject validation, detached table views, serialization
+and `.ts` history comments. Direct `info.current_metadata` and
+`info.events_for_cases()` remain available for plain-descriptor integrations;
+pass the object itself to retain its complete source/history context.
