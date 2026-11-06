@@ -22,33 +22,16 @@ X = [
 ]
 
 testdata = [
-    (
-        X,
-        10,
-        5,
-        [
-            np.array([[1, 3, 5, 7, 9], [10, 8, 6, 4, 2]]),
-            np.array([[10, 30, 50, 70], [100, 80, 60, 40]]),
-        ],
-    ),
-    # NOTE (#171): the old (10, 3) case is gone — a 10->3 decimation is not
-    # achievable by integer steps, so it now raises instead of silently
-    # keeping indices 0, 3, 6, 9.
-    (
-        X,
-        10,
-        2,
-        [
-            np.array([[1, 6], [10, 5]]),
-            np.array([[10, 60], [100, 50]]),
-        ],
-    ),
+    (X, 10, 5, [5, 4]),
+    (X, 10, 2, [2, 2]),
 ]
 
 
-@pytest.mark.parametrize("X, source_sfreq, target_sfreq, X_expected", testdata)
-def test_downsample_series(X, source_sfreq, target_sfreq, X_expected):
-    """Test the downsampling of a time series."""
+@pytest.mark.parametrize(
+    "X, source_sfreq, target_sfreq, n_timepoints_expected", testdata
+)
+def test_downsample_series(X, source_sfreq, target_sfreq, n_timepoints_expected):
+    """Test the downsampling of a time series yields the expected lengths."""
     proportion = 1 - (target_sfreq / source_sfreq)
     freq_downsample = DownsampleCollectionTransformer(
         downsample_by="frequency", source_sfreq=source_sfreq, target_sfreq=target_sfreq
@@ -61,8 +44,65 @@ def test_downsample_series(X, source_sfreq, target_sfreq, X_expected):
     assert isinstance(X_freq_downsample, list)
     assert isinstance(X_prop_downsample, list)
     for idx in range(2):
-        np.testing.assert_array_equal(X_freq_downsample[idx], X_expected[idx])
-        np.testing.assert_array_equal(X_prop_downsample[idx], X_expected[idx])
+        assert X_freq_downsample[idx].shape[-1] == n_timepoints_expected[idx]
+        assert X_prop_downsample[idx].shape[-1] == n_timepoints_expected[idx]
+        assert X_freq_downsample[idx].shape[:-1] == X[idx].shape[:-1]
+        assert X_prop_downsample[idx].shape[:-1] == X[idx].shape[:-1]
+
+
+@pytest.mark.parametrize(
+    "kwargs, n_timepoints_expected",
+    [
+        ({"downsample_by": "proportion", "proportion": 0.1}, 900),
+        ({"downsample_by": "proportion", "proportion": 0.6}, 400),
+        ({"downsample_by": "proportion", "proportion": 0.5}, 500),
+        ({"downsample_by": "frequency", "source_sfreq": 250, "target_sfreq": 100}, 400),
+        ({"downsample_by": "frequency", "source_sfreq": 250, "target_sfreq": 125}, 500),
+        ({"downsample_by": "frequency", "source_sfreq": 10, "target_sfreq": 3}, 300),
+    ],
+)
+def test_downsample_non_integer_ratio_shape(kwargs, n_timepoints_expected):
+    """Test the output length matches the requested ratio (#171)."""
+    X = np.zeros((2, 3, 1000))
+    X_downsampled = DownsampleCollectionTransformer(**kwargs).fit_transform(X)
+    assert X_downsampled.shape == (2, 3, n_timepoints_expected)
+
+
+def test_downsample_non_integer_ratio_values():
+    """Test a non-integer ratio resamples a slow sine onto the new time grid."""
+    source_sfreq, target_sfreq, n_timepoints = 250, 100, 2500
+    signal_freq = 2.0  # Hz, far below the new Nyquist frequency of 50 Hz
+    t_source = np.arange(n_timepoints) / source_sfreq
+    X = np.sin(2 * np.pi * signal_freq * t_source).reshape(1, 1, -1)
+
+    X_downsampled = DownsampleCollectionTransformer(
+        downsample_by="frequency", source_sfreq=source_sfreq, target_sfreq=target_sfreq
+    ).fit_transform(X)
+
+    t_target = np.arange(X_downsampled.shape[-1]) / target_sfreq
+    expected = np.sin(2 * np.pi * signal_freq * t_target)
+    # ignore filter edge effects at both ends
+    inner = slice(50, -50)
+    np.testing.assert_allclose(X_downsampled[0, 0, inner], expected[inner], atol=1e-2)
+
+
+def test_downsample_integer_ratio_antialiasing():
+    """Test integer-ratio downsampling suppresses content above the target Nyquist."""
+    source_sfreq, target_sfreq = 200.0, 100.0
+    n_timepoints = 4000
+    # 70 Hz is below source Nyquist (100 Hz) but above target Nyquist (50 Hz)
+    signal_freq = 70.0
+    t_source = np.arange(n_timepoints) / source_sfreq
+    X = np.sin(2 * np.pi * signal_freq * t_source).reshape(1, 1, -1)
+
+    X_downsampled = DownsampleCollectionTransformer(
+        downsample_by="frequency", source_sfreq=source_sfreq, target_sfreq=target_sfreq
+    ).fit_transform(X)
+
+    # Pure slicing aliases 70 Hz into 30 Hz with near-unit amplitude; anti-aliased
+    # resampling should keep residual high-band energy small.
+    inner = X_downsampled[0, 0, 100:-100]
+    assert np.sqrt(np.mean(inner**2)) < 0.2
 
 
 def test_value_errors():
@@ -85,6 +125,20 @@ def test_value_errors():
         )
 
     with pytest.raises(
+        ValueError, match="source_sfreq and target_sfreq must be positive"
+    ):
+        DownsampleCollectionTransformer(
+            downsample_by="frequency", source_sfreq=0.0, target_sfreq=1.0
+        )
+
+    with pytest.raises(
+        ValueError, match="source_sfreq and target_sfreq must be positive"
+    ):
+        DownsampleCollectionTransformer(
+            downsample_by="frequency", source_sfreq=2.0, target_sfreq=-1.0
+        )
+
+    with pytest.raises(
         ValueError, match="proportion must be provided and between 0-1."
     ):
         DownsampleCollectionTransformer(downsample_by="proportion", proportion=1)
@@ -93,33 +147,3 @@ def test_value_errors():
         ValueError, match="proportion must be provided and between 0-1."
     ):
         DownsampleCollectionTransformer(downsample_by="proportion", proportion=0)
-
-
-def test_unachievable_ratios_raise():
-    """Non-integral decimation ratios must fail loudly at transform time (#171)."""
-    with pytest.raises(ValueError, match="not achievable"):
-        DownsampleCollectionTransformer(
-            downsample_by="proportion", proportion=0.1
-        ).fit_transform(X)
-    with pytest.raises(ValueError, match="not achievable"):
-        DownsampleCollectionTransformer(
-            downsample_by="proportion", proportion=0.6
-        ).fit_transform(X)
-    with pytest.raises(ValueError, match="not achievable"):
-        DownsampleCollectionTransformer(
-            downsample_by="frequency", source_sfreq=250, target_sfreq=100
-        ).fit_transform(X)
-    with pytest.raises(ValueError, match="strictly positive"):
-        DownsampleCollectionTransformer(
-            downsample_by="frequency", source_sfreq=0, target_sfreq=0
-        ).fit_transform(X)
-
-
-def test_achievable_ratios_still_construct():
-    """Integral ratios keep working without error (#171)."""
-    DownsampleCollectionTransformer(
-        downsample_by="proportion", proportion=0.5
-    ).fit_transform(X)
-    DownsampleCollectionTransformer(
-        downsample_by="frequency", source_sfreq=250, target_sfreq=125
-    ).fit_transform(X)
