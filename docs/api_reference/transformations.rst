@@ -30,6 +30,7 @@ Collection
     DownsampleCollectionTransformer
     ERPCovariances
     LogVariance
+    TimeCrop
 
 Channel creation
 ----------------
