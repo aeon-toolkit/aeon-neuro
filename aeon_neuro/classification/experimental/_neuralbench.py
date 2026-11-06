@@ -36,6 +36,26 @@ by people who work on these methods:
    NeuralBench's version changes. It is meant for motor imagery problems,
    since the band is specific to motor imagery.
 
+The classifiers already in aeon-neuro are configured for experiments the same
+way, with an external reference set-up rather than their defaults:
+
+4. ``NeuralBenchDeepClassifier``: any braindecode model with the same recipe
+   as CTNet. NeuralBench trains EEGNet, Deep4Net (aeon-neuro's
+   ``DeepConvNetClassifier``), EEGConformer and ShallowFBCSPNet this way, with
+   braindecode's default settings. These replace runs of aeon-neuro's
+   ``EEGNetClassifier``, ``DeepConvNetClassifier`` and ``EEGConformerClassifier``
+   with their defaults (200 epochs of Adam, no scaling or early stopping).
+5. ``MOABBPipelineClassifier``: MOABB's published pipelines, each with MOABB's
+   band-pass. ``"MDM"`` is ``RiemannianMDMClassifier`` with OAS covariances,
+   ``"CSP_LDA"`` and ``"CSP_SVM"`` are MOABB's CSP pipelines (pyriemann's CSP,
+   which differs from the MNE CSP in ``CSPClassifier``), and ``"XdawnCov_MDM"``
+   is MOABB's ERP pipeline, which replaces ``XDAWNClassifier`` on ERP problems.
+
+Not configured: the foundation models (``CBraModClassifier``,
+``LabramClassifier``), because of pretraining leakage; and
+``RiemannianKNNClassifier``, which has no reference set-up in MOABB or
+NeuralBench.
+
 The NeuralBench settings follow its code (``neuralbench/defaults/config.yaml``,
 ``defaults/eeg/config.yaml``, the classification task configs and
 ``neuralbench/baselines.py``, version 0.4.0) rather than the paper text where
@@ -85,8 +105,10 @@ preprocessing is applied per case and some steps are adapted:
 from __future__ import annotations
 
 __all__ = [
+    "MOABBPipelineClassifier",
     "MOABBTSLRClassifier",
     "NeuralBenchCTNetClassifier",
+    "NeuralBenchDeepClassifier",
     "NeuralBenchPreprocessor",
     "NeuralBenchTSLRClassifier",
 ]
@@ -104,8 +126,6 @@ _H_FREQ = 75.0
 _CLAMP = 20.0
 # NeuralBench caps notch harmonics at 300 Hz.
 _MAX_NOTCH = 301.0
-# CTNet's two pooling layers (8 x 8) need at least this many time points.
-_CTNET_MIN_TIMEPOINTS = 64
 # NeuralBench's LogisticRegressionCV grid (baselines.py).
 _LR_CS = tuple(10.0**k for k in range(-3, 4))
 
@@ -417,26 +437,64 @@ class NeuralBenchTSLRClassifier(BaseClassifier):
         ]
 
 
-class MOABBTSLRClassifier(BaseClassifier):
-    """MOABB's tangent space logistic regression pipeline (``TSLR.yml``).
+# MOABB pipelines (github.com/NeuroTechX/moabb/tree/develop/pipelines) and the
+# paradigms they are run with in MOABB's benchmark.
+MOABB_PIPELINES = {
+    "TSLR": "TSLR.yml: Covariances(oas) -> TangentSpace(riemann) -> "
+    "LogisticRegression(C=1.0)",
+    "MDM": "MDM.yml: Covariances(oas) -> MDM(riemann)",
+    "CSP_LDA": "CSP.yml: Covariances(oas) -> CSP(nfilter=6) -> "
+    "LinearDiscriminantAnalysis(solver=svd)",
+    "CSP_SVM": "CSP_SVM_grid.yml: Covariances(oas) -> CSP -> SVC, grid search over "
+    "nfilter 2-8, C in (0.5, 1, 1.5) and kernel in (rbf, linear)",
+    "XdawnCov_MDM": "XdawnCov_MDM.yml: XdawnCovariances(oas, xdawn_estimator=scm) "
+    "-> MDM",
+}
 
-    Band-pass filters each case to ``fmin``-``fmax`` Hz as MOABB's motor imagery
-    paradigm does (MNE's default IIR filter, a zero-phase 4th-order
-    Butterworth), then fits ``Covariances("oas") -> TangentSpace("riemann") ->
-    LogisticRegression(C=1.0)`` with sklearn's defaults otherwise. There is no
-    resampling, scaling, shrinkage, feature standardisation, class weighting
-    or tuning of ``C``.
 
-    See the module docstring for why this is run alongside
-    ``NeuralBenchTSLRClassifier``.
+class MOABBPipelineClassifier(BaseClassifier):
+    """A MOABB benchmark pipeline, with MOABB's band-pass filter.
 
-    Differences from MOABB: MOABB filters the continuous recording before
-    cutting epochs; here each case is filtered on its own, so the filter's edge
-    effects are larger on short cases. Evaluation follows the archive's splits,
-    not MOABB's within-session cross-validation.
+    Band-pass filters each case to ``fmin``-``fmax`` Hz as MOABB's paradigms do
+    (MNE's default IIR filter, a zero-phase 4th-order Butterworth), then fits
+    one of MOABB's published pipelines with exactly its settings. There is no
+    resampling or scaling, as in MOABB.
+
+    ``pipeline`` is one of:
+
+    - ``"TSLR"``: ``TSLR.yml``, ``Covariances(oas) -> TangentSpace(riemann) ->
+      LogisticRegression(C=1.0)``.
+    - ``"MDM"``: ``MDM.yml``, ``Covariances(oas) -> MDM(riemann)``. This is the
+      same as aeon-neuro's ``RiemannianMDMClassifier`` with
+      ``covariance_estimator="oas"``.
+    - ``"CSP_LDA"``: ``CSP.yml``, ``Covariances(oas) -> CSP(nfilter=6) ->
+      LinearDiscriminantAnalysis(solver="svd")``. This is pyriemann's CSP on
+      covariance matrices, as in MOABB, not MNE's CSP, which aeon-neuro's
+      ``CSPClassifier`` uses.
+    - ``"CSP_SVM"``: ``CSP_SVM_grid.yml``, ``Covariances(oas) -> CSP -> SVC``,
+      tuned by grid search over CSP filters 2-8, ``C`` in (0.5, 1, 1.5) and
+      kernel in (rbf, linear). As in MOABB's evaluations, the search uses
+      3-fold stratified shuffled cross-validation scored by ROC AUC for two
+      classes and accuracy otherwise.
+    - ``"XdawnCov_MDM"``: ``XdawnCov_MDM.yml``,
+      ``XdawnCovariances(oas, xdawn_estimator=scm) -> MDM``, MOABB's best
+      pipeline type for P300/ERP problems. It needs at least two channels.
+
+    MOABB filters with a band chosen by paradigm: 8-32 Hz for motor imagery
+    (the default here), 1-24 Hz for P300/ERP and 7-45 Hz for SSVEP. Set
+    ``fmin`` and ``fmax`` to match the problem.
+
+    See the module docstring for why these are run. Differences from MOABB:
+    MOABB filters the continuous recording before cutting epochs; here each case
+    is filtered on its own, so the filter's edge effects are larger on short
+    cases. Evaluation follows the archive's splits, not MOABB's within-session
+    cross-validation.
 
     Parameters
     ----------
+    pipeline : str, default="TSLR"
+        One of ``"TSLR"``, ``"MDM"``, ``"CSP_LDA"``, ``"CSP_SVM"`` or
+        ``"XdawnCov_MDM"``.
     sfreq : float or None
         Sampling frequency of the input in Hz. Required unless both ``fmin``
         and ``fmax`` are None.
@@ -444,58 +502,123 @@ class MOABBTSLRClassifier(BaseClassifier):
         Low cutoff in Hz. None for no high-pass.
     fmax : float or None, default=32.0
         High cutoff in Hz. None for no low-pass.
-    C : float, default=1.0
-        Inverse regularisation strength of the logistic regression.
+    n_jobs : int, default=1
+        Number of jobs for MDM and the CSP_SVM grid search.
     random_state : int or None, default=None
-        Seed for breaking ties between equally probable classes in predict.
+        Seed for the CSP_SVM inner cross-validation and Platt scaling.
     """
 
     _tags = {
         "X_inner_type": "numpy3D",
         "capability:multivariate": True,
+        "capability:multithreading": True,
         "algorithm_type": "feature",
     }
 
     def __init__(
         self,
+        pipeline: str = "TSLR",
         sfreq: float | None = None,
         fmin: float | None = 8.0,
         fmax: float | None = 32.0,
-        C: float = 1.0,
+        n_jobs: int = 1,
         random_state: int | None = None,
     ):
+        self.pipeline = pipeline
         self.sfreq = sfreq
         self.fmin = fmin
         self.fmax = fmax
-        self.C = C
+        self.n_jobs = n_jobs
         self.random_state = random_state
         super().__init__()
 
     def _fit(self, X, y):
-        from pyriemann.estimation import Covariances
-        from pyriemann.tangentspace import TangentSpace
-        from sklearn.linear_model import LogisticRegression
-        from sklearn.pipeline import make_pipeline
-
-        self.pipeline_ = make_pipeline(
-            Covariances(estimator="oas"),
-            TangentSpace(metric="riemann"),
-            LogisticRegression(C=self.C),
-        ).fit(self._band_pass(X), y)
+        self.pipeline_ = self._build_pipeline().fit(self._band_pass(X), y)
         return self
 
     def _predict_proba(self, X):
+        # columns follow the pipeline's classes_, which are sorted like
+        # self.classes_
         return self.pipeline_.predict_proba(self._band_pass(X))
 
     def _predict(self, X):
-        proba = self._predict_proba(X)
-        rng = check_random_state(self.random_state)
-        return np.array(
-            [
-                self.classes_[int(rng.choice(np.flatnonzero(p == p.max())))]
-                for p in proba
+        # labels come from the pipeline's own predict, as in MOABB; for CSP_SVM
+        # that is the SVM decision function, not the Platt probabilities
+        return self.pipeline_.predict(self._band_pass(X))
+
+    def _build_pipeline(self):
+        from pyriemann.classification import MDM
+        from pyriemann.estimation import Covariances, XdawnCovariances
+        from pyriemann.spatialfilters import CSP
+        from pyriemann.tangentspace import TangentSpace
+        from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.model_selection import GridSearchCV, StratifiedKFold
+        from sklearn.pipeline import Pipeline
+        from sklearn.svm import SVC
+
+        n_jobs = check_n_jobs(self.n_jobs)
+        if self.pipeline == "TSLR":
+            steps = [
+                ("covariances", Covariances(estimator="oas")),
+                ("tangentspace", TangentSpace(metric="riemann")),
+                ("logisticregression", LogisticRegression(C=1.0)),
             ]
-        )
+        elif self.pipeline == "MDM":
+            steps = [
+                ("covariances", Covariances(estimator="oas")),
+                ("mdm", MDM(metric="riemann", n_jobs=n_jobs)),
+            ]
+        elif self.pipeline == "CSP_LDA":
+            steps = [
+                ("covariances", Covariances(estimator="oas")),
+                ("csp", CSP(nfilter=6)),
+                ("lda", LinearDiscriminantAnalysis(solver="svd")),
+            ]
+        elif self.pipeline == "CSP_SVM":
+            pipe = Pipeline(
+                [
+                    ("covariances", Covariances(estimator="oas")),
+                    ("csp", CSP(nfilter=6)),
+                    # probability=True only adds Platt scaling for
+                    # predict_proba; the fitted SVM and predict are unchanged
+                    (
+                        "svc",
+                        SVC(
+                            kernel="linear",
+                            probability=True,
+                            random_state=self.random_state,
+                        ),
+                    ),
+                ]
+            )
+            grid = {
+                "csp__nfilter": [2, 3, 4, 5, 6, 7, 8],
+                "svc__C": [0.5, 1, 1.5],
+                "svc__kernel": ["rbf", "linear"],
+            }
+            return GridSearchCV(
+                pipe,
+                grid,
+                cv=StratifiedKFold(3, shuffle=True, random_state=self.random_state),
+                scoring="roc_auc" if self.n_classes_ == 2 else "accuracy",
+                refit=True,
+                n_jobs=n_jobs,
+            )
+        elif self.pipeline == "XdawnCov_MDM":
+            steps = [
+                (
+                    "xdawncovariances",
+                    XdawnCovariances(estimator="oas", xdawn_estimator="scm"),
+                ),
+                ("mdm", MDM(n_jobs=n_jobs)),
+            ]
+        else:
+            raise ValueError(
+                f"pipeline must be one of {sorted(MOABB_PIPELINES)}, "
+                f"got {self.pipeline!r}."
+            )
+        return Pipeline(steps)
 
     def _band_pass(self, X):
         import mne
@@ -517,17 +640,76 @@ class MOABBTSLRClassifier(BaseClassifier):
     @classmethod
     def _get_test_params(cls, parameter_set="default"):
         return [
-            {"sfreq": 100.0, "random_state": 0},
-            {"fmin": None, "fmax": None, "C": 0.5, "random_state": 0},
+            {"pipeline": "TSLR", "sfreq": 100.0, "random_state": 0},
+            {"pipeline": "MDM", "fmin": None, "fmax": None, "random_state": 0},
+            {"pipeline": "CSP_LDA", "fmin": None, "fmax": None, "random_state": 0},
         ]
 
 
-class NeuralBenchCTNetClassifier(BaseClassifier):
-    """CTNet trained from scratch with NeuralBench's recipe.
+class MOABBTSLRClassifier(MOABBPipelineClassifier):
+    """MOABB's tangent space logistic regression pipeline (``TSLR.yml``).
+
+    ``MOABBPipelineClassifier`` with ``pipeline="TSLR"``: an 8-32 Hz band-pass,
+    then ``Covariances(oas) -> TangentSpace(riemann) -> LogisticRegression(C=1.0)``
+    and nothing else. See ``MOABBPipelineClassifier`` for details.
+
+    Parameters
+    ----------
+    sfreq : float or None
+        Sampling frequency of the input in Hz. Required unless both ``fmin``
+        and ``fmax`` are None.
+    fmin : float or None, default=8.0
+        Low cutoff in Hz. None for no high-pass.
+    fmax : float or None, default=32.0
+        High cutoff in Hz. None for no low-pass.
+    random_state : int or None, default=None
+        Unused by this pipeline; kept so experiment code can set it.
+    """
+
+    _tags = {"capability:multithreading": False}
+
+    def __init__(
+        self,
+        sfreq: float | None = None,
+        fmin: float | None = 8.0,
+        fmax: float | None = 32.0,
+        random_state: int | None = None,
+    ):
+        super().__init__(
+            pipeline="TSLR",
+            sfreq=sfreq,
+            fmin=fmin,
+            fmax=fmax,
+            n_jobs=1,
+            random_state=random_state,
+        )
+
+    @classmethod
+    def _get_test_params(cls, parameter_set="default"):
+        return [
+            {"sfreq": 100.0, "random_state": 0},
+            {"fmin": None, "fmax": None, "random_state": 0},
+        ]
+
+
+# Minimum series length at 120 Hz of the braindecode models NeuralBench trains
+# from scratch, with braindecode's default settings. Shorter cases are padded.
+NEURALBENCH_MIN_TIMEPOINTS = {
+    "CTNet": 64,
+    "Deep4Net": 8,
+    "EEGConformer": 99,
+    "EEGNet": 27,
+    "ShallowFBCSPNet": 99,
+}
+
+
+class NeuralBenchDeepClassifier(BaseClassifier):
+    """A braindecode model trained from scratch with NeuralBench's recipe.
 
     The data is preprocessed with ``NeuralBenchPreprocessor`` (120 Hz, robust
-    scaling, clamping at 20), then CTNet from braindecode is trained through
-    ``BraindecodeClassifier`` with NeuralBench's settings:
+    scaling, clamping at 20), then the braindecode model named by ``model`` is
+    built with braindecode's default settings, as NeuralBench does, and trained
+    through ``BraindecodeClassifier`` with NeuralBench's settings:
 
     - AdamW, learning rate 1e-4, weight decay 0.05;
     - one-cycle schedule with 10% warmup and cosine annealing, stepped per
@@ -537,12 +719,20 @@ class NeuralBenchCTNetClassifier(BaseClassifier):
       (patience 5), keeping the best epoch;
     - cross-entropy with balanced class weights and label smoothing 0.1.
 
+    NeuralBench trains eight task-specific models this way. The five in
+    braindecode are ``"CTNet"``, ``"Deep4Net"`` (aeon-neuro's
+    ``DeepConvNetClassifier``), ``"EEGConformer"``, ``"EEGNet"`` and
+    ``"ShallowFBCSPNet"``. Cases shorter than these models' minimum length
+    (``NEURALBENCH_MIN_TIMEPOINTS``) are zero padded at the end after scaling.
+
     See the module docstring for why this set-up is used and how it differs from
     NeuralBench. Pass subject IDs as ``train_groups`` so the validation split
     is by subject, as in NeuralBench; without them it is by case.
 
     Parameters
     ----------
+    model : str, default="CTNet"
+        Name of a braindecode model.
     sfreq : float
         Sampling frequency of the input in Hz. Required.
     n_epochs : int, default=40
@@ -565,7 +755,7 @@ class NeuralBenchCTNetClassifier(BaseClassifier):
     weight_decay : float, default=0.05
         AdamW weight decay.
     model_params : dict or None, default=None
-        Extra keyword arguments for braindecode's CTNet.
+        Extra keyword arguments for the braindecode model.
     device : str or None, default=None
         Torch device. If None, uses CUDA when available.
     verbose : bool, default=False
@@ -584,6 +774,7 @@ class NeuralBenchCTNetClassifier(BaseClassifier):
 
     def __init__(
         self,
+        model: str = "CTNet",
         sfreq: float | None = None,
         n_epochs: int = 40,
         early_stopping_patience: int = 5,
@@ -597,6 +788,7 @@ class NeuralBenchCTNetClassifier(BaseClassifier):
         verbose: bool = False,
         random_state: int | None = None,
     ):
+        self.model = model
         self.sfreq = sfreq
         self.n_epochs = n_epochs
         self.early_stopping_patience = early_stopping_patience
@@ -617,7 +809,7 @@ class NeuralBenchCTNetClassifier(BaseClassifier):
         self.preprocessor_ = NeuralBenchPreprocessor(sfreq=self.sfreq)
         X = self._pad(self.preprocessor_.fit_transform(X))
         self.classifier_ = BraindecodeClassifier(
-            model="CTNet",
+            model=self.model,
             model_params=self.model_params,
             sfreq=self.preprocessor_.output_sfreq,
             batch_size=self.batch_size,
@@ -647,13 +839,104 @@ class NeuralBenchCTNetClassifier(BaseClassifier):
         X = self._pad(self.preprocessor_.transform(X))
         return self.classifier_.predict(X)
 
-    @staticmethod
-    def _pad(X):
-        """Zero pad cases shorter than CTNet's minimum length at the end."""
-        short = _CTNET_MIN_TIMEPOINTS - X.shape[2]
+    def _pad(self, X):
+        """Zero pad cases shorter than the model's minimum length at the end."""
+        short = NEURALBENCH_MIN_TIMEPOINTS.get(self.model, 0) - X.shape[2]
         if short > 0:
             X = np.pad(X, ((0, 0), (0, 0), (0, short)))
         return X
+
+    @classmethod
+    def _get_test_params(cls, parameter_set="default"):
+        small = {
+            "sfreq": 100.0,
+            "n_epochs": 2,
+            "early_stopping_patience": 1,
+            "validation_size": 0.3,
+            "batch_size": 4,
+            "random_state": 0,
+        }
+        return [
+            {
+                "model": "EEGNet",
+                "model_params": {"F1": 4, "D": 1, "kernel_length": 8},
+                **small,
+            },
+            {
+                "model": "ShallowFBCSPNet",
+                "model_params": {"n_filters_time": 4, "n_filters_spat": 4},
+                **small,
+            },
+        ]
+
+
+class NeuralBenchCTNetClassifier(NeuralBenchDeepClassifier):
+    """CTNet trained from scratch with NeuralBench's recipe.
+
+    ``NeuralBenchDeepClassifier`` with ``model="CTNet"``. See
+    ``NeuralBenchDeepClassifier`` and the module docstring for details.
+
+    Parameters
+    ----------
+    sfreq : float
+        Sampling frequency of the input in Hz. Required.
+    n_epochs : int, default=40
+        Maximum number of epochs.
+    early_stopping_patience : int, default=5
+        Epochs without improvement in validation balanced accuracy before
+        stopping.
+    validation_size : float, default=0.25
+        Fraction of training subjects (or, without ``train_groups``, training
+        cases) held out for early stopping.
+    train_groups : array-like or None, default=None
+        Subject ID of each training case, in the order passed to ``fit``. If
+        given, whole subjects are held out for validation.
+    batch_size : int, default=64
+        Mini-batch size.
+    lr : float, default=1e-4
+        Peak learning rate.
+    weight_decay : float, default=0.05
+        AdamW weight decay.
+    model_params : dict or None, default=None
+        Extra keyword arguments for braindecode's CTNet.
+    device : str or None, default=None
+        Torch device. If None, uses CUDA when available.
+    verbose : bool, default=False
+        If True, print training progress.
+    random_state : int or None, default=None
+        Random seed.
+    """
+
+    def __init__(
+        self,
+        sfreq: float | None = None,
+        n_epochs: int = 40,
+        early_stopping_patience: int = 5,
+        validation_size: float = 0.25,
+        train_groups=None,
+        batch_size: int = 64,
+        lr: float = 1e-4,
+        weight_decay: float = 0.05,
+        model_params: dict | None = None,
+        device: str | None = None,
+        verbose: bool = False,
+        random_state: int | None = None,
+    ):
+        super().__init__(
+            model="CTNet",
+            sfreq=sfreq,
+            n_epochs=n_epochs,
+            early_stopping_patience=early_stopping_patience,
+            validation_size=validation_size,
+            train_groups=train_groups,
+            batch_size=batch_size,
+            lr=lr,
+            weight_decay=weight_decay,
+            model_params=model_params,
+            device=device,
+            verbose=verbose,
+            random_state=random_state,
+        )
 
     @classmethod
     def _get_test_params(cls, parameter_set="default"):

@@ -5,15 +5,19 @@ experiments that use them are finished.
 """
 
 __all__ = [
+    "MOABBPipelineClassifier",
     "MOABBTSLRClassifier",
     "NeuralBenchCTNetClassifier",
+    "NeuralBenchDeepClassifier",
     "NeuralBenchPreprocessor",
     "NeuralBenchTSLRClassifier",
 ]
 
 from aeon_neuro.classification.experimental._neuralbench import (
+    MOABBPipelineClassifier,
     MOABBTSLRClassifier,
     NeuralBenchCTNetClassifier,
+    NeuralBenchDeepClassifier,
     NeuralBenchPreprocessor,
     NeuralBenchTSLRClassifier,
 )

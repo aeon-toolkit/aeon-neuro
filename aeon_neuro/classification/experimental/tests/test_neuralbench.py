@@ -6,10 +6,15 @@ from aeon.testing.data_generation import make_example_3d_numpy
 from aeon.testing.estimator_checking import check_estimator
 
 from aeon_neuro.classification.experimental import (
+    MOABBPipelineClassifier,
     MOABBTSLRClassifier,
     NeuralBenchCTNetClassifier,
+    NeuralBenchDeepClassifier,
     NeuralBenchPreprocessor,
     NeuralBenchTSLRClassifier,
+)
+from aeon_neuro.classification.experimental._neuralbench import (
+    NEURALBENCH_MIN_TIMEPOINTS,
 )
 
 
@@ -191,6 +196,94 @@ def test_moabb_tslr_needs_sfreq_to_filter():
         MOABBTSLRClassifier().fit(X, y)
 
 
+def _moabb_reference(pipeline):
+    """Build the MOABB pipeline directly from pyriemann and sklearn."""
+    from pyriemann.classification import MDM
+    from pyriemann.estimation import Covariances, XdawnCovariances
+    from pyriemann.spatialfilters import CSP
+    from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+    from sklearn.pipeline import make_pipeline
+
+    return {
+        "MDM": make_pipeline(Covariances(estimator="oas"), MDM(metric="riemann")),
+        "CSP_LDA": make_pipeline(
+            Covariances(estimator="oas"),
+            CSP(nfilter=6),
+            LinearDiscriminantAnalysis(solver="svd"),
+        ),
+        "XdawnCov_MDM": make_pipeline(
+            XdawnCovariances(estimator="oas", xdawn_estimator="scm"), MDM()
+        ),
+    }[pipeline]
+
+
+@pytest.mark.parametrize("pipeline", ["MDM", "CSP_LDA", "XdawnCov_MDM"])
+def test_moabb_pipelines_match_moabb(pipeline):
+    """Check each MOABB pipeline equals MNE's IIR band-pass then MOABB's steps."""
+    import mne
+
+    X, y = _covariance_data(n_channels=8)
+    clf = MOABBPipelineClassifier(pipeline=pipeline, sfreq=120.0).fit(X, y)
+    X_f = mne.filter.filter_data(X, 120.0, 8.0, 32.0, method="iir", verbose=False)
+    expected = _moabb_reference(pipeline).fit(X_f, y)
+
+    np.testing.assert_array_equal(clf.predict(X), expected.predict(X_f))
+    np.testing.assert_allclose(clf.predict_proba(X), expected.predict_proba(X_f))
+
+
+def test_moabb_mdm_matches_riemannian_mdm_classifier():
+    """Check MOABB's MDM is aeon-neuro's RiemannianMDMClassifier with OAS."""
+    from aeon_neuro.classification.distance_based import RiemannianMDMClassifier
+
+    X, y = _covariance_data()
+    moabb = MOABBPipelineClassifier(pipeline="MDM", fmin=None, fmax=None)
+    ours = RiemannianMDMClassifier(covariance_estimator="oas")
+    np.testing.assert_array_equal(moabb.fit(X, y).predict(X), ours.fit(X, y).predict(X))
+
+
+def test_moabb_csp_svm_grid_search():
+    """Check CSP_SVM searches MOABB's grid with a 3-fold inner CV."""
+    X, y = _covariance_data(n_channels=8)
+    clf = MOABBPipelineClassifier(pipeline="CSP_SVM", sfreq=120.0, random_state=0)
+    clf.fit(X, y)
+
+    search = clf.pipeline_
+    assert search.cv.n_splits == 3
+    assert search.scoring == "roc_auc"
+    assert len(search.cv_results_["params"]) == 7 * 3 * 2
+    assert clf.predict_proba(X).shape == (len(X), 2)
+    np.testing.assert_array_equal(clf.predict(X), search.predict(clf._band_pass(X)))
+
+
+def test_moabb_unknown_pipeline_raises():
+    """Check an unknown pipeline name raises."""
+    X, y = _covariance_data()
+    with pytest.raises(ValueError, match="pipeline must be one of"):
+        MOABBPipelineClassifier(pipeline="FgMDM", fmin=None, fmax=None).fit(X, y)
+
+
+@pytest.mark.parametrize("model", sorted(NEURALBENCH_MIN_TIMEPOINTS))
+def test_neuralbench_deep_models_fit_short_cases(model):
+    """Check each NeuralBench model trains, padding cases below its minimum."""
+    X, y = make_example_3d_numpy(
+        n_cases=12, n_channels=2, n_timepoints=20, random_state=0
+    )
+    clf = NeuralBenchDeepClassifier(
+        model=model,
+        sfreq=100.0,
+        n_epochs=1,
+        batch_size=4,
+        validation_size=0.3,
+        random_state=0,
+    ).fit(X, y)
+
+    # 20 points at 100 Hz become 24 at 120 Hz, then padded to the minimum
+    assert clf.classifier_.metadata_["n_timepoints"] == max(
+        24, NEURALBENCH_MIN_TIMEPOINTS[model]
+    )
+    assert clf.predict_proba(X).shape == (12, 2)
+
+
 def test_ctnet_uses_neuralbench_settings():
     """Check the CTNet wrapper passes NeuralBench's training recipe."""
     X, y = make_example_3d_numpy(
@@ -245,7 +338,9 @@ def test_ctnet_pads_short_cases():
         NeuralBenchPreprocessor,
         NeuralBenchTSLRClassifier,
         NeuralBenchCTNetClassifier,
+        NeuralBenchDeepClassifier,
         MOABBTSLRClassifier,
+        MOABBPipelineClassifier,
     ],
 )
 def test_aeon_estimator_checks(estimator):
