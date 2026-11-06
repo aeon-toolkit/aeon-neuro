@@ -103,12 +103,20 @@ class _BaseBraindecodeClassifier(BaseClassifier):
     validation_size : float or None, default=None
         If set, hold out this fraction of the training cases, stratified by
         class, as a validation set. Its balanced accuracy is measured after
-        every epoch and the weights from the best epoch are kept. The split is
-        random over cases, not by subject.
+        every epoch and the weights from the best epoch are kept. Without
+        ``train_groups`` the split is random over cases, not by subject.
     early_stopping_patience : int or None, default=None
         With ``validation_size``, stop when validation balanced accuracy has
         not improved for this many epochs. If None, train all ``n_epochs`` and
         keep the best epoch.
+    train_groups : array-like or None, default=None
+        One group label (e.g. subject ID) per training case, in the order of
+        the cases passed to ``fit``. With ``validation_size``, the validation
+        set holds out whole groups: ``validation_size`` of the groups, chosen
+        at random and stratified by class when every group has one class.
+        If None, or if there are fewer than two groups, the split is by case.
+        This is a stopgap until data information can be passed to ``fit``
+        (issue #283).
     """
 
     _tags = {
@@ -136,6 +144,7 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         label_smoothing: float = 0.0,
         validation_size: float | None = None,
         early_stopping_patience: int | None = None,
+        train_groups=None,
     ):
         self.batch_size = batch_size
         self.n_epochs = n_epochs
@@ -151,6 +160,7 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         self.label_smoothing = label_smoothing
         self.validation_size = validation_size
         self.early_stopping_patience = early_stopping_patience
+        self.train_groups = train_groups
 
         super().__init__()
 
@@ -176,6 +186,7 @@ class _BaseBraindecodeClassifier(BaseClassifier):
             torch.cuda.manual_seed_all(seed)
 
         X_val = y_val = None
+        self.validation_groups_ = None
         if self.validation_size is not None:
             X, X_val, y_int, y_val = self._validation_split(X, y_int, rng)
 
@@ -270,7 +281,10 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         return self
 
     def _validation_split(self, X, y_int, rng):
-        """Hold out ``validation_size`` of the cases, stratified if possible."""
+        """Hold out ``validation_size`` of the cases, stratified if possible.
+
+        With ``train_groups``, whole groups are held out instead.
+        """
         from sklearn.model_selection import train_test_split
 
         if not 0 < self.validation_size < 1:
@@ -278,6 +292,40 @@ class _BaseBraindecodeClassifier(BaseClassifier):
                 f"validation_size must be between 0 and 1, got {self.validation_size}."
             )
         seed = int(rng.randint(np.iinfo(np.int32).max))
+        self.validation_groups_ = None
+
+        if self.train_groups is not None:
+            groups = np.asarray(self.train_groups)
+            if groups.shape != (len(X),):
+                raise ValueError(
+                    f"train_groups has {groups.size} entries but fit was given "
+                    f"{len(X)} cases."
+                )
+            unique = np.unique(groups)
+            if len(unique) >= 2:
+                # as NeuralBench's SklearnSplit: choose groups, not cases,
+                # stratified by class when each group has a single class
+                labels = [np.unique(y_int[groups == g]) for g in unique]
+                strata = (
+                    np.array([lab[0] for lab in labels])
+                    if all(len(lab) == 1 for lab in labels)
+                    else None
+                )
+                n_val = min(
+                    max(1, round(self.validation_size * len(unique))), len(unique) - 1
+                )
+                try:
+                    _, val_groups = train_test_split(
+                        unique, test_size=n_val, random_state=seed, stratify=strata
+                    )
+                except ValueError:
+                    _, val_groups = train_test_split(
+                        unique, test_size=n_val, random_state=seed
+                    )
+                is_val = np.isin(groups, val_groups)
+                self.validation_groups_ = np.sort(val_groups)
+                return X[~is_val], X[is_val], y_int[~is_val], y_int[is_val]
+
         try:
             return train_test_split(
                 X,
@@ -604,12 +652,20 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
     validation_size : float or None, default=None
         If set, hold out this fraction of the training cases, stratified by
         class, as a validation set. Its balanced accuracy is measured after
-        every epoch and the weights from the best epoch are kept. The split is
-        random over cases, not by subject.
+        every epoch and the weights from the best epoch are kept. Without
+        ``train_groups`` the split is random over cases, not by subject.
     early_stopping_patience : int or None, default=None
         With ``validation_size``, stop when validation balanced accuracy has
         not improved for this many epochs. If None, train all ``n_epochs`` and
         keep the best epoch.
+    train_groups : array-like or None, default=None
+        One group label (e.g. subject ID) per training case, in the order of
+        the cases passed to ``fit``. With ``validation_size``, the validation
+        set holds out whole groups: ``validation_size`` of the groups, chosen
+        at random and stratified by class when every group has one class.
+        If None, or if there are fewer than two groups, the split is by case.
+        This is a stopgap until data information can be passed to ``fit``
+        (issue #283).
 
     Attributes
     ----------
@@ -623,6 +679,8 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
     best_epoch_ : int or None
         Zero-based epoch whose weights were kept, or None without
         ``validation_size``.
+    validation_groups_ : np.ndarray or None
+        The groups held out for validation, or None if the split was by case.
 
     Notes
     -----
@@ -664,6 +722,7 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
         label_smoothing: float = 0.0,
         validation_size: float | None = None,
         early_stopping_patience: int | None = None,
+        train_groups=None,
     ):
         self.model = model
         self.model_params = model_params
@@ -685,6 +744,7 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
             label_smoothing=label_smoothing,
             validation_size=validation_size,
             early_stopping_patience=early_stopping_patience,
+            train_groups=train_groups,
         )
 
     def _resolve_model(self):

@@ -307,6 +307,81 @@ def test_validation_trains_on_remaining_cases():
     assert batch_sizes == [15, 5]
 
 
+def test_validation_holds_out_whole_groups():
+    """Check train_groups make the validation set whole groups."""
+    X, y = make_example_3d_numpy(
+        n_cases=24, n_channels=2, n_timepoints=128, random_state=0
+    )
+    groups = np.repeat(np.arange(8), 3)
+    clf = BraindecodeClassifier(
+        model="ShallowFBCSPNet",
+        n_epochs=1,
+        validation_size=0.25,
+        train_groups=groups,
+        random_state=0,
+    )
+    batch_sizes = []
+    clf._coerce_logits = _record_batch_sizes(clf._coerce_logits, batch_sizes)
+    clf.fit(X, y)
+
+    # 2 of the 8 groups (6 cases) validate; the other 18 cases train
+    assert len(clf.validation_groups_) == 2
+    assert batch_sizes == [18, 6]
+
+
+def test_group_split_is_stratified_when_groups_have_one_class():
+    """Check subject-level labels give a validation set with every class."""
+    X, _ = make_example_3d_numpy(
+        n_cases=32, n_channels=2, n_timepoints=128, random_state=0
+    )
+    groups = np.repeat(np.arange(8), 4)
+    y = np.repeat([0, 0, 0, 0, 1, 1, 1, 1], 4)
+    for seed in range(5):
+        clf = BraindecodeClassifier(
+            model="ShallowFBCSPNet",
+            n_epochs=1,
+            validation_size=0.25,
+            train_groups=groups,
+            random_state=seed,
+        )
+        clf.fit(X, y)
+        val_labels = {y[groups == g][0] for g in clf.validation_groups_}
+        assert val_labels == {0, 1}
+
+
+def test_single_group_falls_back_to_case_split():
+    """Check one group, or no groups, splits by case."""
+    X, y = make_example_3d_numpy(
+        n_cases=20, n_channels=2, n_timepoints=128, random_state=0
+    )
+    for groups in (np.zeros(20), None):
+        clf = BraindecodeClassifier(
+            model="ShallowFBCSPNet",
+            n_epochs=1,
+            validation_size=0.25,
+            train_groups=groups,
+            random_state=0,
+        )
+        clf.fit(X, y)
+        assert clf.validation_groups_ is None
+        assert len(clf.validation_history_) == 1
+
+
+def test_train_groups_wrong_length_raises():
+    """Check train_groups must give one group per training case."""
+    X, y = make_example_3d_numpy(
+        n_cases=12, n_channels=2, n_timepoints=128, random_state=0
+    )
+    clf = BraindecodeClassifier(
+        model="ShallowFBCSPNet",
+        n_epochs=1,
+        validation_size=0.25,
+        train_groups=np.arange(10),
+    )
+    with pytest.raises(ValueError, match="train_groups has 10 entries"):
+        clf.fit(X, y)
+
+
 def test_balanced_class_weights():
     """Check balanced weights are n_cases / (n_classes * class count)."""
     X, y = make_example_3d_numpy(

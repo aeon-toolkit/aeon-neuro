@@ -213,6 +213,21 @@ def test_ctnet_uses_neuralbench_settings():
     assert defaults.validation_size == 0.25
 
 
+def test_ctnet_validation_by_subject():
+    """Check subject IDs passed to the wrapper give a subject-wise split."""
+    X, y = make_example_3d_numpy(
+        n_cases=16, n_channels=2, n_timepoints=100, random_state=0
+    )
+    params = NeuralBenchCTNetClassifier._get_test_params()
+    params["validation_size"] = 0.25
+    groups = np.repeat(np.arange(8), 2)
+    clf = NeuralBenchCTNetClassifier(train_groups=groups, **params).fit(X, y)
+    assert len(clf.classifier_.validation_groups_) == 2
+
+    clf = NeuralBenchCTNetClassifier(**params).fit(X, y)
+    assert clf.classifier_.validation_groups_ is None
+
+
 def test_ctnet_pads_short_cases():
     """Check cases shorter than CTNet's minimum length are padded to 64."""
     X, y = make_example_3d_numpy(

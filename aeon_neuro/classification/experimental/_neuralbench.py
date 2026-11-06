@@ -64,10 +64,13 @@ preprocessing is applied per case and some steps are adapted:
   differences between subjects; that needs recording IDs, which the archives
   do not have (see issue #283). Scaling over the training set keeps power
   differences between cases, which motor imagery and clinical problems rely on.
-- **Validation split** for CTNet's early stopping is 25% of the training cases,
-  stratified by class, chosen at random. NeuralBench splits by subject (60/20/20
-  train/validation/test). Splitting by case lets the validation set share
-  subjects with the training set, so early stopping may stop late.
+- **Validation split** for CTNet's early stopping holds out 25% of the
+  training subjects when subject IDs are given through ``train_groups``, as
+  NeuralBench does (its 60/20/20 train/validation/test split by subject
+  gives 25% of the non-test subjects). Most archive problems have subject IDs
+  in their sidecar files. Without them, 25% of the training cases are held out
+  at random, stratified by class; the validation set then shares subjects with
+  the training set, so early stopping may stop late.
 - **Windows** are the archive's cases as given, not NeuralBench's task-specific
   windows (for example 4 s from the cue for motor imagery).
 - **Class weights and label smoothing** (balanced weights, smoothing 0.1) are
@@ -535,8 +538,8 @@ class NeuralBenchCTNetClassifier(BaseClassifier):
     - cross-entropy with balanced class weights and label smoothing 0.1.
 
     See the module docstring for why this set-up is used and how it differs from
-    NeuralBench, in particular the validation split, which is by case rather
-    than by subject.
+    NeuralBench. Pass subject IDs as ``train_groups`` so the validation split
+    is by subject, as in NeuralBench; without them it is by case.
 
     Parameters
     ----------
@@ -548,7 +551,13 @@ class NeuralBenchCTNetClassifier(BaseClassifier):
         Epochs without improvement in validation balanced accuracy before
         stopping.
     validation_size : float, default=0.25
-        Fraction of training cases held out for early stopping.
+        Fraction of training subjects (or, without ``train_groups``, training
+        cases) held out for early stopping.
+    train_groups : array-like or None, default=None
+        Subject ID of each training case, in the order passed to ``fit``. If
+        given, whole subjects are held out for validation. If None, or if
+        there is only one subject, cases are held out at random. Set it for
+        each training set; it is not used in predict.
     batch_size : int, default=64
         Mini-batch size.
     lr : float, default=1e-4
@@ -579,6 +588,7 @@ class NeuralBenchCTNetClassifier(BaseClassifier):
         n_epochs: int = 40,
         early_stopping_patience: int = 5,
         validation_size: float = 0.25,
+        train_groups=None,
         batch_size: int = 64,
         lr: float = 1e-4,
         weight_decay: float = 0.05,
@@ -591,6 +601,7 @@ class NeuralBenchCTNetClassifier(BaseClassifier):
         self.n_epochs = n_epochs
         self.early_stopping_patience = early_stopping_patience
         self.validation_size = validation_size
+        self.train_groups = train_groups
         self.batch_size = batch_size
         self.lr = lr
         self.weight_decay = weight_decay
@@ -623,6 +634,7 @@ class NeuralBenchCTNetClassifier(BaseClassifier):
             label_smoothing=0.1,
             validation_size=self.validation_size,
             early_stopping_patience=self.early_stopping_patience,
+            train_groups=self.train_groups,
         )
         self.classifier_.fit(X, y)
         return self
