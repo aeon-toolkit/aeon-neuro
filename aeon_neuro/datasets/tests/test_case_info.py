@@ -109,3 +109,70 @@ def test_shared_info_builders_reject_mismatched_or_segmented_inputs(source, faul
         X = {"count": X[:1], "channels": X[:, :1], "samples": X[:, :, :-1]}[fault]
     with pytest.raises(ValueError):
         make_recording_cases(X, info, labels=[0] * len(X), groups=["a"] * len(X))
+
+
+def _window_dataset(source, operation):
+    X, info = load_bids_dataset(source[0], subjects=["01"])
+    if operation == "filter":
+        X, info = info.process(X, "filter", l_freq=2, h_freq=8, method="iir")
+    elif operation == "crop":
+        X, info = info.process(X, "crop", tmin=1, tmax=7)
+    else:
+        X, info = info.process(X, "channels", names=["C3"])
+    cases = make_fixed_length_cases(
+        X, info, labels=[0], groups=["recording"], window_size=1
+    )
+    for i, row in enumerate(cases):
+        row.update(
+            label=i % 2,
+            group_id=f"trial-{i}",
+            trial_id=f"trial-{i}",
+            participant_id=f"actor-{i // 2}",
+        )
+    return build_classification_dataset(X, info, cases)
+
+
+def test_split_validation_enforces_shared_processing_support(source):
+    """Disjoint displayed windows can still depend on one filtered source row."""
+    from aeon_neuro.datasets import validate_classification_split
+
+    dataset = _window_dataset(source, "filter")
+    with pytest.raises(ValueError, match="Original source support"):
+        validate_classification_split(
+            dataset,
+            {"train": [0, 1, 2, 3], "test": [4, 5, 6, 7]},
+            disjoint_by=[("trial_id",)],
+            source_fields=("recording_id", "start_sample", "stop_sample"),
+        )
+
+
+@pytest.mark.parametrize("strategy", ["auto", "stratified"])
+def test_inner_validation_rejects_known_shared_source_support(source, strategy):
+    """Subject identities alone cannot make a shared filtered input independent."""
+    from aeon_neuro.classification.tests.test_base import _InfoClassifier
+
+    dataset = _window_dataset(source, "filter")
+    classifier = _InfoClassifier().fit(dataset.X, dataset.y, info=dataset.info)
+    with pytest.raises(ValueError, match="Original source support"):
+        classifier.validation_split(
+            dataset.y, strategy=strategy, random_state=0, validation_size=0.5
+        )
+
+
+@pytest.mark.parametrize("operation,origin", [("channels", 0), ("crop", 32)])
+def test_pointwise_recording_operations_keep_exact_independent_case_support(
+    source, operation, origin
+):
+    """Channel selection/cropping must not claim whole-recording time mixing."""
+    from aeon_neuro.datasets import validate_classification_split
+
+    dataset = _window_dataset(source, operation)
+    info = dataset.info
+    assert info.cases[0]["source_support"] == [origin, origin + 32]
+    middle = len(dataset.y) // 2
+    validate_classification_split(
+        dataset,
+        {"train": list(range(middle)), "test": list(range(middle, len(dataset.y)))},
+        disjoint_by=[("trial_id",)],
+        source_fields=("recording_id", "start_sample", "stop_sample"),
+    )

@@ -178,19 +178,24 @@ class BaseEEGClassifier(BaseClassifier):
         subjects cannot cross the training/validation boundary.
         Both partitions must contain all fitting classes. An impossible split
         raises instead of falling back to random cases or changing the protocol.
-        Returned indices refer to the fitting collection, never an outer test set.
+        Known original-source overlap is rejected in either strategy. Stratifying
+        cases does not itself establish trial/group independence when source
+        identity is unavailable. Returned indices refer to the fitting collection,
+        never an outer test set.
         """
         y = np.asarray(y)
         indices = np.arange(len(y))
         if strategy not in ("auto", "subject", "stratified"):
             raise ValueError("Validation strategy must be auto, subject or stratified")
         if strategy == "stratified" or (strategy == "auto" and self.info_ is None):
-            return train_test_split(
+            train, validation = train_test_split(
                 indices,
                 test_size=validation_size,
                 stratify=y,
                 random_state=random_state,
             )
+            self._check_validation_support(train, validation)
+            return train, validation
         if self.info_ is None:
             raise ValueError("Subject validation requires aligned subject information")
         if len(y) != len(self.info_):
@@ -207,4 +212,15 @@ class BaseEEGClassifier(BaseClassifier):
         classes = set(y)
         if set(y[train]) != classes or set(y[validation]) != classes:
             raise ValueError("The declared subject split does not retain all classes")
+        self._check_validation_support(train, validation)
         return train, validation
+
+    def _check_validation_support(self, train, validation):
+        if self.info_ is not None:
+            from aeon_neuro.datasets._classification_split import (
+                _validate_info_source_support,
+            )
+
+            _validate_info_source_support(
+                self.info_, {"train": train, "validation": validation}
+            )

@@ -126,6 +126,9 @@ implicitly acquire dataset-level source context or processing history. Source
 snapshots and reported history do not authenticate arbitrary external array edits
 or establish leakage-free processing. Validate actual evaluation assignments
 separately with the existing [split validation](classification-problems.md).
+When shared provenance is present, split validation also checks its original
+source support; current nonoverlapping window bounds cannot hide dependencies
+from earlier filtering or resampling.
 
 ## Record reported processing
 

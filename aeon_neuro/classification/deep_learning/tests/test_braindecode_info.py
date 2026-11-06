@@ -127,3 +127,42 @@ def test_adapter_checks_prediction_information(method):
     with pytest.raises(ValueError, match="channel names/order"):
         getattr(clf, method)(X, info=wrong)
     assert not hasattr(clf, "_prediction_info")
+
+
+@pytest.mark.parametrize("validation_size,expected_collections", [(None, 1), (0.25, 2)])
+def test_training_reuses_fixed_numpy_partitions_across_epochs(
+    monkeypatch, validation_size, expected_collections
+):
+    """Array-only fitting avoids a full copy and validation is assembled once."""
+    import torch
+
+    class TinyNetwork(torch.nn.Module):
+        def __init__(self, n_chans, n_outputs, n_times):
+            super().__init__()
+            self.linear = torch.nn.Linear(n_chans * n_times, n_outputs)
+
+        def forward(self, values):
+            return self.linear(values.flatten(1))
+
+    X = np.random.default_rng(1).normal(size=(12, 2, 16)).astype(np.float32)
+    y = np.tile([0, 1], 6)
+    collections = []
+    original = torch.from_numpy
+
+    def observe(values):
+        if values.ndim == 3:
+            collections.append(values)
+        return original(values)
+
+    monkeypatch.setattr(torch, "from_numpy", observe)
+    BraindecodeClassifier(
+        model=TinyNetwork,
+        n_epochs=3,
+        batch_size=4,
+        validation_size=validation_size,
+        random_state=1,
+        device="cpu",
+    ).fit(X, y)
+    assert len(collections) == expected_collections
+    if validation_size is None:
+        assert np.shares_memory(collections[0], X)

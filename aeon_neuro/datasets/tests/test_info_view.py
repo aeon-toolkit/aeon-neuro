@@ -213,3 +213,28 @@ def test_explicit_case_participant_is_retained(source):
         "person-2",
     )
     assert dataset.info.recordings[0].metadata["participant_id"] == "sub-01"
+
+
+def test_subject_lookup_does_not_scan_the_complete_case_collection():
+    """A per-case lookup should stay constant-time as a catalogue grows."""
+    X = np.zeros((1000, 1, 4))
+    info = EEGDatasetInfo.from_arrays(
+        X, sfreq=4, channel_names=["sensor"], subjects=list(range(1000))
+    )
+
+    class CountedRows(list):
+        visits = 0
+
+        def __iter__(self):
+            self.visits += len(self)
+            return super().__iter__()
+
+        def __getitem__(self, index):
+            self.visits += 1
+            return super().__getitem__(index)
+
+    rows = CountedRows(info._view["rows"])
+    info._view["rows"] = rows
+    assert info.subject_of(999) == 999
+    # Count accesses instead of timing, which would depend on the test machine.
+    assert rows.visits <= 1

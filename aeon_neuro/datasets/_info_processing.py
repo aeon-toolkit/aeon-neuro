@@ -128,6 +128,9 @@ def _process(X, info, operation, parameters):
     arrays = []
     for array, layout in zip(X, view["layouts"], strict=True):
         result = _apply(array, layout, operation, parameters)
+        if operation in ("filter", "resample"):
+            # Later cases can depend on neighboring samples of this input row.
+            layout["temporal_context"] = "whole_row"
         if not np.isfinite(result).all() or result.shape[-1] == 0:
             raise ValueError("Processing produced empty or nonfinite samples")
         layout["n_samples"] = int(result.shape[-1])

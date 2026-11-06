@@ -129,8 +129,11 @@ filtering a continuous recording have different boundary support; choose the
 stage deliberately. Current sample origins/steps change after cropping or
 resampling. Case `source_support` retains a conservative half-open interval on
 the original recording grid, including context that earlier processing may
-have consumed. This can reject more overlapping splits than a narrower verified
-support map, but it must not declare dependent outputs independent.
+have consumed. Filtering and resampling retain the complete contributing input row. Pointwise
+channel selection, scaling, referencing and crop permit exact case intervals.
+The shared split validator and inner classifier validation check this known
+original support as well as the declared identities. A narrower verified support
+map can permit more splits; dependent outputs must not be declared independent.
 
 The operations fit no learned transform. Learned preprocessing still belongs
 inside the training fold. `with_history` remains available for caller-reported
@@ -182,7 +185,10 @@ information, validation uses stratified cases. For a within-person question,
 explicitly set
 `validation_strategy="stratified"` to retain metadata while stratifying cases.
 `validation_strategy="subject"` requires known subjects even without the default
-inference rule. The best validation-loss weights are restored. `training_indices_`,
+inference rule. Both strategies reject overlapping known original source support.
+Stratification alone does not establish trial/group independence; retain an
+explicit trial-aware outer policy and use independently constructed cases.
+Array-only information has no verified original-source identity to check. The best validation-loss weights are restored. `training_indices_`,
 `validation_indices_`, `validation_policy_`,
 `validation_history_` and one-based `best_epoch_` record the realized split and
 selection. The outer test set is never supplied to this process.
@@ -216,3 +222,21 @@ without the extension remain valid.
 header and data. Comments preserve source context and history; they do not alter
 the data format or prove unchanged array contents. The exported state includes
 source tables and paths, so choose the source context appropriate for the output.
+
+
+## Add classifiers and source types
+
+A new EEG classifier inherits `BaseEEGClassifier` and implements the ordinary
+`_fit(X, y)`, `_predict(X)` and optional `_predict_proba(X)` methods. Read fitted
+`info_`, `sfreq_`, `channel_names_` and `subject_ids_` when needed. The shared base
+checks metadata and calls aeon's lifecycle; models do not reread BIDS sidecars or
+add information parameters to protected methods. New Braindecode architectures
+can use the existing generic adapter, with explicit model input requirements.
+
+Regular multichannel case arrays and explicit units/identities are usable through
+`from_arrays` without BIDS. The native inspector and `RecordingInfo` remain EEG
+and EDF/BDF-specific. Additional modalities need appropriate readers, channel
+types, physical units and geometry policies; names alone must not imply EEG
+positions. Pipeline/CV metadata routing remains a separate integration boundary.
+Keep source acquisition adapters separate from the current case layout and
+estimator contract when adding those capabilities.

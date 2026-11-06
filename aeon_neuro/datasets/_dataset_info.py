@@ -411,7 +411,11 @@ class EEGDatasetInfo:
         index = _integer(index, "subject index")
         if not 0 <= index < len(self):
             raise ValueError("Subject index is outside the information view")
-        return self.participant_ids[index]
+        # A single lookup must not rebuild the identities for every case.
+        rows = (
+            self._view["rows"] if self._view is not None else self._report["recordings"]
+        )
+        return rows[index]["participant_id"]
 
     @property
     def layouts(self):

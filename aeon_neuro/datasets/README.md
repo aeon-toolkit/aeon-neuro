@@ -30,3 +30,8 @@ Source events are retained before scientific selection. Negative/outside onsets
 produce warnings; off-grid events keep an unknown exact sample coordinate.
 Case extraction still requires explicit, exact bounds. EEG JSON inheritance
 uses the same parsed-byte snapshots as the other inspected metadata.
+
+Known original source support is enforced by split validation and classifier
+inner validation. Pointwise recording operations preserve exact case intervals;
+filtering/resampling retain conservative input support. Single-case subject
+lookup indexes the current row directly rather than scanning the collection.

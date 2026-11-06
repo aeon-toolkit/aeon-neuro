@@ -1,6 +1,7 @@
 """Validate current case layouts independently of original acquisition facts."""
 
 from copy import deepcopy
+from math import ceil, floor
 from numbers import Real
 
 import numpy as np
@@ -46,6 +47,7 @@ def _layout(names, rate, units, length, *, reference=None, origin=0.0):
         "reference": reference,
         "source_origin_sample": origin,
         "source_sample_step": 1.0,
+        "temporal_context": "pointwise",
     }
 
 
@@ -84,6 +86,11 @@ def _validate_view(view, sources):
             if source is not None and stop > source["n_samples"]:
                 raise ValueError("Source support exceeds its recording")
             names = layout["channel_names"]
+            if layout.get("temporal_context", "whole_row") not in (
+                "pointwise",
+                "whole_row",
+            ):
+                raise ValueError("Unknown current temporal context")
             if (
                 not isinstance(names, list)
                 or not names
@@ -261,6 +268,18 @@ def _case_view(info, dataset):
                 + row["start_sample"] * input_layout["source_sample_step"]
             )
             layout["source_sample_step"] = input_layout["source_sample_step"]
+            layout["temporal_context"] = input_layout.get(
+                "temporal_context", "whole_row"
+            )
+            if layout["temporal_context"] == "pointwise":
+                # Pointwise operations do not mix times. Map only this case,
+                # unlike filtering/resampling which retain the full input row.
+                first = layout["source_origin_sample"]
+                stop = first + layout["n_samples"] * layout["source_sample_step"]
+                row["source_support"] = [
+                    floor(first),
+                    min(ceil(stop), input_row["source_support"][1]),
+                ]
         layouts.append(layout)
     view = _validate_view(
         {"version": 1, "kind": "cases", "rows": rows, "layouts": layouts}, sources

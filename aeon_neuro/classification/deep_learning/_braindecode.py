@@ -197,7 +197,8 @@ class _BaseBraindecodeClassifier(BaseEEGClassifier):
 
         train = self.training_indices_
         dataset = TensorDataset(
-            torch.from_numpy(X[train]), torch.from_numpy(y_int[train])
+            torch.from_numpy(X if self.validation_size is None else X[train]),
+            torch.from_numpy(y_int if self.validation_size is None else y_int[train]),
         )
         loader = DataLoader(
             dataset,
@@ -206,6 +207,20 @@ class _BaseBraindecodeClassifier(BaseEEGClassifier):
             # Preserve the shared adapter's training batch policy.
             drop_last=True,
         )
+        validation_loader = None
+        if self.validation_size is not None:
+            # The partition is fixed for this fit. Assemble it once rather than
+            # copying all validation arrays again at every training epoch.
+            validation = TensorDataset(
+                torch.from_numpy(X[self.validation_indices_]),
+                torch.from_numpy(y_int[self.validation_indices_]),
+            )
+            validation_loader = DataLoader(
+                validation,
+                batch_size=min(self.batch_size, len(validation)),
+                shuffle=False,
+                drop_last=False,
+            )
 
         self.history_ = []
         self.network_.train()
@@ -231,17 +246,7 @@ class _BaseBraindecodeClassifier(BaseEEGClassifier):
             epoch_loss /= n_seen
             self.history_.append(epoch_loss)
 
-            if self.validation_size is not None:
-                validation = TensorDataset(
-                    torch.from_numpy(X[self.validation_indices_]),
-                    torch.from_numpy(y_int[self.validation_indices_]),
-                )
-                validation_loader = DataLoader(
-                    validation,
-                    batch_size=min(self.batch_size, len(validation)),
-                    shuffle=False,
-                    drop_last=False,
-                )
+            if validation_loader is not None:
                 self.network_.eval()
                 total = 0.0
                 with torch.no_grad():
