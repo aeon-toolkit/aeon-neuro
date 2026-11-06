@@ -1,6 +1,7 @@
 """Deep learning based EEG classifiers."""
 
 __all__ = [
+    "BraindecodeClassifier",
     "CBraModClassifier",
     "DeepConvNetClassifier",
     "EEGConformerClassifier",
@@ -9,6 +10,7 @@ __all__ = [
 ]
 
 
+from aeon_neuro.classification.deep_learning._braindecode import BraindecodeClassifier
 from aeon_neuro.classification.deep_learning._cbramod import CBraModClassifier
 from aeon_neuro.classification.deep_learning._deepconvnet import DeepConvNetClassifier
 from aeon_neuro.classification.deep_learning._eegconformer import (
