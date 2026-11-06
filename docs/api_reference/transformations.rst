@@ -15,6 +15,8 @@ Transformers applied to a single series of shape ``(n_channels, n_timepoints)``.
     :template: class.rst
 
     BandPassSeriesTransformer
+    BandPowerSeriesTransformer
+    EpochSeriesTransformer
 
 Collection transformers
 -----------------------
@@ -44,7 +46,6 @@ Channel selection
     ChannelFilter
     CLeVerHybrid
     CLeVerRank
-    DetachRocket
     DetachRocketChannelSelector
     Riemannian
 
