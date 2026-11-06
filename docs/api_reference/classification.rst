@@ -17,6 +17,7 @@ Deep learning
     :toctree: auto_generated/
     :template: class.rst
 
+    BraindecodeClassifier
     CBraModClassifier
     DeepConvNetClassifier
     EEGConformerClassifier
