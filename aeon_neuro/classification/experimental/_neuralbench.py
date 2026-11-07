@@ -117,6 +117,8 @@ import numpy as np
 from aeon.classification import BaseClassifier
 from aeon.transformations.collection import BaseCollectionTransformer
 from aeon.utils.validation import check_n_jobs
+from pyriemann.spatialfilters import CSP
+from sklearn.base import BaseEstimator, TransformerMixin, clone
 from sklearn.utils import check_random_state
 
 # NeuralBench's EEG extractor settings (defaults/eeg/config.yaml).
@@ -438,18 +440,151 @@ class NeuralBenchTSLRClassifier(BaseClassifier):
 
 
 # MOABB pipelines (github.com/NeuroTechX/moabb/tree/develop/pipelines) and the
-# paradigms they are run with in MOABB's benchmark.
+# paradigms they are run with in MOABB's benchmark. The SSVEP pipelines are not
+# included: they need each case's stimulation frequencies, which the archives do
+# not hold.
 MOABB_PIPELINES = {
+    # motor imagery (8-32 Hz band-pass)
     "TSLR": "TSLR.yml: Covariances(oas) -> TangentSpace(riemann) -> "
     "LogisticRegression(C=1.0)",
+    "TSSVM": "TSSVM_grid.yml: Covariances(oas) -> TangentSpace(riemann) -> SVC, "
+    "grid search over kernel in (rbf, linear), C=1",
+    "TSEN": "EN_grid.yml: Covariances(oas) -> TangentSpace(riemann) -> "
+    "LogisticRegression(elasticnet, saga), grid search over l1_ratio",
     "MDM": "MDM.yml: Covariances(oas) -> MDM(riemann)",
+    "FgMDM": "FgMDM.yml: Covariances(oas) -> FgMDM(riemann)",
     "CSP_LDA": "CSP.yml: Covariances(oas) -> CSP(nfilter=6) -> "
     "LinearDiscriminantAnalysis(solver=svd)",
     "CSP_SVM": "CSP_SVM_grid.yml: Covariances(oas) -> CSP -> SVC, grid search over "
-    "nfilter 2-8, C in (0.5, 1, 1.5) and kernel in (rbf, linear)",
+    "nfilter 2-8 and kernel in (rbf, linear), C=1",
+    "DLCSPauto_shLDA": "regCSP+shLDA.yml: Covariances(oas) -> CSP(nfilter=6) -> "
+    "LinearDiscriminantAnalysis(solver=lsqr, shrinkage=auto)",
+    "TRCSP_LDA": "WTRCSP.py: Covariances(scm) -> TRCSP(nfilter=6) -> "
+    "LinearDiscriminantAnalysis, two classes only",
+    "FBCSP_SVM": "FBCSP.py: filter bank of six 4 Hz bands from 8 to 32 Hz, "
+    "Covariances(oas) -> CSP(nfilter=4) per band -> SelectKBest(mutual "
+    "information, k=10) -> SVC(linear), C tuned over logspace(-2, 2, 10)",
+    "LogVar_LDA": "LogVar.yml: log variance -> LinearDiscriminantAnalysis(svd)",
+    "LogVar_SVM": "LogVar_grid.yml: log variance -> SVC(linear), grid search over "
+    "C in (1, 5, 10, 50, 100)",
+    "AUG_TANG_SVM": "AUG_TANG_SVM_grid.yml: augmented (time-delay embedded) "
+    "signal -> Covariances(cov) -> TangentSpace(riemann) -> SVC, grid search "
+    "over order 1-10, lag 1-10 and kernel in (rbf, linear), C=1",
+    # P300/ERP (1-24 Hz band-pass)
     "XdawnCov_MDM": "XdawnCov_MDM.yml: XdawnCovariances(oas, xdawn_estimator=scm) "
     "-> MDM",
+    "XdawnCov_TS_SVM": "XdawnCov_TS_SVM.yml: XdawnCovariances(oas, "
+    "xdawn_estimator=scm) -> TangentSpace -> SVC, grid search over kernel in "
+    "(rbf, linear), C=10",
+    "ERPCov_MDM": "ERPCov_MDM.yml: ERPCovariances(oas) -> MDM",
+    "xDAWN_LDA": "xDAWN_LDA.yml: Xdawn(oas) -> Vectorizer -> "
+    "LinearDiscriminantAnalysis",
 }
+
+# The bands of MOABB's FilterBankMotorImagery paradigm, used by FBCSP_SVM.
+MOABB_FILTER_BANK = ((8, 12), (12, 16), (16, 20), (20, 24), (24, 28), (28, 32))
+
+
+class _LogVariance(BaseEstimator, TransformerMixin):
+    """MOABB's LogVariance: the log of each channel's variance."""
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        return np.log(np.var(X, -1))
+
+
+class _AugmentedDataset(BaseEstimator, TransformerMixin):
+    """MOABB's AugmentedDataset: stack ``order`` copies lagged by ``lag``.
+
+    Carrara and Papadopoulo (2023), arXiv:2302.04508. The output has ``order``
+    times the channels and ``(order - 1) * lag`` fewer time points.
+    """
+
+    def __init__(self, order=1, lag=1):
+        self.order = order
+        self.lag = lag
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        if self.order == 1:
+            return X
+        return np.concatenate(
+            [
+                X[:, :, p * self.lag : -(self.order - p) * self.lag]
+                for p in range(self.order)
+            ],
+            axis=1,
+        )
+
+
+class _TRCSP(CSP):
+    """MOABB's TRCSP: weighted Tikhonov-regularised CSP, two classes only.
+
+    Lotte and Guan (2011). Copied from ``moabb.pipelines.csp`` so that MOABB is
+    not needed.
+    """
+
+    def __init__(self, nfilter=4, metric="euclid", log=True, alpha=1):
+        super().__init__(nfilter, metric, log)
+        self.alpha = alpha
+
+    def fit(self, X, y):
+        from pyriemann.utils.mean import mean_covariance
+        from scipy import linalg
+
+        X, y = np.asarray(X), np.asarray(y)
+        classes = np.unique(y)
+        if len(classes) != 2:
+            raise ValueError(f"TRCSP only supports 2 classes, got {len(classes)}.")
+        C = np.array([mean_covariance(X[y == c], metric=self.metric) for c in classes])
+        filters, patterns = [], []
+        # as MOABB: filters from C1 against regularised C0, then C0 against C1
+        for a, b in ((C[1], C[0]), (C[0], C[1])):
+            evals, evecs = linalg.eigh(a, b + np.eye(len(b)) * self.alpha)
+            evecs = evecs[:, np.argsort(evals)[::-1]]
+            A = np.linalg.pinv(evecs.T)
+            filters.append(evecs[:, : self.nfilter // 2])
+            patterns.append(A[:, : self.nfilter // 2])
+        self.filters_ = np.concatenate(filters, axis=1).T
+        self.patterns_ = np.concatenate(patterns, axis=1).T
+        return self
+
+
+class _FilterBank(BaseEstimator, TransformerMixin):
+    """MOABB's FilterBank: fit ``estimator`` on each band (the last axis).
+
+    The per-band outputs are concatenated on the feature axis.
+    """
+
+    def __init__(self, estimator):
+        self.estimator = estimator
+
+    def fit(self, X, y=None):
+        self.models_ = [
+            clone(self.estimator).fit(X[..., i], y) for i in range(X.shape[-1])
+        ]
+        return self
+
+    def transform(self, X):
+        return np.concatenate(
+            [m.transform(X[..., i]) for i, m in enumerate(self.models_)], axis=1
+        )
+
+
+class _MutualInfo:
+    """``mutual_info_classif`` with a fixed seed, as a picklable score function."""
+
+    def __init__(self, random_state=None):
+        self.random_state = random_state
+
+    def __call__(self, X, y):
+        from sklearn.feature_selection import mutual_info_classif
+
+        return mutual_info_classif(X, y, random_state=self.random_state)
 
 
 class MOABBPipelineClassifier(BaseClassifier):
@@ -460,25 +595,70 @@ class MOABBPipelineClassifier(BaseClassifier):
     one of MOABB's published pipelines with exactly its settings. There is no
     resampling or scaling, as in MOABB.
 
-    ``pipeline`` is one of:
+    ``pipeline`` is one of the keys of ``MOABB_PIPELINES``, named after
+    MOABB's pipeline files. Motor imagery pipelines:
 
     - ``"TSLR"``: ``TSLR.yml``, ``Covariances(oas) -> TangentSpace(riemann) ->
       LogisticRegression(C=1.0)``.
+    - ``"TSSVM"``: ``TSSVM_grid.yml``, ``Covariances(oas) ->
+      TangentSpace(riemann) -> SVC(C=1)``, kernel tuned over (rbf, linear).
+    - ``"TSEN"``: ``EN_grid.yml``, ``Covariances(oas) -> TangentSpace(riemann)
+      -> LogisticRegression`` with an elastic net penalty (saga solver,
+      ``intercept_scaling=1000``, ``max_iter=1000``), ``l1_ratio`` tuned over
+      (0.2, 0.3, 0.45, 0.65, 0.75).
     - ``"MDM"``: ``MDM.yml``, ``Covariances(oas) -> MDM(riemann)``. This is the
       same as aeon-neuro's ``RiemannianMDMClassifier`` with
       ``covariance_estimator="oas"``.
+    - ``"FgMDM"``: ``FgMDM.yml``, ``Covariances(oas) -> FgMDM(riemann)``.
     - ``"CSP_LDA"``: ``CSP.yml``, ``Covariances(oas) -> CSP(nfilter=6) ->
       LinearDiscriminantAnalysis(solver="svd")``. This is pyriemann's CSP on
       covariance matrices, as in MOABB, not MNE's CSP, which aeon-neuro's
       ``CSPClassifier`` uses.
-    - ``"CSP_SVM"``: ``CSP_SVM_grid.yml``, ``Covariances(oas) -> CSP -> SVC``,
-      tuned by grid search over CSP filters 2-8, ``C`` in (0.5, 1, 1.5) and
-      kernel in (rbf, linear). As in MOABB's evaluations, the search uses
-      3-fold stratified shuffled cross-validation scored by ROC AUC for two
-      classes and accuracy otherwise.
+    - ``"CSP_SVM"``: ``CSP_SVM_grid.yml``, ``Covariances(oas) -> CSP ->
+      SVC(C=1)``, tuned over CSP filters 2-8 and kernel in (rbf, linear).
+    - ``"DLCSPauto_shLDA"``: ``regCSP+shLDA.yml``, ``Covariances(oas) ->
+      CSP(nfilter=6) -> LinearDiscriminantAnalysis(solver="lsqr",
+      shrinkage="auto")``.
+    - ``"TRCSP_LDA"``: ``WTRCSP.py``, ``Covariances(scm) -> TRCSP(nfilter=6)
+      -> LinearDiscriminantAnalysis``, weighted Tikhonov-regularised CSP. Two
+      classes only; more raise a ``ValueError``.
+    - ``"FBCSP_SVM"``: ``FBCSP.py``, a filter bank of MOABB's six 4 Hz bands
+      from 8 to 32 Hz (``MOABB_FILTER_BANK``, which replaces ``fmin`` and
+      ``fmax``), ``Covariances(oas) -> CSP(nfilter=4)`` on each band, then
+      ``SelectKBest(mutual_info_classif, k=10) -> SVC(linear)`` with ``C``
+      tuned over ``logspace(-2, 2, 10)`` by 5-fold cross-validation inside the
+      pipeline, as in MOABB.
+    - ``"LogVar_LDA"``: ``LogVar.yml``, the log variance of each channel ->
+      ``LinearDiscriminantAnalysis(solver="svd")``.
+    - ``"LogVar_SVM"``: ``LogVar_grid.yml``, log variance -> ``SVC(linear)``,
+      ``C`` tuned over (1, 5, 10, 50, 100).
+    - ``"AUG_TANG_SVM"``: ``AUG_TANG_SVM_grid.yml``, the signal augmented with
+      ``order`` copies lagged by ``lag`` (Carrara and Papadopoulo, 2023) ->
+      ``Covariances(cov) -> TangentSpace(riemann) -> SVC(C=1)``, tuned over
+      order 1-10, lag 1-10 and kernel in (rbf, linear): 200 settings, so this
+      is by far the slowest, and an order of 10 makes covariance matrices of
+      ten times the channels.
+
+    P300/ERP pipelines, to run with ``fmin=1`` and ``fmax=24``:
+
     - ``"XdawnCov_MDM"``: ``XdawnCov_MDM.yml``,
       ``XdawnCovariances(oas, xdawn_estimator=scm) -> MDM``, MOABB's best
       pipeline type for P300/ERP problems. It needs at least two channels.
+    - ``"XdawnCov_TS_SVM"``: ``XdawnCov_TS_SVM.yml``,
+      ``XdawnCovariances(oas, xdawn_estimator=scm) -> TangentSpace ->
+      SVC(C=10)``, kernel tuned over (rbf, linear).
+    - ``"ERPCov_MDM"``: ``ERPCov_MDM.yml``, ``ERPCovariances(oas) -> MDM``.
+    - ``"xDAWN_LDA"``: ``xDAWN_LDA.yml``, ``Xdawn(oas) -> Vectorizer ->
+      LinearDiscriminantAnalysis``.
+
+    MOABB's SSVEP pipelines are not included, since they need each case's
+    stimulation frequencies.
+
+    The grid searches (the ``_grid`` files) follow MOABB's evaluations: 3-fold
+    stratified shuffled cross-validation scored by ROC AUC for two classes and
+    accuracy otherwise, then a refit on all the training data. Their SVMs use
+    ``probability=True`` for ``predict_proba``, which adds Platt scaling but
+    leaves the fitted SVM and its predictions unchanged.
 
     MOABB filters with a band chosen by paradigm: 8-32 Hz for motor imagery
     (the default here), 1-24 Hz for P300/ERP and 7-45 Hz for SSVEP. Set
@@ -493,7 +673,7 @@ class MOABBPipelineClassifier(BaseClassifier):
     Parameters
     ----------
     pipeline : str, default="TSLR"
-        One of ``"TSLR"``, ``"MDM"``, ``"CSP_LDA"``, ``"CSP_SVM"`` or
+        A key of ``MOABB_PIPELINES``, e.g. ``"TSLR"``, ``"CSP_LDA"`` or
         ``"XdawnCov_MDM"``.
     sfreq : float or None
         Sampling frequency of the input in Hz. Required unless both ``fmin``
@@ -503,9 +683,10 @@ class MOABBPipelineClassifier(BaseClassifier):
     fmax : float or None, default=32.0
         High cutoff in Hz. None for no low-pass.
     n_jobs : int, default=1
-        Number of jobs for MDM and the CSP_SVM grid search.
+        Number of jobs for MDM, FgMDM and the grid searches.
     random_state : int or None, default=None
-        Seed for the CSP_SVM inner cross-validation and Platt scaling.
+        Seed for the grid search cross-validation, Platt scaling, mutual
+        information and the saga solver.
     """
 
     _tags = {
@@ -547,65 +728,128 @@ class MOABBPipelineClassifier(BaseClassifier):
         return self.pipeline_.predict(self._band_pass(X))
 
     def _build_pipeline(self):
-        from pyriemann.classification import MDM
-        from pyriemann.estimation import Covariances, XdawnCovariances
-        from pyriemann.spatialfilters import CSP
+        from mne.decoding import Vectorizer
+        from pyriemann.classification import MDM, FgMDM
+        from pyriemann.estimation import (
+            Covariances,
+            ERPCovariances,
+            XdawnCovariances,
+        )
+        from pyriemann.spatialfilters import Xdawn
         from pyriemann.tangentspace import TangentSpace
-        from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+        from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
+        from sklearn.feature_selection import SelectKBest
         from sklearn.linear_model import LogisticRegression
         from sklearn.model_selection import GridSearchCV, StratifiedKFold
         from sklearn.pipeline import Pipeline
         from sklearn.svm import SVC
 
         n_jobs = check_n_jobs(self.n_jobs)
-        if self.pipeline == "TSLR":
-            steps = [
-                ("covariances", Covariances(estimator="oas")),
-                ("tangentspace", TangentSpace(metric="riemann")),
-                ("logisticregression", LogisticRegression(C=1.0)),
-            ]
-        elif self.pipeline == "MDM":
-            steps = [
-                ("covariances", Covariances(estimator="oas")),
-                ("mdm", MDM(metric="riemann", n_jobs=n_jobs)),
-            ]
-        elif self.pipeline == "CSP_LDA":
-            steps = [
-                ("covariances", Covariances(estimator="oas")),
-                ("csp", CSP(nfilter=6)),
-                ("lda", LinearDiscriminantAnalysis(solver="svd")),
-            ]
-        elif self.pipeline == "CSP_SVM":
-            pipe = Pipeline(
-                [
-                    ("covariances", Covariances(estimator="oas")),
-                    ("csp", CSP(nfilter=6)),
-                    # probability=True only adds Platt scaling for
-                    # predict_proba; the fitted SVM and predict are unchanged
-                    (
-                        "svc",
-                        SVC(
-                            kernel="linear",
-                            probability=True,
-                            random_state=self.random_state,
-                        ),
-                    ),
-                ]
-            )
-            grid = {
-                "csp__nfilter": [2, 3, 4, 5, 6, 7, 8],
-                "svc__C": [0.5, 1, 1.5],
-                "svc__kernel": ["rbf", "linear"],
-            }
+        rs = self.random_state
+
+        def svc(**kwargs):
+            # probability=True only adds Platt scaling for predict_proba; the
+            # fitted SVM and predict are unchanged
+            return SVC(probability=True, random_state=rs, **kwargs)
+
+        def grid(steps, param_grid):
             return GridSearchCV(
-                pipe,
-                grid,
-                cv=StratifiedKFold(3, shuffle=True, random_state=self.random_state),
+                Pipeline(steps),
+                param_grid,
+                cv=StratifiedKFold(3, shuffle=True, random_state=rs),
                 scoring="roc_auc" if self.n_classes_ == 2 else "accuracy",
                 refit=True,
                 n_jobs=n_jobs,
             )
-        elif self.pipeline == "XdawnCov_MDM":
+
+        def oas():
+            return ("covariances", Covariances(estimator="oas"))
+
+        def ts():
+            return ("tangentspace", TangentSpace(metric="riemann"))
+
+        kernels = ["rbf", "linear"]
+        p = self.pipeline
+        if p == "TSLR":
+            steps = [oas(), ts(), ("logisticregression", LogisticRegression(C=1.0))]
+        elif p == "TSSVM":
+            return grid(
+                [oas(), ts(), ("svc", svc(kernel="linear"))],
+                {"svc__C": [1], "svc__kernel": kernels},
+            )
+        elif p == "TSEN":
+            lr = LogisticRegression(
+                penalty="elasticnet",
+                l1_ratio=0.70,
+                intercept_scaling=1000.0,
+                solver="saga",
+                max_iter=1000,
+                random_state=rs,
+            )
+            return grid(
+                [oas(), ts(), ("logisticregression", lr)],
+                {"logisticregression__l1_ratio": [0.20, 0.30, 0.45, 0.65, 0.75]},
+            )
+        elif p == "MDM":
+            steps = [oas(), ("mdm", MDM(metric="riemann", n_jobs=n_jobs))]
+        elif p == "FgMDM":
+            steps = [oas(), ("fgmdm", FgMDM(metric="riemann", n_jobs=n_jobs))]
+        elif p == "CSP_LDA":
+            steps = [oas(), ("csp", CSP(nfilter=6)), ("lda", LDA(solver="svd"))]
+        elif p == "CSP_SVM":
+            return grid(
+                [oas(), ("csp", CSP(nfilter=6)), ("svc", svc(kernel="linear"))],
+                {
+                    "csp__nfilter": [2, 3, 4, 5, 6, 7, 8],
+                    "svc__C": [1],
+                    "svc__kernel": kernels,
+                },
+            )
+        elif p == "DLCSPauto_shLDA":
+            steps = [
+                oas(),
+                ("csp", CSP(nfilter=6)),
+                ("lda", LDA(solver="lsqr", shrinkage="auto")),
+            ]
+        elif p == "TRCSP_LDA":
+            steps = [
+                ("covariances", Covariances(estimator="scm")),
+                ("trcsp", _TRCSP(nfilter=6)),
+                ("lda", LDA()),
+            ]
+        elif p == "FBCSP_SVM":
+            band = Pipeline([oas(), ("csp", CSP(nfilter=4))])
+            tuned_svc = GridSearchCV(
+                svc(kernel="linear"), {"C": np.logspace(-2, 2, 10)}, n_jobs=n_jobs
+            )
+            steps = [
+                ("filterbank", _FilterBank(band)),
+                ("selectkbest", SelectKBest(_MutualInfo(rs), k=10)),
+                ("gridsearchcv", tuned_svc),
+            ]
+        elif p == "LogVar_LDA":
+            steps = [("logvariance", _LogVariance()), ("lda", LDA(solver="svd"))]
+        elif p == "LogVar_SVM":
+            return grid(
+                [("logvariance", _LogVariance()), ("svc", svc(kernel="linear"))],
+                {"svc__C": [1, 5, 10, 50, 100]},
+            )
+        elif p == "AUG_TANG_SVM":
+            return grid(
+                [
+                    ("augmenteddataset", _AugmentedDataset()),
+                    ("covariances", Covariances(estimator="cov")),
+                    ts(),
+                    ("svc", svc(kernel="rbf")),
+                ],
+                {
+                    "augmenteddataset__order": list(range(1, 11)),
+                    "augmenteddataset__lag": list(range(1, 11)),
+                    "svc__C": [1],
+                    "svc__kernel": kernels,
+                },
+            )
+        elif p == "XdawnCov_MDM":
             steps = [
                 (
                     "xdawncovariances",
@@ -613,10 +857,32 @@ class MOABBPipelineClassifier(BaseClassifier):
                 ),
                 ("mdm", MDM(n_jobs=n_jobs)),
             ]
+        elif p == "XdawnCov_TS_SVM":
+            return grid(
+                [
+                    (
+                        "xdawncovariances",
+                        XdawnCovariances(estimator="oas", xdawn_estimator="scm"),
+                    ),
+                    ("tangentspace", TangentSpace()),
+                    ("svc", svc()),
+                ],
+                {"svc__C": [10], "svc__kernel": kernels},
+            )
+        elif p == "ERPCov_MDM":
+            steps = [
+                ("erpcovariances", ERPCovariances(estimator="oas")),
+                ("mdm", MDM(n_jobs=n_jobs)),
+            ]
+        elif p == "xDAWN_LDA":
+            steps = [
+                ("xdawn", Xdawn(estimator="oas")),
+                ("vectorizer", Vectorizer()),
+                ("lda", LDA()),
+            ]
         else:
             raise ValueError(
-                f"pipeline must be one of {sorted(MOABB_PIPELINES)}, "
-                f"got {self.pipeline!r}."
+                f"pipeline must be one of {sorted(MOABB_PIPELINES)}, got {p!r}."
             )
         return Pipeline(steps)
 
@@ -624,18 +890,24 @@ class MOABBPipelineClassifier(BaseClassifier):
         import mne
 
         X = np.asarray(X, dtype=np.float64)
-        if self.fmin is None and self.fmax is None:
+        if self.pipeline == "FBCSP_SVM":
+            # MOABB's FilterBankMotorImagery: one copy per band, on a last axis
+            bands = MOABB_FILTER_BANK
+        elif self.fmin is None and self.fmax is None:
             return X
+        else:
+            bands = [(self.fmin, self.fmax)]
         if self.sfreq is None or not self.sfreq > 0:
             raise ValueError(f"sfreq must be a positive number, got {self.sfreq!r}.")
-        return mne.filter.filter_data(
-            X,
-            self.sfreq,
-            l_freq=self.fmin,
-            h_freq=self.fmax,
-            method="iir",
-            verbose=False,
-        )
+        filtered = [
+            mne.filter.filter_data(
+                X, self.sfreq, l_freq=low, h_freq=high, method="iir", verbose=False
+            )
+            for low, high in bands
+        ]
+        if self.pipeline == "FBCSP_SVM":
+            return np.stack(filtered, axis=-1)
+        return filtered[0]
 
     @classmethod
     def _get_test_params(cls, parameter_set="default"):
@@ -643,6 +915,7 @@ class MOABBPipelineClassifier(BaseClassifier):
             {"pipeline": "TSLR", "sfreq": 100.0, "random_state": 0},
             {"pipeline": "MDM", "fmin": None, "fmax": None, "random_state": 0},
             {"pipeline": "CSP_LDA", "fmin": None, "fmax": None, "random_state": 0},
+            {"pipeline": "LogVar_LDA", "fmin": None, "fmax": None},
         ]
 
 

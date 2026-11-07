@@ -14,7 +14,10 @@ from aeon_neuro.classification.experimental import (
     NeuralBenchTSLRClassifier,
 )
 from aeon_neuro.classification.experimental._neuralbench import (
+    MOABB_FILTER_BANK,
+    MOABB_PIPELINES,
     NEURALBENCH_MIN_TIMEPOINTS,
+    _AugmentedDataset,
 )
 
 
@@ -250,16 +253,72 @@ def test_moabb_csp_svm_grid_search():
     search = clf.pipeline_
     assert search.cv.n_splits == 3
     assert search.scoring == "roc_auc"
-    assert len(search.cv_results_["params"]) == 7 * 3 * 2
+    assert len(search.cv_results_["params"]) == 7 * 1 * 2
     assert clf.predict_proba(X).shape == (len(X), 2)
     np.testing.assert_array_equal(clf.predict(X), search.predict(clf._band_pass(X)))
+
+
+_ERP_PIPELINES = ("XdawnCov_MDM", "XdawnCov_TS_SVM", "ERPCov_MDM", "xDAWN_LDA")
+
+
+# AUG_TANG_SVM searches 200 settings, too slow here; its augmentation is tested
+# on its own below
+@pytest.mark.parametrize(
+    "pipeline", [p for p in MOABB_PIPELINES if p != "AUG_TANG_SVM"]
+)
+def test_moabb_pipelines_fit_and_predict(pipeline):
+    """Check every MOABB pipeline fits and gives valid probabilities."""
+    X, y = _covariance_data(n_channels=8)
+    band = {"fmin": 1.0, "fmax": 24.0} if pipeline in _ERP_PIPELINES else {}
+    clf = MOABBPipelineClassifier(
+        pipeline=pipeline, sfreq=120.0, random_state=0, **band
+    ).fit(X[:40], y[:40])
+
+    proba = clf.predict_proba(X[40:])
+    assert proba.shape == (20, 2)
+    np.testing.assert_allclose(proba.sum(axis=1), 1.0)
+    # the classes differ in variance, which the ERP pipelines are not built for
+    if pipeline not in _ERP_PIPELINES:
+        assert clf.score(X[40:], y[40:]) > 0.7
+
+
+def test_moabb_augmented_dataset_matches_moabb():
+    """Check the augmentation stacks lagged copies as MOABB's AugmentedDataset."""
+    X = np.arange(2 * 3 * 20, dtype=float).reshape(2, 3, 20)
+    out = _AugmentedDataset(order=3, lag=2).transform(X)
+    expected = np.concatenate([X[:, :, 0:-6], X[:, :, 2:-4], X[:, :, 4:-2]], axis=1)
+    np.testing.assert_array_equal(out, expected)
+    assert _AugmentedDataset(order=1, lag=5).transform(X) is X
+
+
+def test_moabb_trcsp_needs_two_classes():
+    """Check TRCSP_LDA raises on more than two classes, as MOABB's TRCSP does."""
+    X, _ = _covariance_data()
+    y = np.arange(len(X)) % 3
+    clf = MOABBPipelineClassifier(pipeline="TRCSP_LDA", fmin=None, fmax=None)
+    with pytest.raises(ValueError, match="2 classes"):
+        clf.fit(X, y)
+
+
+def test_moabb_fbcsp_uses_the_filter_bank():
+    """Check FBCSP_SVM filters into MOABB's six bands, whatever fmin and fmax."""
+    X, y = _covariance_data(n_channels=8)
+    clf = MOABBPipelineClassifier(
+        pipeline="FBCSP_SVM", sfreq=120.0, fmin=None, fmax=None, random_state=0
+    )
+    banks = clf._band_pass(X)
+    assert banks.shape == (*X.shape, len(MOABB_FILTER_BANK))
+    clf.fit(X, y)
+    assert len(clf.pipeline_.named_steps["filterbank"].models_) == 6
 
 
 def test_moabb_unknown_pipeline_raises():
     """Check an unknown pipeline name raises."""
     X, y = _covariance_data()
     with pytest.raises(ValueError, match="pipeline must be one of"):
-        MOABBPipelineClassifier(pipeline="FgMDM", fmin=None, fmax=None).fit(X, y)
+        MOABBPipelineClassifier(pipeline="NotAPipeline", fmin=None, fmax=None).fit(
+            X, y
+        )
 
 
 @pytest.mark.parametrize("model", sorted(NEURALBENCH_MIN_TIMEPOINTS))
