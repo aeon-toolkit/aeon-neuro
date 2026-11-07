@@ -192,3 +192,21 @@ def test_within_subject_validation_is_an_explicit_choice_with_information():
         clf.validation_split(y, strategy="infer")
     with pytest.raises(ValueError, match="requires"):
         _InfoClassifier().fit(X, y).validation_split(y, strategy="subject")
+
+
+@pytest.mark.parametrize("with_info", [False, True])
+@pytest.mark.parametrize("fault", ["short", "long", "column", "scalar"])
+def test_validation_labels_must_match_the_current_fitting_collection(with_info, fault):
+    """All strategies must stay within the same complete fitting row scope."""
+    X, y, info = data()
+    classifier = _InfoClassifier().fit(X, y, info=info if with_info else None)
+    changed = {
+        "short": y[:-2],
+        "long": np.tile(y, 2),
+        "column": y[:, None],
+        "scalar": np.array(0),
+    }[fault]
+    with pytest.raises(ValueError, match="fitting collection"):
+        classifier.validation_split(
+            changed, strategy="stratified" if with_info else "auto", random_state=0
+        )

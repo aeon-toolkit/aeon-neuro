@@ -120,7 +120,7 @@ leave both inputs unchanged. The supported operations are:
 | `channels` | Explicit ordered `names`; preserves source geometry and reference. |
 | `scale` | Finite nonzero `factor` and explicit output `units`. |
 | `crop` | Optional `tmin`, `tmax`, `start_time`; reuses `TimeCrop` and its exact, half-open sample-grid checks. |
-| `resample` | Positive target `sfreq`; reuses MNE polyphase resampling and records its actual output count. |
+| `resample` | Positive target `sfreq`; uses SciPy polyphase resampling at the requested rate ratio, with reflected boundaries. The count is `ceil(input_count * target_rate / input_rate)`, without changing the sample grid to fit that count. |
 | `filter` | Explicit `l_freq`, `h_freq`, optional `method`; reuses `BandPassSeriesTransformer`. |
 | `reference` | `channels="average"` or an explicit name list; records the contributing channels and requires equal known units. |
 
@@ -134,6 +134,13 @@ channel selection, scaling, referencing and crop permit exact case intervals.
 The shared split validator and inner classifier validation check this known
 original support as well as the declared identities. A narrower verified support
 map can permit more splits; dependent outputs must not be declared independent.
+
+Resampling treats the decimal rates as an exact rational ratio. Its reduced
+integer numerator and denominator must each be at most 100,000, bounding SciPy's
+filter construction. Larger factors raise before resampling instead of silently
+approximating the rate. The history records SciPy's version with the executed
+operation. Current source-sample steps continue to match the requested rate,
+including when the output count requires rounding up.
 
 The operations fit no learned transform. Learned preprocessing still belongs
 inside the training fold. `with_history` remains available for caller-reported
@@ -186,6 +193,10 @@ explicitly set
 `validation_strategy="stratified"` to retain metadata while stratifying cases.
 `validation_strategy="subject"` requires known subjects even without the default
 inference rule. Both strategies reject overlapping known original source support.
+Both also check that labels match the fitting row count and that every fitting
+class remains on each side. Stratification can lose a rare class through rounding;
+such a realized split raises before network construction, without retrying seeds
+or changing the requested validation fraction.
 Stratification alone does not establish trial/group independence; retain an
 explicit trial-aware outer policy and use independently constructed cases.
 Array-only information has no verified original-source identity to check. The best validation-loss weights are restored. `training_indices_`,

@@ -36,6 +36,12 @@ inner validation. Pointwise recording operations preserve exact case intervals;
 filtering/resampling retain conservative input support. Single-case subject
 lookup indexes the current row directly rather than scanning the collection.
 
+Resampling executes the requested rational rate ratio through SciPy, keeping
+the source grid independent of output-count rounding. Reduced factors above
+100,000 are rejected before filter allocation. Inner validation checks class
+coverage on both sides of stratified and subject-based splits; a rare class
+lost through rounding blocks fitting instead of changing the declared split.
+
 ## Authored definitions and planning
 
 `load_classification_problem` constructs cases from loaded arrays, descriptors

@@ -166,3 +166,34 @@ def test_training_reuses_fixed_numpy_partitions_across_epochs(
     assert len(collections) == expected_collections
     if validation_size is None:
         assert np.shares_memory(collections[0], X)
+
+
+@pytest.mark.parametrize("validation_size", [0.2, 0.8])
+@pytest.mark.parametrize("with_info", [False, True])
+def test_stratified_validation_rejects_missing_classes_before_building_network(
+    monkeypatch, validation_size, with_info
+):
+    """Rounded stratification can lose a rare class on either side of a split."""
+    X = np.zeros((100, 1, 4), dtype=np.float32)
+    y = np.array([0] * 98 + [1] * 2)
+    info = (
+        EEGDatasetInfo.from_arrays(
+            X, sfreq=100, channel_names=["C3"], subjects=["one"] * len(X)
+        )
+        if with_info
+        else None
+    )
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("Network built before checking validation class coverage")
+
+    monkeypatch.setattr(BraindecodeClassifier, "_build_network", unexpected)
+    classifier = BraindecodeClassifier(
+        validation_strategy="stratified" if with_info else "auto",
+        validation_size=validation_size,
+        n_epochs=1,
+        random_state=0,
+        device="cpu",
+    )
+    with pytest.raises(ValueError, match="all fitting classes"):
+        classifier.fit(X, y, info=info)

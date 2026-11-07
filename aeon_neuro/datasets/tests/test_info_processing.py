@@ -1,6 +1,7 @@
 """Check executed operations against independent arrays and source coordinates."""
 
 import json
+from math import ceil
 
 import numpy as np
 import pytest
@@ -201,3 +202,71 @@ def test_derived_event_column_collision_is_rejected_without_rewriting_source(sou
     with pytest.raises(ValueError, match="acquisition_event"):
         _event_dataset(Y, changed)
     assert info.events[0]["acquisition_event"] == "original-source-value"
+
+
+@pytest.mark.parametrize(
+    "length,rate,target,up,down",
+    [
+        (101, 100, 64, 16, 25),
+        (102, 100, 64, 16, 25),
+        (101, 64, 100, 25, 16),
+        (101, 250.5, 128, 256, 501),
+    ],
+)
+def test_resampling_preserves_requested_sample_grid(length, rate, target, up, down):
+    """Rounding the output length must not change the executed sampling ratio."""
+    from scipy.signal import resample_poly
+
+    X = np.arange(length, dtype=float)[None, None, :]
+    info = EEGDatasetInfo.from_arrays(X, sfreq=rate, channel_names=["C3"])
+    output, changed = info.process(X, "resample", sfreq=target)
+    expected = resample_poly(X, up, down, axis=-1, padtype="reflect")
+    np.testing.assert_array_equal(output, expected)
+    assert output.shape[-1] == ceil(length * up / down)
+    assert changed.sfreq == target
+    assert changed.layouts[0]["source_sample_step"] == rate / target
+    assert changed.cases[0]["source_support"] == [0, length]
+    restored = EEGDatasetInfo(json.loads(json.dumps(changed.to_dict())))
+    restored.validate_layout(output)
+
+
+def test_resampled_recording_event_cases_and_crops_follow_original_grid(source):
+    """Later event extraction must consume the same samples as the stored map."""
+    from scipy.signal import resample_poly
+
+    from aeon_neuro.datasets import build_classification_dataset, make_event_cases
+
+    X, info = load_bids_dataset(source[0])
+    X, info = info.process(X, "crop", tmin=0.5, tmax=7.53125)
+    assert X.shape[-1] == 225
+    original = resample_poly(X, 5, 8, axis=-1, padtype="reflect")
+    X, info = info.process(X, "resample", sfreq=20)
+    cases = make_event_cases(X, info, info.events_for_cases(), tmin=0.1, tmax=0.5)
+    dataset = build_classification_dataset(X, info, cases)
+    np.testing.assert_array_equal(dataset.X[0], original[0, :, 12:20])
+    current = dataset.info
+    assert current.layouts[0]["source_origin_sample"] == pytest.approx(35.2)
+    assert current.layouts[0]["source_sample_step"] == 1.6
+    output, cropped = current.process(dataset.X, "crop", tmin=0.1, tmax=0.3)
+    np.testing.assert_array_equal(output[0], original[0, :, 14:18])
+    assert cropped.layouts[0]["source_origin_sample"] == pytest.approx(38.4)
+    assert cropped.cases[0]["source_support"] == [0, 256]
+    assert cropped.history[-2]["parameters"]["backend_versions"]["scipy"]
+
+
+def test_large_resampling_ratio_fails_before_allocating_a_filter(monkeypatch):
+    """Unusual rates must not cause unbounded polyphase filter construction."""
+    import scipy.signal
+
+    X = np.zeros((1, 1, 101))
+    info = EEGDatasetInfo.from_arrays(X, sfreq=100, channel_names=["C3"])
+    before = info.to_dict()
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("Filter allocated before checking the rate ratio")
+
+    monkeypatch.setattr(scipy.signal, "resample_poly", unexpected)
+    with pytest.raises(ValueError, match="rate ratio"):
+        info.process(X, "resample", sfreq=64.000001)
+    np.testing.assert_array_equal(X, np.zeros_like(X))
+    assert info.to_dict() == before

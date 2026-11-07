@@ -1,6 +1,7 @@
 """Execute bounded EEG operations while preserving source and current layouts."""
 
 from copy import deepcopy
+from fractions import Fraction
 from importlib.metadata import version
 from numbers import Real
 
@@ -85,11 +86,25 @@ def _apply(array, layout, operation, parameters):
         layout["source_origin_sample"] += start * layout["source_sample_step"]
         return result
     if operation == "resample":
-        from mne.filter import resample
+        from scipy.signal import resample_poly
 
         target = _positive(parameters["sfreq"], "resampling frequency")
-        result = resample(
-            array.astype(float), up=target, down=rate, method="polyphase", verbose=False
+        # Preserve the rate ratio, not the rounded output-count ratio used by
+        # MNE's polyphase wrapper. Decimal rates avoid binary-float denominators.
+        ratio = Fraction(str(target)) / Fraction(str(rate))
+        # SciPy's default filter length grows with the largest reduced factor.
+        # Bound that work instead of approximating the requested sample grid.
+        if max(ratio.numerator, ratio.denominator) > 100_000:
+            raise ValueError(
+                "Resampling rate ratio requires factors above 100000; "
+                "choose rates with smaller reduced integer factors"
+            )
+        result = resample_poly(
+            array.astype(float),
+            ratio.numerator,
+            ratio.denominator,
+            axis=-1,
+            padtype="reflect",
         )
         layout["sampling_frequency"] = target
         layout["source_sample_step"] *= rate / target
@@ -147,7 +162,10 @@ def _process(X, info, operation, parameters):
             "input_layouts": before,
             "output_layouts": view["layouts"],
             "support_policy": "conservative original input interval per row",
-            "backend_versions": {name: version(name) for name in ("numpy", "mne")},
+            "backend_versions": {
+                name: version(name)
+                for name in ("numpy", "scipy" if operation == "resample" else "mne")
+            },
         },
         implementation="aeon_neuro.datasets.EEGDatasetInfo.process",
         version=__version__,
