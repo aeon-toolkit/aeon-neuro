@@ -14,8 +14,14 @@ __all__ = [
     "make_event_cases",
     "validate_group_split",
     "validate_classification_split",
+    "inspect_bids_eeg",
+    "open_bids_eeg_recording",
+    "EEGDatasetInfo",
+    "RecordingInfo",
+    "load_bids_dataset",
 ]
 
+from aeon_neuro.datasets._bids_input import inspect_bids_eeg, open_bids_eeg_recording
 from aeon_neuro.datasets._bids_prepare import BIDSPreparationError
 from aeon_neuro.datasets._classification import (
     ClassificationDataset,
@@ -27,6 +33,11 @@ from aeon_neuro.datasets._classification import (
 )
 from aeon_neuro.datasets._classification_split import validate_classification_split
 from aeon_neuro.datasets._data_loaders import load_eeg_classification
+from aeon_neuro.datasets._dataset_info import (
+    EEGDatasetInfo,
+    RecordingInfo,
+    load_bids_dataset,
+)
 from aeon_neuro.datasets._openneuro import fetch_openneuro_dataset
 from aeon_neuro.datasets._single_problem_loaders import (
     load_kdd_example,

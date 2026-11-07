@@ -7,10 +7,11 @@ from __future__ import annotations
 __all__ = ["RiemannianMDMClassifier", "RiemannianKNNClassifier"]
 
 import numpy as np
-from aeon.classification import BaseClassifier
+
+from aeon_neuro.classification.base import BaseEEGClassifier
 
 
-class _BaseRiemannianCovarianceClassifier(BaseClassifier):
+class _BaseRiemannianCovarianceClassifier(BaseEEGClassifier):
     """Base class for pyRiemann covariance-based classifiers.
 
     This wrapper accepts aeon collection data of shape

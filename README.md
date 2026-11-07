@@ -97,6 +97,16 @@ This also makes `aeon-neuro` useful beyond software alone. It is a research scaf
 building stronger baselines, reproducing studies, and understanding where different classes
 of method work well or fail.
 
+## EEG data and side information
+
+Load local BIDS recordings with aligned source metadata, construct explicit
+classification cases, and retain current channels, sampling rate, units and
+processing history through selection and supported processing operations.
+EEG classifiers accept optional aligned information at fitting and prediction;
+plain array-only workflows remain available. See the experimental
+[EEG information guide](docs/eeg-information.md) for the complete workflow,
+subject-separated validation and serialization boundaries.
+
 ## Installation
 
 `aeon-neuro` requires Python 3.9 or later. Full installation instructions are available in the

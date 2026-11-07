@@ -6,16 +6,16 @@ __all__ = ["CSPClassifier"]
 
 import numpy as np
 from aeon.base._base import _clone_estimator
-from aeon.classification import BaseClassifier
 from sklearn.base import BaseEstimator, is_classifier
 
+from aeon_neuro.classification.base import BaseEEGClassifier
 from aeon_neuro.transformations.collection import LogVariance
 from aeon_neuro.transformations.collection.channel_creation import (
     CommonSpatialPatterns,
 )
 
 
-class CSPClassifier(BaseClassifier):
+class CSPClassifier(BaseEEGClassifier):
     """Common Spatial Patterns plus a scikit-learn classifier.
 
     This estimator composes three steps:
