@@ -184,6 +184,8 @@ class BaseEEGClassifier(BaseClassifier):
         never an outer test set.
         """
         y = np.asarray(y)
+        if y.ndim != 1 or len(y) != self.metadata_["n_cases"]:
+            raise ValueError("Validation labels must match the fitting collection")
         indices = np.arange(len(y))
         if strategy not in ("auto", "subject", "stratified"):
             raise ValueError("Validation strategy must be auto, subject or stratified")
@@ -194,24 +196,27 @@ class BaseEEGClassifier(BaseClassifier):
                 stratify=y,
                 random_state=random_state,
             )
-            self._check_validation_support(train, validation)
-            return train, validation
-        if self.info_ is None:
-            raise ValueError("Subject validation requires aligned subject information")
-        if len(y) != len(self.info_):
-            raise ValueError("Validation labels must match the fitting information")
-        subjects = self.subject_ids_
-        if any(subject is None for subject in subjects) or len(set(subjects)) < 2:
-            raise ValueError("Subject validation needs at least two known subjects")
-        splitter = GroupShuffleSplit(
-            n_splits=1,
-            test_size=validation_size,
-            random_state=random_state,
-        )
-        train, validation = next(splitter.split(indices, y, groups=subjects))
-        classes = set(y)
+        else:
+            if self.info_ is None:
+                raise ValueError(
+                    "Subject validation requires aligned subject information"
+                )
+            subjects = self.subject_ids_
+            if any(subject is None for subject in subjects) or len(set(subjects)) < 2:
+                raise ValueError("Subject validation needs at least two known subjects")
+            splitter = GroupShuffleSplit(
+                n_splits=1,
+                test_size=validation_size,
+                random_state=random_state,
+            )
+            train, validation = next(splitter.split(indices, y, groups=subjects))
+        # Stratification only approximates class proportions. Rounding can omit
+        # a rare class from either partition, just as a subject split can.
+        classes = set(self.classes_)
         if set(y[train]) != classes or set(y[validation]) != classes:
-            raise ValueError("The declared subject split does not retain all classes")
+            raise ValueError(
+                "The declared validation split does not retain all fitting classes"
+            )
         self._check_validation_support(train, validation)
         return train, validation
 
