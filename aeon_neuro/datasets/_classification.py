@@ -6,6 +6,30 @@ from numbers import Integral, Real
 
 import numpy as np
 
+# Additional case metadata must not shadow the builder's fields.
+# Keep required names shared with validation so the two contracts stay aligned.
+_CASE_REQUIRED_FIELDS = (
+    "case_id",
+    "recording_id",
+    "start_sample",
+    "stop_sample",
+    "label",
+    "group_id",
+)
+_CASE_RESERVED_FIELDS = frozenset(_CASE_REQUIRED_FIELDS) | {
+    "onset",
+    "included",
+    "exclusion_reason",
+    "channel_names",
+    "output_channel_names",
+    "row",
+    "source_file",
+    "source_sampling_frequency",
+    "source_event",
+    "source_event_row",
+    "event_id",
+}
+
 
 @dataclass
 class ClassificationDataset:
@@ -42,6 +66,13 @@ class ClassificationDataset:
     exclusions: list[dict]
     metadata: dict
 
+    @property
+    def info(self):
+        """Detached case-aligned metadata with current layout and source provenance."""
+        from aeon_neuro.datasets._dataset_info import EEGDatasetInfo
+
+        return EEGDatasetInfo.from_classification(self)
+
 
 def make_recording_cases(X, metadata, *, labels, groups):
     """Describe one classification case per complete recording.
@@ -50,8 +81,8 @@ def make_recording_cases(X, metadata, *, labels, groups):
     ----------
     X : np.ndarray or list of np.ndarray
         Recordings returned by ``load_bids_data``.
-    metadata : list of dict
-        Aligned recording metadata returned by ``load_bids_data``.
+    metadata : list of dict or EEGDatasetInfo
+        Aligned recording descriptors or shared information with current layouts.
     labels : sequence of str or int
         Explicit recording labels, aligned with X. Derive these from the
         appropriate participant or recording attributes before calling.
@@ -80,8 +111,8 @@ def make_fixed_length_cases(
     ----------
     X : np.ndarray or list of np.ndarray
         Recordings returned by ``load_bids_data``.
-    metadata : list of dict
-        Aligned recording metadata returned by ``load_bids_data``.
+    metadata : list of dict or EEGDatasetInfo
+        Aligned recording descriptors or shared information with current layouts.
     labels : sequence of str or int
         One explicit label per recording.
     groups : sequence of str or int
@@ -110,6 +141,20 @@ def make_fixed_length_cases(
     ``included=False`` and ``exclusion_reason`` on rejected windows.
     """
     _, info = _recordings(X, metadata)
+    return _fixed_length_cases(
+        info,
+        labels=labels,
+        groups=groups,
+        window_size=window_size,
+        step_size=step_size,
+        start=start,
+        stop=stop,
+    )
+
+
+def _fixed_length_cases(
+    info, *, labels, groups, window_size, step_size=None, start=0.0, stop=None
+):
     labels, groups = _recording_targets(info, labels, groups)
     step_size = window_size if step_size is None else step_size
     rows = []
@@ -140,8 +185,8 @@ def make_event_cases(X, metadata, events, *, tmin, tmax):
     ----------
     X : np.ndarray or list of np.ndarray
         Recordings returned by ``load_bids_data``.
-    metadata : list of dict
-        Aligned recording metadata returned by ``load_bids_data``.
+    metadata : list of dict or EEGDatasetInfo
+        Aligned recording descriptors or shared information with current layouts.
     events : iterable of dict
         Each row supplies ``recording_id``, ``onset`` (seconds relative to the
         first sample), ``label`` and ``group_id``. Optional fields, including
@@ -167,6 +212,10 @@ def make_event_cases(X, metadata, events, *, tmin, tmax):
     by the recipe. No event column is automatically interpreted as a target.
     """
     _, info = _recordings(X, metadata)
+    return _event_cases(info, events, tmin=tmin, tmax=tmax)
+
+
+def _event_cases(info, events, *, tmin, tmax):
     offsets = {}
     rows = []
     # Validate offsets even when events is empty.
@@ -201,10 +250,13 @@ def build_classification_dataset(X, metadata, cases, *, on_out_of_bounds="raise"
     X : np.ndarray or list of np.ndarray
         Recordings, each with shape (channels, samples), as returned by
         ``load_bids_data``. Input arrays are not modified.
-    metadata : list of dict
+    metadata : list of dict or EEGDatasetInfo
         Aligned recording metadata. Each entry needs ``filepath`` (or an explicit
         unique ``recording_id``), ``channel_names`` and ``sampling_frequency``.
         Other metadata is retained. If supplied, ``n_samples`` must match X.
+        Shared information supplies current descriptors and retains original
+        source/history provenance, making ``result.info`` available without a
+        separate problem-definition format.
     cases : iterable of dict
         Rows from a case helper or a custom recipe. Required fields are
         ``case_id``, ``recording_id``, ``start_sample``, ``stop_sample``, ``label``
@@ -239,32 +291,64 @@ def build_classification_dataset(X, metadata, cases, *, on_out_of_bounds="raise"
     separately. Output signals and metadata do not share mutable state with the
     inputs. Labels and groups must each be uniformly strings or integers.
     """
+    from aeon_neuro.datasets._dataset_info import EEGDatasetInfo, _source_provenance
+
+    shared = metadata if isinstance(metadata, EEGDatasetInfo) else None
+    recordings, info = _recordings(X, metadata)
+    included, excluded, output_channels, output_sfreq = _prepare_cases(
+        info, cases, on_out_of_bounds=on_out_of_bounds
+    )
+    lookup = {item["recording_id"]: (x, item) for x, item in zip(recordings, info)}
+    signals = []
+    for row in included:
+        recording, item = lookup[row["recording_id"]]
+        picks = [item["channel_names"].index(name) for name in row["channel_names"]]
+        # Advanced indexing copies, so callers retain their loaded source arrays.
+        signal = recording[picks, row["start_sample"] : row["stop_sample"]]
+        if not np.isfinite(signal).all():
+            raise ValueError(
+                f"{row['case_id']}: extracted signal contains non-finite values."
+            )
+        signals.append(signal)
+    if all(x.shape == signals[0].shape for x in signals):
+        signals = np.stack(signals)
+    dataset = ClassificationDataset(
+        X=signals,
+        y=_identifiers([row["label"] for row in included], "labels"),
+        groups=_identifiers([row["group_id"] for row in included], "groups"),
+        cases=included,
+        exclusions=excluded,
+        metadata={
+            "recordings": info,
+            "channel_names": output_channels,
+            "sampling_frequency": output_sfreq,
+            "sample_coordinates": "zero-based, stop-exclusive; supplied recordings",
+        },
+    )
+    if shared is not None:
+        dataset.metadata["provenance"] = _source_provenance(
+            shared, "aeon_neuro.datasets.build_classification_dataset"
+        )
+    return dataset
+
+
+def _prepare_cases(info, cases, *, on_out_of_bounds="raise", require_compatible=True):
+    # Validate source bounds and identities from descriptors before any signal
+    # access. Both eager extraction and deferred plans use this same authority.
     if on_out_of_bounds not in {"raise", "exclude"}:
         raise ValueError("on_out_of_bounds must be 'raise' or 'exclude'.")
-    recordings, info = _recordings(X, metadata)
     lookup = {
         item["recording_id"]: (
-            x,
             item,
             {name: i for i, name in enumerate(item["channel_names"])},
         )
-        for x, item in zip(recordings, info)
+        for item in info
     }
-    signals, included, excluded, ids = [], [], [], set()
+    included, excluded, ids = [], [], set()
     output_channels, output_sfreq = None, None
     for candidate in cases:
         row = deepcopy(dict(candidate))
-        _required(
-            row,
-            (
-                "case_id",
-                "recording_id",
-                "start_sample",
-                "stop_sample",
-                "label",
-                "group_id",
-            ),
-        )
+        _required(row, _CASE_REQUIRED_FIELDS)
         case_id = row["case_id"]
         if not isinstance(case_id, str) or not case_id.strip() or case_id in ids:
             raise ValueError(f"case_id must be a unique nonempty string: {case_id!r}.")
@@ -272,7 +356,7 @@ def build_classification_dataset(X, metadata, cases, *, on_out_of_bounds="raise"
         recording_id = row["recording_id"]
         if not isinstance(recording_id, str) or recording_id not in lookup:
             raise ValueError(f"Unknown recording_id: {recording_id!r}.")
-        recording, item, channel_indices = lookup[recording_id]
+        item, channel_indices = lookup[recording_id]
         start = _integer(row["start_sample"], "start_sample")
         stop = _integer(row["stop_sample"], "stop_sample")
         if stop <= start:
@@ -296,7 +380,7 @@ def build_classification_dataset(X, metadata, cases, *, on_out_of_bounds="raise"
         row["source_sampling_frequency"] = item["sampling_frequency"]
         row["source_file"] = item.get("filepath", recording_id)
         row.pop("row", None)
-        if start < 0 or stop > recording.shape[1]:
+        if start < 0 or stop > item["n_samples"]:
             if keep and on_out_of_bounds == "raise":
                 raise ValueError(f"{case_id}: interval is outside recording bounds.")
             if keep:
@@ -317,38 +401,20 @@ def build_classification_dataset(X, metadata, cases, *, on_out_of_bounds="raise"
             )
         if output_channels is None:
             output_channels, output_sfreq = renamed, item["sampling_frequency"]
-        if renamed != output_channels or item["sampling_frequency"] != output_sfreq:
+        if require_compatible and (
+            renamed != output_channels or item["sampling_frequency"] != output_sfreq
+        ):
             raise ValueError(
                 "Included cases must have the same output channel names/order and "
                 "sampling frequency. Select/reorder channels or resample explicitly."
             )
-        picks = [channel_indices[name] for name in names]
-        # Advanced indexing already copies, including for unequal-length output.
-        signal = recording[picks, start:stop]
-        if not np.isfinite(signal).all():
-            raise ValueError(f"{case_id}: extracted signal contains non-finite values.")
         row.update(channel_names=names, output_channel_names=renamed, row=len(included))
         included.append(row)
-        signals.append(signal)
-    if not signals:
+    if not included:
         raise ValueError("No included cases remain; inspect the candidate case table.")
-    y = _identifiers([row["label"] for row in included], "labels")
-    groups = _identifiers([row["group_id"] for row in included], "groups")
-    if all(x.shape == signals[0].shape for x in signals):
-        signals = np.stack(signals)
-    return ClassificationDataset(
-        X=signals,
-        y=y,
-        groups=groups,
-        cases=included,
-        exclusions=excluded,
-        metadata={
-            "recordings": info,
-            "channel_names": output_channels,
-            "sampling_frequency": output_sfreq,
-            "sample_coordinates": "zero-based, stop-exclusive; supplied recordings",
-        },
-    )
+    _identifiers([row["label"] for row in included], "labels")
+    _identifiers([row["group_id"] for row in included], "groups")
+    return included, excluded, output_channels, output_sfreq
 
 
 def validate_group_split(dataset, train_indices, test_indices):
@@ -394,6 +460,13 @@ def validate_group_split(dataset, train_indices, test_indices):
 
 
 def _recordings(X, metadata):
+    from aeon_neuro.datasets._dataset_info import EEGDatasetInfo
+
+    if isinstance(metadata, EEGDatasetInfo):
+        # Resolve current recording layouts once, while callers retain the full
+        # source object for provenance. Case views cannot be resegmented here.
+        metadata.validate_layout(X)
+        metadata = metadata.current_metadata
     if (
         not isinstance(X, (list, tuple, np.ndarray))
         or (isinstance(X, np.ndarray) and X.ndim == 0)
@@ -402,7 +475,7 @@ def _recordings(X, metadata):
         raise ValueError("X must be a nonempty collection of 2D recordings.")
     if len(X) != len(metadata):
         raise ValueError("X and recording metadata must have the same length.")
-    info, ids = [], set()
+    prepared = []
     for recording, entry in zip(X, metadata):
         if (
             not isinstance(recording, np.ndarray)
@@ -411,6 +484,30 @@ def _recordings(X, metadata):
             or recording.dtype.kind not in "fiu"
         ):
             raise ValueError("Each recording must be a nonempty real numeric 2D array.")
+        item = deepcopy(dict(entry))
+        if (
+            "n_samples" in item
+            and _integer(item["n_samples"], "n_samples") != recording.shape[1]
+        ):
+            raise ValueError("n_samples does not match X.")
+        item["n_samples"] = recording.shape[1]
+        prepared.append(item)
+    info = _recording_info(prepared)
+    for recording, item in zip(X, info):
+        if len(item["channel_names"]) != recording.shape[0]:
+            raise ValueError(
+                f"{item['recording_id']}: channel metadata does not match X."
+            )
+    return X, info
+
+
+def _recording_info(metadata):
+    # Inspecting source metadata and checking loaded arrays must use the same
+    # identity/layout rules, without requiring dummy signals for inspection.
+    if not isinstance(metadata, (list, tuple)) or not metadata:
+        raise ValueError("Supply nonempty recording descriptors.")
+    info, ids = [], set()
+    for entry in metadata:
         item = deepcopy(dict(entry))
         _required(item, ("channel_names", "sampling_frequency"))
         recording_id = item.get("recording_id", item.get("filepath"))
@@ -425,8 +522,6 @@ def _recordings(X, metadata):
         ids.add(recording_id)
         item["recording_id"] = recording_id
         item["channel_names"] = _channels(item["channel_names"])
-        if len(item["channel_names"]) != recording.shape[0]:
-            raise ValueError(f"{recording_id}: channel metadata does not match X.")
         rate = item["sampling_frequency"]
         if (
             not isinstance(rate, Real)
@@ -436,14 +531,12 @@ def _recordings(X, metadata):
         ):
             raise ValueError("sampling_frequency must be finite and positive.")
         item["sampling_frequency"] = float(rate)
-        if (
-            "n_samples" in item
-            and _integer(item["n_samples"], "n_samples") != recording.shape[1]
-        ):
-            raise ValueError(f"{recording_id}: n_samples does not match X.")
-        item["n_samples"] = recording.shape[1]
+        _required(item, ("n_samples",))
+        item["n_samples"] = _integer(item["n_samples"], "n_samples")
+        if item["n_samples"] < 1:
+            raise ValueError("n_samples must be positive.")
         info.append(item)
-    return X, info
+    return info
 
 
 def _required(row, keys):

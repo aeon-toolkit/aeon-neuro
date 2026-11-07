@@ -6,16 +6,17 @@ __all__ = ["LabramClassifier"]
 
 import numpy as np
 from aeon.base._base import _clone_estimator
-from aeon.classification import BaseClassifier
 from sklearn.linear_model import RidgeClassifierCV
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils import check_random_state
 
+from aeon_neuro.classification.base import BaseEEGClassifier
+
 _MAX_PATCHES = 16  # temporal embedding slots in the pretrained checkpoint
 
 
-class LabramClassifier(BaseClassifier):
+class LabramClassifier(BaseEEGClassifier):
     """Frozen LaBraM feature extraction followed by a scikit-learn classifier.
 
     The pretrained LaBraM encoder [1]_ from Braindecode is used as a fixed feature
@@ -108,6 +109,11 @@ class LabramClassifier(BaseClassifier):
         """Fit LabramClassifier."""
         import torch
 
+        if self.pretrained and self.sfreq_ is not None and self.sfreq_ != 200:
+            raise ValueError(
+                "Pretrained LaBraM requires 200 Hz; resample the supplied data"
+            )
+
         X = self._pad(X)
         self.device_ = self._resolve_device()
 
@@ -188,6 +194,8 @@ class LabramClassifier(BaseClassifier):
 
         if self.ch_names is not None:
             self.ch_names_ = list(self.ch_names)
+        elif self.channel_names_ is not None:
+            self.ch_names_ = list(self.channel_names_)
         elif self.pretrained:
             raise ValueError("ch_names is required when pretrained=True.")
         else:
