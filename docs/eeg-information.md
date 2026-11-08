@@ -72,3 +72,27 @@ external value changes.
 
 BIDS inspection/loading, estimator integration, processing and training-time
 validation are separate consumers of this metadata contract.
+
+## Optional information in classifiers
+
+EEG classifiers accept keyword-only `info` in `fit`, `predict` and
+`predict_proba`. `BaseEEGClassifier` validates and retains detached fitting
+information while preserving aeon's reset and validation lifecycle. Constructor
+rate/channel conflicts raise. Prediction information must match the fitted
+rate, ordered names and known units. Call-specific prediction information is
+removed after success or failure.
+
+```python
+from aeon_neuro.classification.deep_learning import EEGNetClassifier
+
+clf = EEGNetClassifier(n_epochs=1)
+clf.fit(X, y, info=info)
+probabilities = clf.predict_proba(X, info=info)
+```
+
+Plain arrays, cloning, sklearn pipelines and ordinary CV calls retain their
+interfaces. Automatic metadata forwarding through pipelines/CV is separate.
+Native aeon reexports keep their native interfaces. Information-derived channel
+names alone imply no positions; spatial models or explicit constructor names
+use the existing standard_1005 template policy, recorded in channel_geometry_.
+Measured source electrodes are not silently converted to model geometry.

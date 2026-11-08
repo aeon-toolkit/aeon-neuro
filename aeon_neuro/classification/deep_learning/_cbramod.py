@@ -6,14 +6,15 @@ __all__ = ["CBraModClassifier"]
 
 import numpy as np
 from aeon.base._base import _clone_estimator
-from aeon.classification import BaseClassifier
 from sklearn.linear_model import RidgeClassifierCV
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils import check_random_state
 
+from aeon_neuro.classification.base import BaseEEGClassifier
 
-class CBraModClassifier(BaseClassifier):
+
+class CBraModClassifier(BaseEEGClassifier):
     """Frozen CBraMod feature extraction followed by a scikit-learn classifier.
 
     The pretrained CBraMod encoder [1]_ from Braindecode is used as a fixed
@@ -92,6 +93,11 @@ class CBraModClassifier(BaseClassifier):
     def _fit(self, X: np.ndarray, y: np.ndarray):
         """Fit CBraModClassifier."""
         import torch
+
+        if self.pretrained and self.sfreq_ is not None and self.sfreq_ != 200:
+            raise ValueError(
+                "Pretrained CBraMod requires 200 Hz; resample the supplied data"
+            )
 
         rng = check_random_state(self.random_state)
         torch.manual_seed(int(rng.randint(np.iinfo(np.int32).max)))
