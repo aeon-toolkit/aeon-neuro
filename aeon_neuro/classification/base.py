@@ -86,11 +86,16 @@ class BaseEEGClassifier(BaseClassifier):
 
     def _prediction_context(self, X, info):
         checked = self._validate_info(X, info)
-        if checked is not None and self.info_ is not None:
-            if checked.sfreq != self.info_.sfreq:
+        if checked is not None:
+            # Constructor parameters can change after array-only fitting without
+            # refitting the model. Compare against the retained fitting facts.
+            if self.sfreq_ is not None and checked.sfreq != self.sfreq_:
                 raise ValueError("Prediction sampling frequency differs from fit")
-            if checked.channel_names != self.info_.channel_names:
+            if self.channel_names_ is not None and checked.channel_names != tuple(
+                self.channel_names_
+            ):
                 raise ValueError("Prediction channel names/order differ from fit")
+        if checked is not None and self.info_ is not None:
             # Unknown units remain unknown; known changes cannot be accepted as
             # equivalent physical inputs merely because the shapes still match.
             if any(
