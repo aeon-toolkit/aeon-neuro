@@ -130,6 +130,34 @@ def test_no_info_pipeline_cv_and_fit_estimates_keep_working():
     assert _InfoClassifier().fit_predict(X, y, cv_size=2).shape == (12,)
 
 
+def test_validation_split_uses_subjects_only_within_current_fit_scope():
+    """Inner validation cannot leak subjects or introduce outer held-out cases."""
+    X, y, info = data()
+    fit = np.arange(10)
+    clf = _InfoClassifier().fit(X[fit], y[fit], info=info[fit])
+    train, val = clf.validation_split(y[fit], validation_size=0.4, random_state=1)
+    assert not {info[fit].participant_ids[i] for i in train} & {
+        info[fit].participant_ids[i] for i in val
+    }
+    assert set(train) | set(val) == set(range(10))
+    assert set(clf.subject_ids_).isdisjoint(set(info[10:].participant_ids))
+    ordinary = _InfoClassifier().fit(X, y)
+    train, val = ordinary.validation_split(y, random_state=1)
+    assert set(y[train]) == set(y[val]) == {0, 1}
+
+
+def test_impossible_subject_validation_does_not_fall_back_to_case_splitting():
+    """Missing identities and class-confounded groups require an explicit decision."""
+    X, y, _ = data()
+    for subjects in ([None] * 12, ["one"] * 12, [str(v) for v in y]):
+        info = EEGDatasetInfo.from_arrays(
+            X, sfreq=32, channel_names=["C3", "C4"], subjects=subjects
+        )
+        clf = _InfoClassifier().fit(X, y, info=info)
+        with pytest.raises(ValueError):
+            clf.validation_split(y, random_state=1)
+
+
 @pytest.mark.parametrize("name", ["CBraModClassifier", "LabramClassifier"])
 def test_pretrained_encoder_rate_mismatch_fails_before_loading_weights(
     name, monkeypatch
@@ -146,3 +174,39 @@ def test_pretrained_encoder_rate_mismatch_fails_before_loading_weights(
     X, y, info = data()
     with pytest.raises(ValueError, match="200 Hz"):
         cls(pretrained=True).fit(X, y, info=info)
+
+
+def test_within_subject_validation_is_an_explicit_choice_with_information():
+    """A within-person protocol can retain physical metadata without guessing."""
+    X, y, _ = data()
+    info = EEGDatasetInfo.from_arrays(
+        X, sfreq=32, channel_names=["C3", "C4"], subjects=["one"] * 12
+    )
+    clf = _InfoClassifier().fit(X, y, info=info)
+    with pytest.raises(ValueError, match="two known subjects"):
+        clf.validation_split(y)
+    train, val = clf.validation_split(y, strategy="stratified", random_state=1)
+    assert set(y[train]) == set(y[val]) == {0, 1}
+    assert clf.info_.participant_ids == ("one",) * 12
+    with pytest.raises(ValueError, match="strategy"):
+        clf.validation_split(y, strategy="infer")
+    with pytest.raises(ValueError, match="requires"):
+        _InfoClassifier().fit(X, y).validation_split(y, strategy="subject")
+
+
+@pytest.mark.parametrize("with_info", [False, True])
+@pytest.mark.parametrize("fault", ["short", "long", "column", "scalar"])
+def test_validation_labels_must_match_the_current_fitting_collection(with_info, fault):
+    """All strategies must stay within the same complete fitting row scope."""
+    X, y, info = data()
+    classifier = _InfoClassifier().fit(X, y, info=info if with_info else None)
+    changed = {
+        "short": y[:-2],
+        "long": np.tile(y, 2),
+        "column": y[:, None],
+        "scalar": np.array(0),
+    }[fault]
+    with pytest.raises(ValueError, match="fitting collection"):
+        classifier.validation_split(
+            changed, strategy="stratified" if with_info else "auto", random_state=0
+        )

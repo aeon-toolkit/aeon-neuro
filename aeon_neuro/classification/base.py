@@ -4,6 +4,7 @@ from copy import deepcopy
 
 import numpy as np
 from aeon.classification import BaseClassifier
+from sklearn.model_selection import GroupShuffleSplit, train_test_split
 
 from aeon_neuro.datasets._dataset_info import EEGDatasetInfo
 
@@ -143,3 +144,88 @@ class BaseEEGClassifier(BaseClassifier):
             return super().predict_proba(X)
         finally:
             self.__dict__.pop("_prediction_info", None)
+
+    def validation_split(
+        self, y, *, validation_size=0.2, random_state=None, strategy="auto"
+    ):
+        """Split training rows by subject with info, or stratify without it.
+
+        Parameters
+        ----------
+        y : np.ndarray
+            Labels aligned with the current fitting collection.
+        validation_size : float, default=0.2
+            Fraction of subjects, or stratified cases without information,
+            held out for validation.
+        random_state : int or None, default=None
+            Seed for the declared single split.
+        strategy : {"auto", "subject", "stratified"}, default="auto"
+            Auto holds out subjects with info and stratifies cases without it.
+            Stratified explicitly allows case validation with retained metadata
+            for a within-person question. Subject requires known subject IDs.
+
+        Returns
+        -------
+        train : np.ndarray
+            Training indices relative to the fitting collection.
+        validation : np.ndarray
+            Validation indices relative to the fitting collection.
+
+        Notes
+        -----
+        Only the rows supplied to this fit are eligible. Subject validation needs
+        every subject to be known. With subject validation,
+        subjects cannot cross the training/validation boundary.
+        Both partitions must contain all fitting classes. An impossible split
+        raises instead of falling back to random cases or changing the protocol.
+        Known original-source overlap is rejected in either strategy. Stratifying
+        cases does not itself establish trial/group independence when source
+        identity is unavailable. Returned indices refer to the fitting collection,
+        never an outer test set.
+        """
+        y = np.asarray(y)
+        if y.ndim != 1 or len(y) != self.metadata_["n_cases"]:
+            raise ValueError("Validation labels must match the fitting collection")
+        indices = np.arange(len(y))
+        if strategy not in ("auto", "subject", "stratified"):
+            raise ValueError("Validation strategy must be auto, subject or stratified")
+        if strategy == "stratified" or (strategy == "auto" and self.info_ is None):
+            train, validation = train_test_split(
+                indices,
+                test_size=validation_size,
+                stratify=y,
+                random_state=random_state,
+            )
+        else:
+            if self.info_ is None:
+                raise ValueError(
+                    "Subject validation requires aligned subject information"
+                )
+            subjects = self.subject_ids_
+            if any(subject is None for subject in subjects) or len(set(subjects)) < 2:
+                raise ValueError("Subject validation needs at least two known subjects")
+            splitter = GroupShuffleSplit(
+                n_splits=1,
+                test_size=validation_size,
+                random_state=random_state,
+            )
+            train, validation = next(splitter.split(indices, y, groups=subjects))
+        # Stratification only approximates class proportions. Rounding can omit
+        # a rare class from either partition, just as a subject split can.
+        classes = set(self.classes_)
+        if set(y[train]) != classes or set(y[validation]) != classes:
+            raise ValueError(
+                "The declared validation split does not retain all fitting classes"
+            )
+        self._check_validation_support(train, validation)
+        return train, validation
+
+    def _check_validation_support(self, train, validation):
+        if self.info_ is not None:
+            from aeon_neuro.datasets._classification_split import (
+                _validate_info_source_support,
+            )
+
+            _validate_info_source_support(
+                self.info_, {"train": train, "validation": validation}
+            )

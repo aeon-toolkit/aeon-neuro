@@ -139,3 +139,29 @@ boundaries and ceil(input_count * target_rate / input_rate) output samples. The
 sample grid does not change to fit the rounded count. Reduced numerator and
 denominator above 100,000 raise before filter allocation. Source stats and
 metadata history do not authenticate arbitrary external array edits.
+
+## Optional inner validation and early stopping
+
+BraindecodeClassifier and EEGNetClassifier accept `validation_size`, `patience`
+and `validation_strategy`. The default validation_size=None retains training on
+all supplied rows for every configured epoch and the merged training-batch policy.
+With information, auto validation holds out whole known subjects; without it,
+validation stratifies cases. Explicit stratified validation supports within-person
+questions with retained metadata. Missing subjects, class-confounded partitions
+and known source overlap raise without changing seeds or falling back silently.
+Both partitions must contain every fitting class, even when stratification
+succeeds. Label count and dimensionality must match the fitting collection.
+
+```python
+clf = EEGNetClassifier(
+    n_epochs=20, validation_size=0.2, patience=5, random_state=42,
+)
+clf.fit(X_train, y_train, info=info_train)
+```
+
+Only the collection supplied to fit is split. Realized indices, validation policy,
+loss history, best epoch and restored best weights remain available and survive
+pickling. Default training avoids a redundant full input copy; fixed validation
+tensors are built once per fit. Validation and prediction include every row.
+Subject disjointness cannot override known original signal overlap, and
+stratification alone does not establish independent trials/groups.

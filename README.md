@@ -101,7 +101,8 @@ of method work well or fail.
 
 Describe EEG arrays with optional source metadata, retain aligned row identities
 through selection, save detached metadata, and pass optional information to EEG
-classifiers at fitting and prediction. See the
+classifiers at fitting and prediction. Braindecode models can optionally use
+subject-aware inner validation and early stopping. See the
 experimental [EEG information guide](docs/eeg-information.md).
 
 ## Installation

@@ -145,6 +145,19 @@ def test_split_validation_enforces_shared_processing_support(source):
         )
 
 
+@pytest.mark.parametrize("strategy", ["auto", "stratified"])
+def test_inner_validation_rejects_known_shared_source_support(source, strategy):
+    """Subject identities alone cannot make a shared filtered input independent."""
+    from aeon_neuro.classification.tests.test_base import _InfoClassifier
+
+    dataset = _window_dataset(source, "filter")
+    classifier = _InfoClassifier().fit(dataset.X, dataset.y, info=dataset.info)
+    with pytest.raises(ValueError, match="Original source support"):
+        classifier.validation_split(
+            dataset.y, strategy=strategy, random_state=0, validation_size=0.5
+        )
+
+
 @pytest.mark.parametrize("operation,origin", [("channels", 0), ("crop", 32)])
 def test_pointwise_recording_operations_keep_exact_independent_case_support(
     source, operation, origin
