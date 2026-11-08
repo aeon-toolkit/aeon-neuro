@@ -107,6 +107,9 @@ experimental [EEG information guide](docs/eeg-information.md). Supplied predicti
 information must match retained fitting facts, including known constructor rate
 and channel settings when fitting received plain arrays.
 
+Subject validation accepts string and integer IDs in the same collection while
+keeping distinct identities, such as `1` and `"1"`, in separate groups.
+
 ## Installation
 
 `aeon-neuro` requires Python 3.9 or later. Full installation instructions are available in the

@@ -214,7 +214,14 @@ class BaseEEGClassifier(BaseClassifier):
                 test_size=validation_size,
                 random_state=random_state,
             )
-            train, validation = next(splitter.split(indices, y, groups=subjects))
+            # sklearn sorts group values internally. Encode accepted mixed
+            # integer/text IDs without merging distinct values such as 1 and "1".
+            identities = sorted(
+                set(subjects), key=lambda value: (isinstance(value, str), value)
+            )
+            codes = {subject: index for index, subject in enumerate(identities)}
+            groups = np.asarray([codes[subject] for subject in subjects], dtype=int)
+            train, validation = next(splitter.split(indices, y, groups=groups))
         # Stratification only approximates class proportions. Rounding can omit
         # a rare class from either partition, just as a subject split can.
         classes = set(self.classes_)

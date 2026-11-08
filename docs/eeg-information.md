@@ -169,3 +169,7 @@ pickling. Default training avoids a redundant full input copy; fixed validation
 tensors are built once per fit. Validation and prediction include every row.
 Subject disjointness cannot override known original signal overlap, and
 stratification alone does not establish independent trials/groups.
+
+Subject-based validation preserves the equality of string and integer IDs,
+including mixed collections. Integer `1` and text `"1"` identify different
+subjects; all their rows stay together in the selected partition.

@@ -247,3 +247,30 @@ def test_prediction_info_after_array_fitting_retains_known_and_unknown_facts(
     assert len(result) == len(X)
     assert clf.info_ is None
     assert not hasattr(clf, "_prediction_info")
+
+
+@pytest.mark.parametrize(
+    "subjects",
+    [
+        [0, "one", 2, "three", 4, "five"],
+        [1, "1"],
+    ],
+)
+def test_subject_validation_preserves_mixed_identifier_equality(subjects):
+    """Accepted integer/text identities must remain distinct, disjoint groups."""
+    X = np.random.default_rng(2).normal(size=(2 * len(subjects), 2, 32))
+    y = np.tile([0, 1], len(subjects))
+    aligned = [subject for subject in subjects for _ in range(2)]
+    info = EEGDatasetInfo.from_arrays(
+        X, sfreq=32, channel_names=["C3", "C4"], subjects=aligned
+    )
+    classifier = _InfoClassifier().fit(X, y, info=info)
+    train, validation = classifier.validation_split(
+        y, validation_size=0.5, random_state=0
+    )
+    assert set(train) | set(validation) == set(range(len(X)))
+    assert not {aligned[i] for i in train} & {aligned[i] for i in validation}
+    assert set(y[train]) == set(y[validation]) == {0, 1}
+    again = classifier.validation_split(y, validation_size=0.5, random_state=0)
+    np.testing.assert_array_equal(train, again[0])
+    np.testing.assert_array_equal(validation, again[1])
