@@ -89,6 +89,10 @@ def _apply(array, layout, operation, parameters):
         from scipy.signal import resample_poly
 
         target = _positive(parameters["sfreq"], "resampling frequency")
+        # Reflection needs a neighbor. SciPy can terminate the interpreter for
+        # a singleton input, so reject it before entering the native routine.
+        if array.shape[-1] < 2 and target != rate:
+            raise ValueError("Resampling to a new rate requires at least two samples")
         # Preserve the rate ratio, not the rounded output-count ratio used by
         # MNE's polyphase wrapper. Decimal rates avoid binary-float denominators.
         ratio = Fraction(str(target)) / Fraction(str(rate))

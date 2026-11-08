@@ -50,6 +50,11 @@ source_info = EEGDatasetInfo(
 
 `info.recordings` contains original `RecordingInfo` views. Supplied sidecar rows
 are preserved rather than rewritten to describe external transformations.
+Source participant IDs can be strings, integers or unknown (`None`). Unknowns
+stay on their recording rows, while `dataset.selected_participants` in portable
+state lists only known IDs. Selection recomputes that scope without inferring
+identities or converting integer IDs to strings.
+
 Unknown optional facts remain absent. Names alone make no electrode-position
 claim. `info.participant_ids` and `info.groups` describe current rows;
 `info.participants` retains the full supplied source population.
@@ -84,7 +89,10 @@ removed after success or failure. When fitting uses plain arrays, known rate and
 channel constructor settings are retained as fitting facts too. Changing a
 constructor parameter after fitting does not redefine the layout of the trained
 model; supplied prediction information must still agree with those retained facts.
-Unknown fitting facts remain unknown.
+Unknown fitting facts remain unknown. Pretrained CBraMod and LaBraM require
+200 Hz whenever a rate is supplied, including prediction after plain-array
+fitting. This fitted model requirement is independent of the unknown training
+rate and does not change when constructor parameters are later edited.
 
 ```python
 from aeon_neuro.classification.deep_learning import EEGNetClassifier

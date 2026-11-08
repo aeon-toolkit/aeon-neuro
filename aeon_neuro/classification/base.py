@@ -88,6 +88,14 @@ class BaseEEGClassifier(BaseClassifier):
     def _prediction_context(self, X, info):
         checked = self._validate_info(X, info)
         if checked is not None:
+            # Model requirements remain known even when array-only training
+            # supplied no sampling-rate facts. Retain the fitted requirement.
+            required_rate = getattr(self, "_required_sfreq_", None)
+            if required_rate is not None and checked.sfreq != required_rate:
+                raise ValueError(
+                    f"The fitted pretrained model requires {required_rate} Hz; "
+                    "resample the supplied data"
+                )
             # Constructor parameters can change after array-only fitting without
             # refitting the model. Compare against the retained fitting facts.
             if self.sfreq_ is not None and checked.sfreq != self.sfreq_:

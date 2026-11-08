@@ -105,7 +105,9 @@ classifiers at fitting and prediction. Braindecode models can optionally use
 subject-aware inner validation and early stopping. See the
 experimental [EEG information guide](docs/eeg-information.md). Supplied prediction
 information must match retained fitting facts, including known constructor rate
-and channel settings when fitting received plain arrays.
+and channel settings when fitting received plain arrays. Pretrained CBraMod and
+LaBraM also enforce their 200 Hz requirement on supplied prediction information,
+even when the training sampling rate was unknown.
 
 Subject validation accepts string and integer IDs in the same collection while
 keeping distinct identities, such as `1` and `"1"`, in separate groups.
