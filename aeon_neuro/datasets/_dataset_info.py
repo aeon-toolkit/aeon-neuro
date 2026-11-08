@@ -73,10 +73,11 @@ class RecordingInfo:
     def channels(self):
         """List of dict or None: Original channel rows, absent when unavailable."""
         # An inspector can retain an empty normalized list for an absent sidecar.
-        # Preserve absence separately from explicitly supplied channel rows.
+        # Only an explicit absent channel path records that absence; unrelated
+        # sidecar keys say nothing about the availability of supplied rows.
         if (
-            "sidecar_paths" in self._metadata
-            and self._metadata["sidecar_paths"].get("channels") is None
+            "channels" in self._metadata.get("sidecar_paths", {})
+            and self._metadata["sidecar_paths"]["channels"] is None
         ) or self._metadata.get("channel_metadata") is None:
             return None
         return deepcopy(self._metadata["channel_metadata"])
