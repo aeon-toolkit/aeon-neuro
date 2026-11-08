@@ -112,3 +112,30 @@ Ordinary recording/window/event helpers accept the information object and
 channel choices and intervals remain explicit. No authored problem schema is
 required. See the [source guide](bids-problem-input.md) and
 [loading guide](bids-dataset-info.md) for conflicts, snapshot limits and examples.
+
+## Executed processing
+
+`info.process(X, operation, **parameters)` returns detached arrays and updated
+information together. It supports ordered channel selection, explicit scaling,
+exact-grid crop, polyphase resampling, band-pass filtering and referencing.
+Failures leave arrays and metadata unchanged. No operation fits a learned
+transform; learned preprocessing still belongs inside training folds.
+
+```python
+X, info = info.process(X, "channels", names=["C4", "C3"])
+X, info = info.process(X, "crop", tmin=0.25, tmax=0.75)
+X, info = info.process(X, "resample", sfreq=64)
+```
+
+Current rate/channel/unit/grid fields change while original acquisition facts
+remain intact. Executed history records implementation versions, parameters and
+original application scopes. Selection preserves earlier scopes. Filtering and
+resampling conservatively retain the complete contributing input row as source
+support. Pointwise operations permit exact derived intervals. The ordinary
+split validator checks known original-source support across partitions.
+
+Resampling uses SciPy resample_poly with the exact decimal rate ratio, reflected
+boundaries and ceil(input_count * target_rate / input_rate) output samples. The
+sample grid does not change to fit the rounded count. Reduced numerator and
+denominator above 100,000 raise before filter allocation. Source stats and
+metadata history do not authenticate arbitrary external array edits.

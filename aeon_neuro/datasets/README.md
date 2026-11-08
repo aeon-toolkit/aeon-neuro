@@ -14,3 +14,10 @@ provides restorable detached state. See [the information guide](../../docs/eeg-i
 `load_bids_dataset` loads recordings with shared information through the verified
 source opener. Existing case helpers accept that information and retain source
 provenance in `dataset.info`. See [BIDS loading](../../docs/bids-dataset-info.md).
+
+## Executed EEG processing
+
+`info.process` keeps arrays, current layouts, original source support and executed
+history aligned for channel selection, scaling, crop, resampling, filtering and
+reference operations. It uses exact requested resampling ratios with bounded
+filter factors. See [the information guide](../../docs/eeg-information.md).

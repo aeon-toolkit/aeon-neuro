@@ -26,10 +26,11 @@ def _data():
 def test_adapter_uses_current_information_and_preserves_it_through_pickle():
     """Network inputs and restored predictions follow data, not constructor edits."""
     X, y, info = _data()
+    X, info = info.process(X, "resample", sfreq=64)
     clf = BraindecodeClassifier(n_epochs=1, batch_size=4, random_state=1, device="cpu")
     params = clf.get_params(deep=False)
     clf.fit(X[:8], y[:8], info=info[:8])
-    assert clf.network_.sfreq == 128
+    assert clf.network_.sfreq == 64
     assert [row["ch_name"] for row in clf.network_.chs_info] == ["C4", "C3"]
     assert clf.channel_geometry_ == "names_only"
     assert all(np.isnan(row["loc"][:3]).all() for row in clf.network_.chs_info)
