@@ -147,7 +147,8 @@
         "doc",
         "infra",
         "maintenance",
-        "review"
+        "review",
+        "test"
       ]
     },
     {
@@ -200,6 +201,16 @@
         "infra",
         "maintenance",
         "review",
+        "test"
+      ]
+    },
+    {
+      "login": "Vietpr",
+      "name": "Viet Pham",
+      "avatar_url": "https://avatars.githubusercontent.com/u/113697984?v=4",
+      "profile": "https://github.com/Vietpr",
+      "contributions": [
+        "code",
         "test"
       ]
     }
