@@ -210,3 +210,40 @@ def test_validation_labels_must_match_the_current_fitting_collection(with_info, 
         classifier.validation_split(
             changed, strategy="stratified" if with_info else "auto", random_state=0
         )
+
+
+@pytest.mark.parametrize("method", ["predict", "predict_proba"])
+@pytest.mark.parametrize("change", ["rate", "channels"])
+def test_array_fitting_layout_is_not_redefined_by_later_constructor_changes(
+    method, change
+):
+    """Prediction metadata must match the layout used to fit the existing model."""
+    X, y, _ = data()
+    clf = _InfoClassifier(sfreq=32, channel_names=["C3", "C4"]).fit(X, y)
+    rate, names = 32, ["C3", "C4"]
+    if change == "rate":
+        rate = 64
+        clf.set_params(sfreq=rate)
+    else:
+        names = ["C4", "C3"]
+        clf.set_params(channel_names=names)
+    changed = EEGDatasetInfo.from_arrays(X, sfreq=rate, channel_names=names)
+    assert clf.is_fitted
+    with pytest.raises(ValueError, match="from fit"):
+        getattr(clf, method)(X, info=changed)
+    assert not hasattr(clf, "_prediction_info")
+
+
+@pytest.mark.parametrize("method", ["predict", "predict_proba"])
+@pytest.mark.parametrize("known_layout", [False, True])
+def test_prediction_info_after_array_fitting_retains_known_and_unknown_facts(
+    method, known_layout
+):
+    """Aligned prediction facts remain usable without requiring fitting metadata."""
+    X, y, info = data()
+    options = dict(sfreq=32, channel_names=["C3", "C4"]) if known_layout else {}
+    clf = _InfoClassifier(**options).fit(X, y)
+    result = getattr(clf, method)(X, info=info)
+    assert len(result) == len(X)
+    assert clf.info_ is None
+    assert not hasattr(clf, "_prediction_info")
