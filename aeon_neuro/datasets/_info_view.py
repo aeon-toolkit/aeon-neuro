@@ -1,6 +1,7 @@
 """Validate current case layouts independently of original acquisition facts."""
 
 from copy import deepcopy
+from math import ceil, floor
 from numbers import Real
 
 import numpy as np
@@ -202,6 +203,96 @@ def _from_arrays(X, sfreq, channel_names, units, subjects, case_ids, groups):
     )
 
 
+def _case_view(info, dataset):
+    sources = {row["recording_id"]: row for row in info.metadata}
+    current = (
+        {
+            row["recording_id"]: (row, layout)
+            for row, layout in zip(
+                info._view["rows"], info._view["layouts"], strict=True
+            )
+        }
+        if info._view is not None and info._view["kind"] == "recordings"
+        else {}
+    )
+    names = list(dataset.metadata["channel_names"])
+    rate = dataset.metadata["sampling_frequency"]
+    rows, layouts = [], []
+    if not (
+        len(dataset.X) == len(dataset.y) == len(dataset.groups) == len(dataset.cases)
+    ):
+        raise ValueError(
+            "Classification signals, labels, groups and cases are not aligned"
+        )
+    for i, candidate in enumerate(dataset.cases):
+        row = deepcopy(candidate)
+        source = sources.get(row["recording_id"])
+        if source is None:
+            raise ValueError("Case has no matching source recording")
+        if row["label"] != dataset.y[i] or row["group_id"] != dataset.groups[i]:
+            raise ValueError("Case labels/groups disagree with their arrays")
+        # A case can identify a person within a shared recording. Keep that
+        # explicit case identity instead of replacing it with the BIDS entity.
+        row.setdefault("participant_id", source["participant_id"])
+        input_names = row["channel_names"]
+        for key in ("session", "run"):
+            row.setdefault(key, source.get(key, source.get("entities", {}).get(key)))
+        input_row, input_layout = current.get(row["recording_id"], (None, None))
+        row["source_support"] = (
+            deepcopy(input_row["source_support"])
+            if input_row is not None
+            else [row["start_sample"], row["stop_sample"]]
+        )
+        rows.append(row)
+        layout = _layout(
+            names,
+            rate,
+            (
+                [
+                    input_layout["units"][input_layout["channel_names"].index(name)]
+                    for name in input_names
+                ]
+                if input_layout is not None
+                else _source_units(source, input_names)
+            ),
+            row["stop_sample"] - row["start_sample"],
+            reference=(
+                input_layout["reference"]
+                if input_layout is not None
+                else source.get("eeg_metadata", {}).get("EEGReference")
+            ),
+            origin=row["start_sample"],
+        )
+        if input_names != names:
+            # Case builders allow explicit logical aliases. Preserve the actual
+            # input picks so units and source geometry do not follow an alias.
+            layout["source_channel_names"] = list(input_names)
+        if input_layout is not None:
+            layout["source_origin_sample"] = (
+                input_layout["source_origin_sample"]
+                + row["start_sample"] * input_layout["source_sample_step"]
+            )
+            layout["source_sample_step"] = input_layout["source_sample_step"]
+            layout["temporal_context"] = input_layout.get(
+                "temporal_context", "whole_row"
+            )
+            if layout["temporal_context"] == "pointwise":
+                # Pointwise operations do not mix times. Map only this case,
+                # unlike filtering/resampling which retain the full input row.
+                first = layout["source_origin_sample"]
+                stop = first + layout["n_samples"] * layout["source_sample_step"]
+                row["source_support"] = [
+                    floor(first),
+                    min(ceil(stop), input_row["source_support"][1]),
+                ]
+        layouts.append(layout)
+    view = _validate_view(
+        {"version": 1, "kind": "cases", "rows": rows, "layouts": layouts}, sources
+    )
+    _check_layout(dataset.X, view)
+    return view
+
+
 def _recording_view(info):
     rows, layouts = [], []
     for source in info.metadata:
@@ -226,6 +317,57 @@ def _recording_view(info):
     return {"version": 1, "kind": "recordings", "rows": rows, "layouts": layouts}
 
 
+def _current_metadata(info):
+    if info._view is None:
+        return info.metadata
+    if info._view["kind"] != "recordings":
+        raise ValueError(
+            "Case construction requires recordings, not already built cases"
+        )
+    sources = {row["recording_id"]: row for row in info.metadata}
+    descriptors = []
+    for row, layout in zip(info._view["rows"], info._view["layouts"], strict=True):
+        descriptor = deepcopy(sources[row["recording_id"]])
+        descriptor.update(
+            # Descriptors are public detached views, so their channel list must
+            # not expose the mutable layout used by later estimator checks.
+            channel_names=list(layout["channel_names"]),
+            sampling_frequency=layout["sampling_frequency"],
+            n_samples=layout["n_samples"],
+        )
+        descriptors.append(descriptor)
+    return descriptors
+
+
+def _recording_inputs(info, onset_column="onset"):
+    descriptors = _current_metadata(info)
+    if info._view is None:
+        return descriptors, info.events
+    sources = {row["recording_id"]: row for row in info.metadata}
+    events, grouped = [], {}
+    for original in info.events:
+        grouped.setdefault(original["recording_id"], []).append(original)
+    for row, layout in zip(info._view["rows"], info._view["layouts"], strict=True):
+        source = sources[row["recording_id"]]
+        for original in grouped.get(row["recording_id"], []):
+            event = deepcopy(original)
+            # Bound onsets remain seconds from the first current sample; retain
+            # the entire published row independently for source-level joins.
+            if onset_column not in event:
+                raise ValueError(f"Missing bound event onset: {onset_column}")
+            if "acquisition_event" in event:
+                raise ValueError(
+                    "Source event column collides with derived acquisition_event"
+                )
+            event["acquisition_event"] = deepcopy(original)
+            event[onset_column] = (
+                float(event[onset_column])
+                - layout["source_origin_sample"] / source["sampling_frequency"]
+            )
+            events.append(event)
+    return descriptors, events
+
+
 def _check_layout(X, view):
     arrays = _collection(X)
     if len(arrays) != len(view["rows"]):
@@ -241,6 +383,34 @@ def _uniform(layouts, key):
         raise ValueError(f"Current {key} is empty or differs across rows")
     value = values[0]
     return tuple(value) if isinstance(value, list) else value
+
+
+def _events_for_cases(events, metadata, label_column, group_column):
+    import json
+
+    lookup = {row["recording_id"]: row for row in metadata}
+    rows = []
+    for event in events:
+        source = lookup[event["recording_id"]]
+        if label_column not in event:
+            raise ValueError(f"Missing event label column: {label_column}")
+        label = _identifier(event[label_column], "event label")
+        if group_column not in source:
+            raise ValueError(f"Missing recording group column: {group_column}")
+        group = _identifier(source[group_column], "event group")
+        rows.append(
+            {
+                "case_id": "event:"
+                + json.dumps([event["recording_id"], event["bids_event_id"]]),
+                "recording_id": event["recording_id"],
+                "onset": float(event["onset"]),
+                "label": label,
+                "group_id": group,
+                "event_id": event["bids_event_id"],
+                "source_event": deepcopy(event),
+            }
+        )
+    return rows
 
 
 def _event_sample(onset, sfreq):

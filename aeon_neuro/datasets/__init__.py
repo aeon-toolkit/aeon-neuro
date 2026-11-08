@@ -2,6 +2,9 @@
 
 __maintainer__ = ["TonyBagnall"]
 __all__ = [
+    "inspect_bids_eeg",
+    "open_bids_eeg_recording",
+    "load_bids_dataset",
     "EEGDatasetInfo",
     "RecordingInfo",
     "load_kdd_example",
@@ -18,6 +21,8 @@ __all__ = [
     "validate_classification_split",
 ]
 
+from aeon_neuro.datasets._bids_dataset import load_bids_dataset
+from aeon_neuro.datasets._bids_input import inspect_bids_eeg, open_bids_eeg_recording
 from aeon_neuro.datasets._bids_prepare import BIDSPreparationError
 from aeon_neuro.datasets._classification import (
     ClassificationDataset,

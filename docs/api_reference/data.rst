@@ -18,6 +18,8 @@ Usage
 
    ../classification-problems
    ../eeg-information
+   ../bids-problem-input
+   ../bids-dataset-info
 
 Classification case construction
 --------------------------------
@@ -44,3 +46,12 @@ Aligned EEG information
 
 .. autoclass:: aeon_neuro.datasets.RecordingInfo
    :members:
+
+BIDS inspection and loading
+---------------------------
+
+.. autofunction:: aeon_neuro.datasets.inspect_bids_eeg
+
+.. autofunction:: aeon_neuro.datasets.open_bids_eeg_recording
+
+.. autofunction:: aeon_neuro.datasets.load_bids_dataset

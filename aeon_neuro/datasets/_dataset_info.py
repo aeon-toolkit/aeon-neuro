@@ -72,7 +72,12 @@ class RecordingInfo:
     @property
     def channels(self):
         """List of dict or None: Original channel rows, absent when unavailable."""
-        if self._metadata.get("channel_metadata") is None:
+        # An inspector can retain an empty normalized list for an absent sidecar.
+        # Preserve absence separately from explicitly supplied channel rows.
+        if (
+            "sidecar_paths" in self._metadata
+            and self._metadata["sidecar_paths"].get("channels") is None
+        ) or self._metadata.get("channel_metadata") is None:
             return None
         return deepcopy(self._metadata["channel_metadata"])
 
@@ -100,6 +105,59 @@ class RecordingInfo:
     def scan(self):
         """Dict or None: Matched scans row and its original zero-based row index."""
         return deepcopy(self._metadata.get("scan"))
+
+    def bad_channels(self):
+        """Return source-declared bad channels; raise if status is unavailable.
+
+        Returns
+        -------
+        tuple of str
+            Channel names with published status ``bad``, in source order.
+        """
+        rows = self.channels
+        if rows is None or any(
+            row.get("status") not in ("good", "bad") for row in rows
+        ):
+            raise ValueError("Channel status is unavailable or unrecognized")
+        return tuple(row["name"] for row in rows if row["status"] == "bad")
+
+    def channels_of_type(self, channel_type):
+        """Return channels with the requested source-declared type.
+
+        Parameters
+        ----------
+        channel_type : str
+            BIDS channel type such as ``EEG``; matching ignores case.
+
+        Returns
+        -------
+        tuple of str
+            Matching names in source order. Missing types raise an error.
+        """
+        if not isinstance(channel_type, str) or not channel_type.strip():
+            raise ValueError("Supply a nonempty channel type")
+        rows = self.channels
+        if rows is None or any(
+            not row.get("type") or row["type"] == "n/a" for row in rows
+        ):
+            raise ValueError("Channel type metadata is unavailable")
+        return tuple(
+            row["name"] for row in rows if row["type"].upper() == channel_type.upper()
+        )
+
+    @property
+    def events_frame(self):
+        """Detached pandas view of source events and exact sample coordinates."""
+        import pandas as pd
+
+        return pd.DataFrame(self.events)
+
+    @property
+    def channels_frame(self):
+        """Detached pandas view of source channels, or None when absent."""
+        import pandas as pd
+
+        return None if self.channels is None else pd.DataFrame(self.channels)
 
 
 class EEGDatasetInfo:
@@ -541,6 +599,101 @@ class EEGDatasetInfo:
         )
         return selected, self[indices]
 
+    @classmethod
+    def from_classification(cls, dataset):
+        """Describe constructed cases while retaining their original source report.
+
+        Parameters
+        ----------
+        dataset : ClassificationDataset
+            Constructed cases with shared source/history provenance, usually
+            from passing this information object to the ordinary case builder.
+
+        Returns
+        -------
+        EEGDatasetInfo
+            Detached case identities, current layout, source context and history.
+        """
+        source = dataset.metadata.get("provenance", {}).get("source")
+        if source is None:
+            raise ValueError(
+                "Case metadata requires shared source provenance; pass "
+                "EEGDatasetInfo as metadata to build_classification_dataset"
+            )
+        info = cls(source)
+        report = info.to_dict()
+        from aeon_neuro.datasets._info_view import _case_view
+
+        report["view"] = _case_view(info, dataset)
+        report["history"] = deepcopy(dataset.metadata["provenance"]["history"])
+        report["case_provenance"] = deepcopy(dataset.metadata["provenance"])
+        return cls(report)
+
+    @property
+    def current_metadata(self):
+        """Detached recording descriptors matching current arrays and event times.
+
+        Use with ``events_for_cases`` and the plain recording/case APIs after
+        supported processing or selection. Only channel names, sampling rate and
+        sample count describe the current layout; other fields retain source
+        context. Original descriptors remain in ``metadata``. Already segmented
+        cases raise because they are not recording inputs for case construction.
+        """
+        from aeon_neuro.datasets._info_view import _current_metadata
+
+        return _current_metadata(self)
+
+    def events_for_cases(
+        self, label_column="trial_type", *, group_column="participant_id"
+    ):
+        """Return event rows for make_event_cases using literal source labels/groups.
+
+        Parameters
+        ----------
+        label_column : str, default="trial_type"
+            Source event column holding literal labels.
+        group_column : str, default="participant_id"
+            Source recording field holding explicit groups.
+
+        Returns
+        -------
+        list of dict
+            Independent event rows with identities, onsets, labels and groups.
+
+        Notes
+        -----
+        Callers can edit returned rows for explicit class mappings or grouping
+        by event fields. No files are opened by this convenience.
+        """
+        from aeon_neuro.datasets._info_view import _events_for_cases, _recording_inputs
+
+        metadata, events = _recording_inputs(self)
+        return _events_for_cases(events, metadata, label_column, group_column)
+
+    @property
+    def case_table(self):
+        """Detached pandas view of case identities and source support."""
+        import pandas as pd
+
+        return pd.DataFrame(self.cases)
+
+    @property
+    def participants_frame(self):
+        """Detached pandas view of the complete source participant population."""
+        import pandas as pd
+
+        table = self.participants
+        return (
+            None
+            if table is None
+            else pd.DataFrame(table["rows"], columns=table["columns"])
+        )
+
+    @property
+    def history(self):
+        """Detached processing records in append order, empty when unreported."""
+        return deepcopy(self._report.get("history", []))
+
 
 def _selection(selector, count):
     if isinstance(selector, slice):
@@ -604,3 +757,17 @@ def _recording_info(metadata):
             raise ValueError("n_samples must be positive.")
         info.append(item)
     return info
+
+
+def _source_provenance(info, implementation):
+    """Keep source/history independent of higher-level problem definitions."""
+    from aeon_neuro import __version__
+
+    source = info.to_dict()
+    history = source.pop("history", [])
+    return {
+        "version": 1,
+        "source": source,
+        "history": history,
+        "construction": {"implementation": implementation, "version": __version__},
+    }

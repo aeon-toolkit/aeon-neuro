@@ -96,3 +96,19 @@ Native aeon reexports keep their native interfaces. Information-derived channel
 names alone imply no positions; spatial models or explicit constructor names
 use the existing standard_1005 template policy, recorded in channel_geometry_.
 Measured source electrodes are not silently converted to model geometry.
+
+## BIDS sources and case construction
+
+`inspect_bids_eeg` reads supported local EDF/BDF headers and sidecars without
+reading signal samples. `load_bids_dataset` returns complete recordings and
+aligned information through an explicit verified opener. The loader is separate
+from the metadata container and closes all owned handles on success or failure.
+Original events, channels, participants, acquisition fields and source geometry
+remain available. Decoded EEG samples use volts; source sidecar units retain
+their original meaning.
+
+Ordinary recording/window/event helpers accept the information object and
+`build_classification_dataset` returns aligned `dataset.info`. Labels, grouping,
+channel choices and intervals remain explicit. No authored problem schema is
+required. See the [source guide](bids-problem-input.md) and
+[loading guide](bids-dataset-info.md) for conflicts, snapshot limits and examples.
