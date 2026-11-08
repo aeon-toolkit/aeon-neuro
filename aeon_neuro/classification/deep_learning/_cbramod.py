@@ -94,6 +94,7 @@ class CBraModClassifier(BaseEEGClassifier):
         """Fit CBraModClassifier."""
         import torch
 
+        self._required_sfreq_ = 200 if self.pretrained else None
         if self.pretrained and self.sfreq_ is not None and self.sfreq_ != 200:
             raise ValueError(
                 "Pretrained CBraMod requires 200 Hz; resample the supplied data"

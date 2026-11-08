@@ -219,3 +219,36 @@ def test_unequal_lengths_and_unknown_facts_survive_selection():
     assert view.recordings == ()
     selected[0][:] = 5
     assert np.all(X[1] == 1)
+
+
+@pytest.mark.parametrize(
+    "subjects", [["01", None], [None, "01"], [None, None], [1, "1"]]
+)
+def test_source_subject_scope_preserves_unknowns_and_identifier_types(subjects):
+    """Known participant scope must not reorder or invent aligned source facts."""
+    records = [
+        dict(
+            recording_id=f"r{i}",
+            participant_id=subject,
+            channel_names=["C3"],
+            sampling_frequency=32,
+            n_samples=8,
+        )
+        for i, subject in enumerate(subjects)
+    ]
+    info = EEGDatasetInfo(recordings=records)
+    X = np.zeros((2, 1, 8))
+    assert info.participant_ids == tuple(subjects)
+    assert None not in info.to_dict()["dataset"]["selected_participants"]
+    assert set(info.to_dict()["dataset"]["selected_participants"]) == set(subjects) - {
+        None
+    }
+    restored = EEGDatasetInfo(json.loads(json.dumps(info.to_dict())))
+    assert restored.participant_ids == tuple(subjects)
+    for indices in ([1, 0], [0], [1], []):
+        selected, subset = restored.select(X, indices)
+        assert subset.participant_ids == tuple(subjects[i] for i in indices)
+        assert set(subset.to_dict()["dataset"]["selected_participants"]) == {
+            subjects[i] for i in indices if subjects[i] is not None
+        }
+        subset.validate_layout(selected)
