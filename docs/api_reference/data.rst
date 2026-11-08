@@ -17,6 +17,7 @@ Usage
    :maxdepth: 1
 
    ../classification-problems
+   ../eeg-information
 
 Classification case construction
 --------------------------------
@@ -34,3 +35,12 @@ Classification case construction
 .. autofunction:: aeon_neuro.datasets.validate_group_split
 
 .. autofunction:: aeon_neuro.datasets.validate_classification_split
+
+Aligned EEG information
+-----------------------
+
+.. autoclass:: aeon_neuro.datasets.EEGDatasetInfo
+   :members:
+
+.. autoclass:: aeon_neuro.datasets.RecordingInfo
+   :members:
