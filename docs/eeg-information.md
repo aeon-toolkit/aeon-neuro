@@ -50,6 +50,11 @@ source_info = EEGDatasetInfo(
 
 `info.recordings` contains original `RecordingInfo` views. Supplied sidecar rows
 are preserved rather than rewritten to describe external transformations.
+Source participant IDs can be strings, integers or unknown (`None`). Unknowns
+stay on their recording rows, while `dataset.selected_participants` in portable
+state lists only known IDs. Selection recomputes that scope without inferring
+identities or converting integer IDs to strings.
+
 Unknown optional facts remain absent. Names alone make no electrode-position
 claim. `info.participant_ids` and `info.groups` describe current rows;
 `info.participants` retains the full supplied source population.
