@@ -102,7 +102,9 @@ of method work well or fail.
 Describe EEG arrays with optional source metadata, retain aligned row identities
 through selection, save detached metadata, and pass optional information to EEG
 classifiers at fitting and prediction. See the
-experimental [EEG information guide](docs/eeg-information.md).
+experimental [EEG information guide](docs/eeg-information.md). Supplied prediction
+information must match retained fitting facts, including known constructor rate
+and channel settings when fitting received plain arrays.
 
 ## Installation
 
