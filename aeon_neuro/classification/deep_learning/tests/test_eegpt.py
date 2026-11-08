@@ -29,3 +29,44 @@ def test_eegpt_classifier_input_errors():
 
     with pytest.raises(ValueError, match="Unknown channel names"):
         EEGPTClassifier(ch_names=["C3", "Cz", "X9"], pretrained=False).fit(X, y)
+
+    with pytest.raises(ValueError, match="has 2 names but X has 3"):
+        EEGPTClassifier(ch_names=["C3", "Cz"], pretrained=False).fit(X, y)
+
+    with pytest.raises(ValueError, match="Duplicate channel names"):
+        EEGPTClassifier(ch_names=["C3", "Cz", "CZ"], pretrained=False).fit(X, y)
+
+
+def _fake_checkpoint(tmp_path, monkeypatch, drop_key=None):
+    """Save a random encoder as a fake hub checkpoint; return its state dict."""
+    import huggingface_hub
+    import torch
+    from safetensors.torch import save_file
+
+    torch.manual_seed(123)
+    state = (
+        EEGPTClassifier(ch_names=["C3", "Cz", "C4"], pretrained=False)
+        ._build_network(n_channels=3, n_timepoints=128)
+        .state_dict()
+    )
+    state = {k: v.contiguous() for k, v in state.items() if k != "chans_id"}
+    state.pop(drop_key, None)
+    path = tmp_path / "model.safetensors"
+    save_file(state, str(path))
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", lambda *a: str(path))
+    return state
+
+
+def test_eegpt_pretrained_loading(tmp_path, monkeypatch):
+    """Encoder weights come from the checkpoint; missing weights raise."""
+    import torch
+
+    state = _fake_checkpoint(tmp_path, monkeypatch)
+    net = EEGPTClassifier(ch_names=["C3", "Cz", "C4"])._build_network(3, 128)
+    loaded = net.state_dict()
+    for k, v in state.items():
+        assert torch.equal(loaded[k], v), k
+
+    _fake_checkpoint(tmp_path, monkeypatch, drop_key=next(iter(state)))
+    with pytest.raises(RuntimeError, match="missing keys"):
+        EEGPTClassifier(ch_names=["C3", "Cz", "C4"])._build_network(3, 128)

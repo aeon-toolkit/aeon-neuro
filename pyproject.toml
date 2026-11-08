@@ -48,6 +48,8 @@ dependencies = [
     "umap-learn",
     "torch",
     "braindecode",
+    "huggingface_hub",
+    "safetensors",
 ]
 
 [project.optional-dependencies]

@@ -13,6 +13,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.utils import check_random_state
 
 _PATCH_SIZE = 64  # samples per patch in the pretrained checkpoint
+# If load_state_dict is called with strict=False,
+_ALLOWED_MISSING_KEYS = {"chans_id"}
 
 
 class EEGPTClassifier(BaseClassifier):
@@ -77,7 +79,12 @@ class EEGPTClassifier(BaseClassifier):
         "capability:unequal_length": False,
         "algorithm_type": "deeplearning",
         "non_deterministic": True,
-        "python_dependencies": ["braindecode", "torch"],
+        "python_dependencies": [
+            "braindecode",
+            "torch",
+            "huggingface_hub",
+            "safetensors",
+        ],
     }
 
     def __init__(
@@ -165,6 +172,15 @@ class EEGPTClassifier(BaseClassifier):
 
         if self.ch_names is not None:
             self.ch_names_ = list(self.ch_names)
+            if len(self.ch_names_) != n_channels:
+                raise ValueError(
+                    f"ch_names has {len(self.ch_names_)} names but X has "
+                    f"{n_channels} channels."
+                )
+            upper = [n.upper() for n in self.ch_names_]
+            dupes = sorted({n for n in upper if upper.count(n) > 1})
+            if dupes:
+                raise ValueError(f"Duplicate channel names in ch_names: {dupes}.")
             unknown = [n for n in self.ch_names_ if n.upper() not in EEGPT_CHANNELS]
             if unknown:
                 raise ValueError(
@@ -194,10 +210,16 @@ class EEGPTClassifier(BaseClassifier):
             )
             # Only the encoder: the checkpoint's chans_id is sized for its own 62
             # channels and is rebuilt above from ch_names.
-            network.load_state_dict(
+            result = network.load_state_dict(
                 {k: v for k, v in state.items() if k.startswith("target_encoder.")},
                 strict=False,
             )
+            missing = set(result.missing_keys) - _ALLOWED_MISSING_KEYS
+            if missing or result.unexpected_keys:
+                raise RuntimeError(
+                    "EEGPT checkpoint does not match the encoder: missing keys "
+                    f"{sorted(missing)}, unexpected keys {result.unexpected_keys}."
+                )
         return network
 
     def _resolve_device(self):
