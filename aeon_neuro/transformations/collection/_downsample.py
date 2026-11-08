@@ -1,30 +1,21 @@
 """Downsample series by frequency."""
 
-import math
+from fractions import Fraction
 
 import numpy as np
 from aeon.transformations.collection.base import BaseCollectionTransformer
+from scipy.signal import resample_poly
 
 __all__ = ["DownsampleCollectionTransformer"]
 
 
-def _decimation_step(ratio: float, what: str) -> int:
-    """Integer decimation step for an exact ratio, or raise.
-
-    Decimation keeps every n-th sample, so only integral ratios are
-    achievable; anything else would silently keep the wrong fraction.
-    """
-    step = int(round(ratio))
-    if step < 1 or not math.isclose(ratio, step, rel_tol=1e-9):
-        raise ValueError(
-            f"{what} of {ratio:.6g} is not achievable by decimation: "
-            f"use a ratio of the form 1/n (proportion of the form 1 - 1/n)."
-        )
-    return step
-
-
 class DownsampleCollectionTransformer(BaseCollectionTransformer):
     """Downsample the time dimension of a collection of time series.
+
+    Series are resampled with :func:`scipy.signal.resample_poly`, which applies an
+    anti-aliasing filter, so the output has the requested rate for both integer and
+    non-integer ratios (for example 250 Hz -> 100 Hz, or ``proportion=0.1`` keeps 90%
+    of timepoints).
 
     Parameters
     ----------
@@ -32,10 +23,10 @@ class DownsampleCollectionTransformer(BaseCollectionTransformer):
         The method to downsample by, either "frequency" or "proportion",
         by default "frequency".
     source_sfreq : int or float, optional
-        The source sampling frequency in Hz.
+        The source sampling frequency in Hz. Must be positive.
         Required if `downsample_by = "frequency"`, by default 2.0.
     target_sfreq : int or float, optional
-        The target sampling frequency in Hz.
+        The target sampling frequency in Hz. Must be positive.
         Required if `downsample_by = "frequency"`, by default 1.0.
     proportion : float, optional
         The proportion between 0-1 to downsample by.
@@ -45,12 +36,10 @@ class DownsampleCollectionTransformer(BaseCollectionTransformer):
     ------
     ValueError
         If `downsample_by` is not "frequency" or "proportion".
+        If `source_sfreq` or `target_sfreq` is not positive when
+        `downsample_by = "frequency"`.
         If `source_sfreq` < `target_sfreq` when `downsample_by = "frequency"`.
         If `proportion` is not between 0-1 when `downsample_by = "proportion"`.
-        If `source_sfreq` or `target_sfreq` are not strictly positive
-        (transform time).
-        If the ratio is not achievable by decimation (non-integral step,
-        transform time).
     """
 
     _tags = {
@@ -74,6 +63,8 @@ class DownsampleCollectionTransformer(BaseCollectionTransformer):
         if downsample_by == "frequency":
             if source_sfreq is None or target_sfreq is None:
                 raise ValueError("source_sfreq and target_sfreq must be provided")
+            if source_sfreq <= 0 or target_sfreq <= 0:
+                raise ValueError("source_sfreq and target_sfreq must be positive")
             if source_sfreq < target_sfreq:
                 raise ValueError("source_sfreq must be > target_sfreq")
 
@@ -103,24 +94,22 @@ class DownsampleCollectionTransformer(BaseCollectionTransformer):
         or np.ndarray of shape (n_cases, n_channels, n_timepoints_downsampled)
             Downsampled time series collection.
         """
-        if self.downsample_by == "frequency":
-            if self.source_sfreq <= 0 or self.target_sfreq <= 0:
-                raise ValueError(
-                    "source_sfreq and target_sfreq must be strictly positive."
-                )
-            step = _decimation_step(
-                self.source_sfreq / self.target_sfreq, "frequency ratio"
-            )
-        elif self.downsample_by == "proportion":
-            step = _decimation_step(1 / (1 - self.proportion), "proportion")
+        up, down = self._resample_ratio()
 
         X_downsampled = []
         for x in X:
-            n_timepoints = x.shape[-1]
-            indices = np.arange(0, n_timepoints, step)
-            X_downsampled.append(x[:, indices])
+            X_downsampled.append(resample_poly(x, up, down, axis=-1))
 
         if isinstance(X, np.ndarray):
             return np.asarray(X_downsampled)
         else:
             return X_downsampled
+
+    def _resample_ratio(self):
+        """Return the (up, down) integer factors of the target/source rate ratio."""
+        if self.downsample_by == "frequency":
+            ratio = Fraction(str(self.target_sfreq)) / Fraction(str(self.source_sfreq))
+        else:
+            ratio = 1 - Fraction(str(self.proportion))
+        ratio = ratio.limit_denominator(10_000)
+        return ratio.numerator, ratio.denominator
