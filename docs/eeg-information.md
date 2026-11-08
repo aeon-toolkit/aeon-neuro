@@ -80,7 +80,11 @@ EEG classifiers accept keyword-only `info` in `fit`, `predict` and
 information while preserving aeon's reset and validation lifecycle. Constructor
 rate/channel conflicts raise. Prediction information must match the fitted
 rate, ordered names and known units. Call-specific prediction information is
-removed after success or failure.
+removed after success or failure. When fitting uses plain arrays, known rate and
+channel constructor settings are retained as fitting facts too. Changing a
+constructor parameter after fitting does not redefine the layout of the trained
+model; supplied prediction information must still agree with those retained facts.
+Unknown fitting facts remain unknown.
 
 ```python
 from aeon_neuro.classification.deep_learning import EEGNetClassifier

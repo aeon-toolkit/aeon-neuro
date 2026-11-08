@@ -54,9 +54,7 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
         "fit_is_empty": True,
     }
 
-    # Contiguous partition of [0, 60] Hz. Masks stay inclusive on both ends:
-    # simpson integrates between the first and last selected sample, so a
-    # shared endpoint is not double-counted across contiguous bands.
+    # Contiguous partition of [0, 60] Hz.
     FREQ_BANDS = {
         "delta": (0, 4),
         "theta": (4, 8),
@@ -116,11 +114,14 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
         n_overlap = self.window_size - stride
         # next power of 2, for FFT efficiency
         n_fft = int(2 ** np.ceil(np.log2(self.window_size)))
+        freq_res = self.sfreq / n_fft
+        max_band_freq = self.FREQ_BANDS["gamma"][1]
         powers, freqs = psd_array_welch(
             X,
             sfreq=self.sfreq,
             fmin=self.FREQ_BANDS["delta"][0],
-            fmax=self.FREQ_BANDS["gamma"][1],
+            # Include a bin above the final band edge when interpolation needs it.
+            fmax=min(self.sfreq / 2, max_band_freq + freq_res),
             n_fft=n_fft,
             n_overlap=n_overlap,
             n_per_seg=self.window_size,
@@ -130,17 +131,37 @@ class BandPowerSeriesTransformer(BaseSeriesTransformer):
             verbose="error",
         )
 
-        freq_res = freqs[1] - freqs[0]
-
         band_powers = np.zeros(shape=(len(self.FREQ_BANDS), powers.shape[-1]))
         for band_idx, (min_freq, max_freq) in enumerate(self.FREQ_BANDS.values()):
-            freq_mask = np.logical_and(freqs >= min_freq, freqs <= max_freq)
+            interior_mask = np.logical_and(freqs > min_freq, freqs < max_freq)
+            band_freqs = np.concatenate(([min_freq], freqs[interior_mask], [max_freq]))
+            band_values = np.concatenate(
+                (
+                    self._power_at_frequency(powers, freqs, min_freq)[:, None, :],
+                    powers[:, interior_mask, :],
+                    self._power_at_frequency(powers, freqs, max_freq)[:, None, :],
+                ),
+                axis=1,
+            )
             # integrate over frequencies, average over channels
-            band_powers[band_idx, :] = simpson(
-                powers[:, freq_mask, :], dx=freq_res, axis=1
-            ).mean(axis=0)
+            band_powers[band_idx, :] = simpson(band_values, x=band_freqs, axis=1).mean(
+                axis=0
+            )
 
         if self.relative:
             band_powers /= band_powers.sum(axis=0)
 
         return band_powers
+
+    @staticmethod
+    def _power_at_frequency(powers, freqs, frequency):
+        """Return PSD values at a frequency, interpolating between FFT bins."""
+        right_idx = np.searchsorted(freqs, frequency)
+        if right_idx < len(freqs) and np.isclose(freqs[right_idx], frequency):
+            return powers[:, right_idx, :]
+
+        left_idx = right_idx - 1
+        weight = (frequency - freqs[left_idx]) / (freqs[right_idx] - freqs[left_idx])
+        return powers[:, left_idx, :] + weight * (
+            powers[:, right_idx, :] - powers[:, left_idx, :]
+        )

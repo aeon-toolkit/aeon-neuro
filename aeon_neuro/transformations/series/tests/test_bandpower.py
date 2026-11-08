@@ -93,3 +93,27 @@ def test_flat_spectrum_band_powers_equal_band_widths():
         out = transformer.fit_transform(np.zeros((2, 3000)))
     expected = np.tile(np.array([4, 4, 5, 17, 30], dtype=float).reshape(-1, 1), (1, 3))
     np.testing.assert_allclose(out, expected, atol=1e-9)
+
+
+def test_flat_spectrum_with_unaligned_band_boundaries():
+    """Flat spectrum retains power when band edges fall between FFT bins."""
+    from unittest.mock import patch
+
+    sfreq = 250
+    n_fft = 256
+    freqs = np.fft.rfftfreq(n_fft, d=1 / sfreq)
+    powers = np.ones((2, len(freqs), 1))
+
+    with patch(
+        "aeon_neuro.transformations.series._bandpower.psd_array_welch",
+        return_value=(powers, freqs),
+    ):
+        transformer = BandPowerSeriesTransformer(
+            sfreq=sfreq,
+            window_size=n_fft,
+            relative=False,
+        )
+        result = transformer.fit_transform(np.zeros((2, n_fft)))
+
+    expected = np.array([4, 4, 5, 17, 30], dtype=float).reshape(-1, 1)
+    np.testing.assert_allclose(result, expected, atol=1e-9)
