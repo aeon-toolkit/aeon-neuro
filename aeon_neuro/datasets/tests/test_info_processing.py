@@ -312,3 +312,62 @@ def test_executed_history_keeps_original_scope_after_selection(source):
     assert following.history[-1]["source_ids"] == [info.source_ids[1]]
     restored = EEGDatasetInfo(json.loads(json.dumps(following.to_dict())))
     assert restored.history == following.history
+
+
+@pytest.mark.parametrize("target", [0.5, 2.0])
+def test_singleton_resampling_raises_without_native_crash(target):
+    """A native boundary failure must not terminate the calling Python process."""
+    import os
+    import subprocess
+    import sys
+
+    # Isolate the regression so an unsafe SciPy call cannot kill the test runner.
+    code = f"""
+try:
+    import resource
+except ImportError:
+    pass
+else:
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+import numpy as np
+from aeon_neuro.datasets import EEGDatasetInfo
+X = np.ones((2, 1, 1))
+info = EEGDatasetInfo.from_arrays(X, sfreq=1, channel_names=['C3'])
+try:
+    info.process(X, 'resample', sfreq={target})
+except ValueError as exc:
+    assert 'at least two samples' in str(exc)
+else:
+    raise AssertionError('Expected a singleton input error')
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, (result.returncode, result.stderr)
+
+
+def test_singleton_resampling_preserves_inputs_after_a_later_row_fails():
+    """An unequal-length collection stays untouched when its second row fails."""
+    X = [np.ones((1, 4)), np.ones((1, 1))]
+    info = EEGDatasetInfo.from_arrays(X, sfreq=1, channel_names=["C3"])
+    before = info.to_dict()
+    arrays = [row.copy() for row in X]
+    with pytest.raises(ValueError, match="at least two samples"):
+        info.process(X, "resample", sfreq=2)
+    assert info.to_dict() == before
+    for expected, actual in zip(arrays, X, strict=True):
+        np.testing.assert_array_equal(actual, expected)
+
+
+def test_singleton_resampling_at_the_original_rate_is_safe():
+    """An unchanged sampling grid needs no reflected filter boundaries."""
+    X = np.ones((2, 1, 1))
+    info = EEGDatasetInfo.from_arrays(X, sfreq=1, channel_names=["C3"])
+    result, updated = info.process(X, "resample", sfreq=1)
+    np.testing.assert_array_equal(result, X)
+    assert updated.sfreq == 1
+    assert not np.shares_memory(result, X)

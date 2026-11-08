@@ -20,4 +20,5 @@ provenance in `dataset.info`. See [BIDS loading](../../docs/bids-dataset-info.md
 `info.process` keeps arrays, current layouts, original source support and executed
 history aligned for channel selection, scaling, crop, resampling, filtering and
 reference operations. It uses exact requested resampling ratios with bounded
-filter factors. See [the information guide](../../docs/eeg-information.md).
+filter factors. Changing the rate requires at least two input samples per row;
+shorter rows raise `ValueError` without modifying arrays or information. See [the information guide](../../docs/eeg-information.md).
