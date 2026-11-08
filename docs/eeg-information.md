@@ -84,7 +84,10 @@ removed after success or failure. When fitting uses plain arrays, known rate and
 channel constructor settings are retained as fitting facts too. Changing a
 constructor parameter after fitting does not redefine the layout of the trained
 model; supplied prediction information must still agree with those retained facts.
-Unknown fitting facts remain unknown.
+Unknown fitting facts remain unknown. Pretrained CBraMod and LaBraM require
+200 Hz whenever a rate is supplied, including prediction after plain-array
+fitting. This fitted model requirement is independent of the unknown training
+rate and does not change when constructor parameters are later edited.
 
 ```python
 from aeon_neuro.classification.deep_learning import EEGNetClassifier
