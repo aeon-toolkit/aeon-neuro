@@ -8,6 +8,7 @@ import numpy as np
 
 from aeon_neuro.datasets._classification import (
     _channels,
+    _identifier,
     _integer,
     _recordings,
     _required,
@@ -74,10 +75,11 @@ class RecordingInfo:
     def channels(self):
         """List of dict or None: Original channel rows, absent when unavailable."""
         # An inspector can retain an empty normalized list for an absent sidecar.
-        # Preserve absence separately from explicitly supplied channel rows.
+        # Only an explicit absent channel path records that absence; unrelated
+        # sidecar keys say nothing about the availability of supplied rows.
         if (
-            "sidecar_paths" in self._metadata
-            and self._metadata["sidecar_paths"].get("channels") is None
+            "channels" in self._metadata.get("sidecar_paths", {})
+            and self._metadata["sidecar_paths"]["channels"] is None
         ) or self._metadata.get("channel_metadata") is None:
             return None
         return deepcopy(self._metadata["channel_metadata"])
@@ -214,9 +216,7 @@ class EEGDatasetInfo:
                 readme=None,
                 participants=None,
                 participants_json=None,
-                selected_participants=sorted(
-                    {row["participant_id"] for row in recordings}
-                ),
+                selected_participants=_participant_scope(recordings),
             )
             defaults.update(dataset)
             # Share the portable encoding with source adapters. Readiness here
@@ -253,7 +253,7 @@ class EEGDatasetInfo:
             ids = [entry["recording_id"] for entry in entries]
             if self._report["source_ids"] != ids:
                 raise ValueError("Source IDs and recording descriptors are not aligned")
-            participants = sorted({entry["participant_id"] for entry in entries})
+            participants = _participant_scope(entries)
             if self._report["dataset"]["selected_participants"] != participants:
                 raise ValueError("Selected participants do not match recording scope")
             grouped = {entry["recording_id"]: [] for entry in entries}
@@ -308,8 +308,8 @@ class EEGDatasetInfo:
             report["events"] = [
                 row for i in indices for row in self._recordings[i].events
             ]
-            report["dataset"]["selected_participants"] = sorted(
-                {row["participant_id"] for row in report["recordings"]}
+            report["dataset"]["selected_participants"] = _participant_scope(
+                report["recordings"]
             )
             report["issues"] = [
                 issue
@@ -807,6 +807,17 @@ def _selection(selector, count):
     ):
         raise ValueError("Recording indices must be unique integers within bounds")
     return indices.astype(int)
+
+
+def _participant_scope(recordings):
+    # Unknown identities stay on aligned rows, not in the known source scope.
+    # Separate identifier types when ordering so integer 1 and text "1" survive.
+    participants = {
+        _identifier(row["participant_id"], "participant_id")
+        for row in recordings
+        if row["participant_id"] is not None
+    }
+    return sorted(participants, key=lambda value: (isinstance(value, str), value))
 
 
 def _recording_info(metadata):
