@@ -147,7 +147,8 @@
         "doc",
         "infra",
         "maintenance",
-        "review"
+        "review",
+        "test"
       ]
     },
     {
@@ -201,6 +202,25 @@
         "maintenance",
         "review",
         "test"
+      ]
+    },
+    {
+      "login": "Vietpr",
+      "name": "Viet Pham",
+      "avatar_url": "https://avatars.githubusercontent.com/u/113697984?v=4",
+      "profile": "https://github.com/Vietpr",
+      "contributions": [
+        "code",
+        "test"
+      ]
+    },
+    {
+      "login": "Muhtasim-Munif-Fahim",
+      "name": "Muhtasim Munif Fahim",
+      "avatar_url": "https://avatars.githubusercontent.com/u/204097607?v=4",
+      "profile": "http://fahim.bd",
+      "contributions": [
+        "code"
       ]
     }
   ],

@@ -3,6 +3,7 @@
 import pytest
 
 from aeon_neuro.classification.deep_learning import (
+    BraindecodeClassifier,
     DeepConvNetClassifier,
     EEGConformerClassifier,
     EEGNetClassifier,
@@ -26,6 +27,7 @@ from aeon_neuro.transformations.collection.embedding._umap import UMAP
 @pytest.mark.parametrize(
     "estimator_cls, expected_key",
     [
+        (BraindecodeClassifier, "model"),
         (EEGNetClassifier, "n_epochs"),
         (DeepConvNetClassifier, "n_epochs"),
         (EEGConformerClassifier, "n_epochs"),
