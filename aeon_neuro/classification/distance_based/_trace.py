@@ -1,9 +1,40 @@
 import numpy as np
 import pyriemann
 from aeon.classification.base import BaseClassifier
+from aeon.distances import dtw_distance
+from scipy.sparse.csgraph import dijkstra
 
 
 class TRACE(BaseClassifier):
+    """
+    TRACE (Temporal Riemannian Adaptive Classification Ensemble).
+
+    This classifier combines the Riemannian distance metric
+    with an intervalling approach to form an ensemble of weighted segments.
+    Two optional weighting schemes,convexity and surprise,
+    can be used to weight this ensemble.
+
+    Parameters
+    ----------
+    cross_validate : {True,False}, default=True
+        Whether the classifier should utilise train only cross validation
+        to set the number of intervals the time series is split into
+    use_convexity : {True,False}, default=True
+        If the classifier should use convexity based weighting
+    use_surprise : {True,False}, default=True
+        If the classifier should use surprise based weighting
+    intervals : int, default=5
+        The number of intervals used to form the ensemble
+    scale : int, default=1
+        The scaling factor for the weighting schemes, a larger value
+        indictes larger emphasis on weighting methods
+    k : int, default=10
+        Number of neighbours considered for convexity based weighing
+    random_state: : int, RandomState instance or None, default=None
+        Unused as clasifier contains no randomisation
+
+
+    """
 
     _tags = {
         "capability:multivariate": True,
@@ -29,9 +60,9 @@ class TRACE(BaseClassifier):
         super().__init__()
 
     def _fit(self, X, y):
-        self.means = []
-        self.convexity_weights = []
-        self.surprise_weights = []
+        self.means_ = []
+        self.convexity_weights_ = []
+        self.surprise_weights_ = []
         self.classes_ = np.unique(y)
         convexity_measure = []
 
@@ -61,19 +92,19 @@ class TRACE(BaseClassifier):
             intervals = np.array_split(X, self.intervals, axis=2)
 
         if self.use_surprise:
-            self.surprise_weights = surprise_calculation(intervals)
+            self.surprise_weights_ = surprise_calculation(intervals)
 
         for i in range(len(intervals)):
             interval_mean = []
-            X_cov_train = pyriemann.utils.covariance.covariances(
+            X_cov_train = pyriemann.geometry.covariance.covariances(
                 intervals[i], estimator="lwf"
             )
-            self.fg = pyriemann.tangentspace.FGDA()
+            self.fg_ = pyriemann.tangentspace.FGDA()
             X_cov_train = self.fg.fit_transform(X_cov_train, y)
             for class_val in self.classes_:
                 idx = np.where(y == class_val)
                 slice_X_class = X_cov_train[idx[0]]
-                class_mean = pyriemann.utils.mean.mean_riemann(slice_X_class)
+                class_mean = pyriemann.geometry.mean.mean_riemann(slice_X_class)
                 interval_mean.append(class_mean)
             self.means.append(interval_mean)
             if self.use_convexity:
@@ -84,7 +115,7 @@ class TRACE(BaseClassifier):
             std = np.std(convexity_measure)
             z = (convexity_measure - mean) / std
             normalised = 1 / (1 + np.exp(-0.5 * z))
-            self.convexity_weights = normalised
+            self.convexity_weights_ = normalised
 
     def _predict_proba(self, X):
         X_test_distance = []
@@ -92,10 +123,10 @@ class TRACE(BaseClassifier):
         interval_covs = []
 
         for j in range(len(intervals)):
-            X_cov_test = pyriemann.utils.covariance.covariances(
+            X_cov_test = pyriemann.geometry.covariance.covariances(
                 intervals[j], estimator="lwf"
             )
-            X_cov_test = self.fg.transform(X_cov_test)
+            X_cov_test = self.fg_.transform(X_cov_test)
             interval_covs.append(X_cov_test)
 
         for i in range(len(X)):
@@ -108,7 +139,7 @@ class TRACE(BaseClassifier):
                         count += 1
                         for c in range(len(self.classes_)):
                             distances.append(
-                                pyriemann.utils.distance.distance_riemann(
+                                pyriemann.geometry.distance.distance_riemann(
                                     interval_covs[j][i], np.array(self.means[j + r][c])
                                 )
                             )
@@ -119,24 +150,24 @@ class TRACE(BaseClassifier):
         probs = []
 
         if self.use_convexity and self.use_surprise:
-            self.convexity_weights = [1 - x for x in self.convexity_weights]
-            self.surprise_weights = [1 - x for x in self.surprise_weights]
+            self.convexity_weights_ = [1 - x for x in self.convexity_weights_]
+            self.surprise_weights_ = [1 - x for x in self.surprise_weights_]
             alpha = 0.8
             beta = 0.2
-            weights = (np.array(self.convexity_weights) ** alpha) * (
-                np.array(self.surprise_weights) ** beta
+            weights = (np.array(self.convexity_weights_) ** alpha) * (
+                np.array(self.surprise_weights_) ** beta
             )
             weights = [int((x) * 100) for x in weights]
             weights = scale_values_np(weights, self.scale)
 
         elif self.use_convexity:
-            self.convexity_weights = [1 - x for x in self.convexity_weights]
-            weights = [int((x) * 100) for x in np.array(self.convexity_weights)]
+            self.convexity_weights_ = [1 - x for x in self.convexity_weights_]
+            weights = [int((x) * 100) for x in np.array(self.convexity_weights_)]
             weights = scale_values_np(weights, self.scale)
 
         elif self.use_surprise:
-            self.surprise_weights = [1 - x for x in self.surprise_weights]
-            weights = [int((x) * 100) for x in np.array(self.surprise_weights)]
+            self.surprise_weights_ = [1 - x for x in self.surprise_weights_]
+            weights = [int((x) * 100) for x in np.array(self.surprise_weights_)]
             weights = scale_values_np(weights, self.scale)
 
         else:
@@ -177,7 +208,6 @@ def scale_values_np(arr, scale):
 
 
 def surprise_calculation(intervals):
-    from aeon.distances import dtw_distance
 
     n_intervals, n_instances, n_channels, n_timepoints = np.shape(intervals)
 
@@ -202,7 +232,7 @@ def surprise_calculation(intervals):
     return normalised
 
 
-def reconstruct_path(predecessors, start, end):
+def _reconstruct_path(predecessors, start, end):
     path = []
     i = end
     while i != start:
@@ -215,12 +245,11 @@ def reconstruct_path(predecessors, start, end):
 
 
 def calculate_convexity(X, y, k):
-    from scipy.sparse.csgraph import dijkstra
 
-    covariances = pyriemann.utils.covariance.covariances(X, estimator="lwf")
+    covariances = pyriemann.geometry.covariance.covariances(X, estimator="lwf")
     distance_matrix = []
     for i in range(len(X)):
-        test = pyriemann.utils.distance.distance(
+        test = pyriemann.geometry.distance.distance(
             covariances, covariances[i], metric="riemann"
         )
         distance_matrix.append(test)
@@ -239,7 +268,7 @@ def calculate_convexity(X, y, k):
         for start in idx:
             for end in idx:
                 if start != end:
-                    path = reconstruct_path(pres, start, end)
+                    path = _reconstruct_path(pres, start, end)
                     if path is None:
                         cscore.append(1)
                     else:
