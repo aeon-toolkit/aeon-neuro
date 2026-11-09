@@ -6,6 +6,7 @@ __all__ = [
     "DeepConvNetClassifier",
     "EEGConformerClassifier",
     "EEGNetClassifier",
+    "EEGPTClassifier",
     "LabramClassifier",
 ]
 
@@ -17,4 +18,5 @@ from aeon_neuro.classification.deep_learning._eegconformer import (
     EEGConformerClassifier,
 )
 from aeon_neuro.classification.deep_learning._eegnet import EEGNetClassifier
+from aeon_neuro.classification.deep_learning._eegpt import EEGPTClassifier
 from aeon_neuro.classification.deep_learning._labram import LabramClassifier
