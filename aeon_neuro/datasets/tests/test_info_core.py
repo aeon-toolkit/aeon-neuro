@@ -150,8 +150,8 @@ def test_subject_lookup_does_not_scan_the_complete_case_collection():
             self.visits += 1
             return super().__getitem__(index)
 
-    rows = CountedRows(info._view["rows"])
-    info._view["rows"] = rows
+    rows = CountedRows(info._view.rows)
+    info._view.rows = rows
     assert info.subject_of(999) == 999
     # Count accesses instead of timing, which would depend on the test machine.
     assert rows.visits <= 1

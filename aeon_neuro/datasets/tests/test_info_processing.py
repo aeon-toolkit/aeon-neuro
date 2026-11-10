@@ -16,6 +16,30 @@ from aeon_neuro.datasets.tests.test_info_view import _event_dataset, example_inf
 source = _fixtures.source
 
 
+@pytest.mark.parametrize("operation", ["reference", "resample"])
+def test_processing_serializes_new_optional_layout_facts(operation):
+    """Executing an operation records facts omitted from restored metadata."""
+    X = np.arange(32, dtype=float).reshape(1, 2, 16)
+    info = EEGDatasetInfo.from_arrays(
+        X, sfreq=8, channel_names=["C3", "C4"], units=["V", "V"]
+    )
+    state = info.to_dict()
+    state["view"]["layouts"][0].pop("reference")
+    state["view"]["layouts"][0].pop("temporal_context")
+    info = EEGDatasetInfo(state)
+    parameters = {"channels": "average"} if operation == "reference" else {"sfreq": 4}
+    Y, processed = info.process(X, operation, **parameters)
+    layout = processed.to_dict()["view"]["layouts"][0]
+    if operation == "reference":
+        assert layout["reference"] == {"method": "mean", "channels": ["C3", "C4"]}
+        np.testing.assert_array_equal(Y, X - X.mean(axis=1, keepdims=True))
+    else:
+        assert layout["temporal_context"] == "whole_row"
+        assert Y.shape == (1, 2, 8)
+    EEGDatasetInfo(processed.to_dict()).validate_layout(Y)
+    assert info.to_dict() == state
+
+
 @pytest.mark.parametrize("processed", [False, True])
 def test_current_descriptors_match_plain_event_cases_and_remain_detached(
     source, processed
