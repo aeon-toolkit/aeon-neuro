@@ -25,11 +25,41 @@ class RecordingInfo:
     events : list of dict
         Supplied event rows for this recording, in their source order.
 
+    Attributes
+    ----------
+    recording_id : str
+        Original recording identity, root-relative for BIDS sources.
+    metadata : dict
+        Complete original recording descriptor, including its source layout.
+    entities : dict
+        Original subject, session, task, acquisition and run identifiers.
+        Each value is a string or None when that entity was not supplied.
+    sfreq : float
+        Original recording sampling frequency in Hz, not the current case rate.
+    channel_names : tuple of str
+        Original channel names in source signal-array order.
+    channels : list of dict or None
+        Original channel table rows, or None when unavailable. Their units
+        describe the source file, not necessarily decoded or current arrays.
+    eeg_json : dict
+        Supplied original EEG JSON fields; empty when not supplied.
+    events : list of dict
+        Original event rows in source order, including normalized sample
+        coordinates. Empty when no events were supplied.
+    electrodes : dict or None
+        Original electrode table with columns and rows, or None if unavailable.
+    coordsystem : dict or None
+        Original coordinate-system fields and units, or None if unavailable.
+    scan : dict or None
+        Matched original scans row and its zero-based index, or None if absent.
+
     Notes
     -----
     Usually obtained from ``EEGDatasetInfo.recordings``. Returned dictionaries
     and lists are detached copies. These source facts do not track arbitrary
     changes to external arrays or certify the correctness of source annotations.
+    The EEG information guide's "Dictionary structure" section documents the
+    descriptor and event keys shared with ``EEGDatasetInfo``.
     """
 
     def __init__(self, metadata, events):
@@ -62,7 +92,7 @@ class RecordingInfo:
 
     @property
     def sfreq(self):
-        """Decoded source sampling frequency in Hz."""
+        """Original recording sampling frequency in Hz, not the current case rate."""
         return self._metadata["sampling_frequency"]
 
     @property
@@ -72,14 +102,18 @@ class RecordingInfo:
 
     @property
     def channels(self):
-        """List of dict or None: Original channel rows, absent when unavailable."""
+        """Original channel table rows, or None when unavailable.
+
+        Their units describe the source file, not necessarily decoded or
+        current arrays.
+        """
         if self._metadata.get("channel_metadata") is None:
             return None
         return deepcopy(self._metadata["channel_metadata"])
 
     @property
     def eeg_json(self):
-        """Resolved EEG JSON source fields, without changing their meaning."""
+        """Supplied original EEG JSON fields, empty when not supplied."""
         return deepcopy(self._metadata.get("eeg_metadata", {}))
 
     @property
@@ -122,12 +156,70 @@ class EEGDatasetInfo:
         Source events with recording_id, bids_event_id, onset and exact
         bids_onset_sample, or None for a known off-grid onset.
 
+    Attributes
+    ----------
+    cases : list of dict
+        Current aligned row identities, optional subject/group/source identities
+        and contributing sample intervals. Requires a current view; raises
+        ValueError for a source-only object rather than returning None.
+    case_ids : tuple of str
+        Current case identities in signal order. Requires a current view,
+        with the same ValueError behavior as cases.
+    groups : numpy.ndarray
+        One-dimensional object array of current group IDs (str, int or None).
+        For source-only objects, uses the original recording participants.
+    layouts : list of dict
+        Current channel order, rate, units, sample count and source grid mapping,
+        one per aligned row. Source-only objects derive these from recordings.
+    sfreq : float
+        Current sampling frequency in Hz, shared by all aligned rows.
+        Raises ValueError for empty collections or differing rates.
+    channel_names : tuple of str
+        Current channel names in array order, shared by all aligned rows.
+        Raises ValueError for empty collections or differing channel orders.
+    units : tuple of (str or None)
+        Current per-channel units; each entry may be None when unknown.
+        The tuple itself is never None. Raises ValueError for empty collections
+        or differing per-row unit lists.
+    recordings : tuple of RecordingInfo
+        Retained original recording context, empty for from_arrays objects.
+        In a current view this is separate from current row order and count.
+    source_ids : tuple of str
+        Source identities in aligned recording order, or unique current-row
+        source identities in first-occurrence order for a current view.
+        Rows without a source use an array: prefix followed by their case ID.
+    participant_ids : tuple of (str, int or None)
+        One original subject ID per current case or aligned source recording.
+        Unknown identities remain None; integer and string IDs stay distinct.
+    metadata : list of dict
+        Retained original recording descriptors, in recordings order, rather
+        than current case layouts. Empty when source facts were not supplied.
+    events : list of dict
+        Original events for the retained recording context, not one per case.
+        Empty when no events were supplied.
+    dataset : dict
+        Original dataset facts and known selected source participants. In a
+        current view, that scope belongs to the retained source context.
+    description : dict or None
+        Original dataset description, or None when unavailable.
+    readme : str or None
+        Original dataset README text, or None when unavailable.
+    participants : dict or None
+        Complete original participant table with columns and rows, or None
+        when unavailable. Selection does not trim the original population.
+    participants_json : dict or None
+        Original participant-column dictionary, or None when unavailable.
+
     Notes
     -----
     Construction validates supplied metadata and reads no files. It does not
     authenticate source contents. ``from_arrays`` describes current case arrays
     without inventing acquisition facts. Selection returns detached values;
     equal-shaped external array permutations cannot be detected by layout checks.
+    No signal arrays or labels are stored. Dictionary/list properties return
+    detached copies; public properties have no setters. The EEG information
+    guide's "Dictionary structure" section is the reference for internal keys,
+    their scopes and the portable representation returned by ``to_dict``.
     """
 
     def __init__(self, report=None, *, dataset=None, recordings=None, events=None):
@@ -329,19 +421,30 @@ class EEGDatasetInfo:
 
     @property
     def cases(self):
-        """Detached case-level identities and original contributing sample support."""
+        """Current row identities and contributing sample intervals.
+
+        Each row includes optional subject, group and source identities.
+        Requires a current view; raises ValueError for source-only information
+        rather than returning None. Returned rows are detached copies.
+        """
         if self._view is None:
             raise ValueError("This object describes recordings, not constructed cases")
         return deepcopy(self._view["rows"])
 
     @property
     def case_ids(self):
-        """Case identities in exactly the current signal order."""
+        """Current case identities in signal order, requiring a current view.
+
+        Raises ValueError for source-only information, like cases.
+        """
         return tuple(row["case_id"] for row in self.cases)
 
     @property
     def groups(self):
-        """Aligned declared case groups, or source participants for recordings."""
+        """Aligned current groups, or original participants for source-only data.
+
+        Returns a one-dimensional object array of str, int or None values.
+        """
         return np.asarray(
             (
                 [row["group_id"] for row in self.cases]
@@ -384,21 +487,31 @@ class EEGDatasetInfo:
 
     @property
     def sfreq(self):
-        """Current sampling frequency when all aligned rows agree."""
+        """Current sampling frequency in Hz when all aligned rows agree.
+
+        Raises ValueError for empty collections or differing rates.
+        """
         from aeon_neuro.datasets._info_view import _uniform
 
         return _uniform(self.layouts, "sampling_frequency")
 
     @property
     def channel_names(self):
-        """Current ordered channels when all aligned rows agree."""
+        """Current channel names in array order when all aligned rows agree.
+
+        Raises ValueError for empty collections or differing channel orders.
+        """
         from aeon_neuro.datasets._info_view import _uniform
 
         return _uniform(self.layouts, "channel_names")
 
     @property
     def units(self):
-        """Current per-channel units when all aligned rows agree."""
+        """Current per-channel units, with None entries for unknown units.
+
+        Returns a tuple, never None. Raises ValueError for empty collections
+        or differing per-row unit lists.
+        """
         from aeon_neuro.datasets._info_view import _uniform
 
         return _uniform(self.layouts, "units")
@@ -409,12 +522,18 @@ class EEGDatasetInfo:
 
         Before case construction these align with loaded recordings. Case-level
         views retain the source context separately from current case row order.
+        The tuple is empty for from_arrays objects.
         """
         return self._recordings
 
     @property
     def source_ids(self):
-        """Tuple of str: Selected source identities in signal order."""
+        """Source identities in recording order or first current-row occurrence.
+
+        Current views deduplicate recording identities in first-occurrence
+        order. Rows without a source use an array: prefix plus their case ID.
+        This property can differ from retained original source_ids in to_dict.
+        """
         if self._view is not None:
             return tuple(
                 dict.fromkeys(
@@ -426,24 +545,38 @@ class EEGDatasetInfo:
 
     @property
     def participant_ids(self):
-        """Source participant identities, one per aligned recording or case."""
+        """Original subject identities, one per aligned recording or current case.
+
+        Unknown identities remain None; integer and string IDs stay distinct.
+        """
         if self._view is not None:
             return tuple(row["participant_id"] for row in self._view["rows"])
         return tuple(entry["participant_id"] for entry in self._report["recordings"])
 
     @property
     def metadata(self):
-        """List of dict: Detached original acquisition descriptors."""
+        """Original recording descriptors, separate from current case layouts.
+
+        Returns detached dictionaries in recordings order; empty without source
+        facts, including for from_arrays objects.
+        """
         return deepcopy(self._report["recordings"])
 
     @property
     def events(self):
-        """List of dict: Detached events for the selected recordings."""
+        """Original events for retained recordings, rather than one per case.
+
+        Returns detached rows, empty when no events were supplied.
+        """
         return deepcopy(self._report["events"])
 
     @property
     def dataset(self):
-        """Dataset source facts and the current selected participant scope."""
+        """Original dataset facts and known retained source participants.
+
+        In a current view, selected_participants belongs to the retained source
+        context; it need not match participants in the selected current rows.
+        """
         return deepcopy(self._report["dataset"])
 
     @property
@@ -458,7 +591,11 @@ class EEGDatasetInfo:
 
     @property
     def participants(self):
-        """Dict or None: Complete source participant table as columns and rows."""
+        """Complete original participant table, or None when unavailable.
+
+        The table has columns and rows. Selection does not trim the original
+        source population.
+        """
         return deepcopy(self._report["dataset"]["participants"])
 
     @property
