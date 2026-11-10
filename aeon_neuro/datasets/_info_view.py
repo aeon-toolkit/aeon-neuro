@@ -325,7 +325,7 @@ def _current_metadata(info):
         raise ValueError(
             "Case construction requires recordings, not already built cases"
         )
-    sources = {row.recording_id: row for row in info.metadata}
+    sources = {row["recording_id"]: row for row in info.metadata}
     descriptors = []
     for row, layout in zip(info._view.rows, info._view.layouts, strict=True):
         descriptor = deepcopy(sources[row.recording_id])
@@ -344,7 +344,7 @@ def _recording_inputs(info, onset_column="onset"):
     descriptors = _current_metadata(info)
     if info._view is None:
         return descriptors, info.events
-    sources = {row.recording_id: row for row in info.metadata}
+    sources = {row["recording_id"]: row for row in info.metadata}
     events, grouped = [], {}
     for original in info.events:
         grouped.setdefault(original["recording_id"], []).append(original)

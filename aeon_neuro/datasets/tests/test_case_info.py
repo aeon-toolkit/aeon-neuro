@@ -88,3 +88,17 @@ def test_shared_info_builders_reject_mismatched_or_segmented_inputs(source, faul
         X = {"count": X[:1], "channels": X[:, :1], "samples": X[:, :, :-1]}[fault]
     with pytest.raises(ValueError):
         make_recording_cases(X, info, labels=[0] * len(X), groups=["a"] * len(X))
+
+
+def test_restored_current_recordings_keep_dictionary_descriptor_boundary():
+    """Restored current layouts feed public recording and event helpers."""
+    from aeon_neuro.datasets.tests.test_info_records import saved_state
+
+    state = saved_state()
+    state["view"]["kind"] = "recordings"
+    state["events"][0]["trial_type"] = "left"
+    info = EEGDatasetInfo(state)
+    assert info.current_metadata[0]["n_samples"] == 8
+    assert info.metadata[0]["n_samples"] == 16
+    assert info.events_for_cases()[0]["label"] == "left"
+    assert info.events_for_cases()[0]["group_id"] == 1
