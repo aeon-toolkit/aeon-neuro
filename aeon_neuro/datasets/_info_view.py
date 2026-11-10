@@ -12,6 +12,7 @@ from aeon_neuro.datasets._classification import (
     _integer,
     _samples,
 )
+from aeon_neuro.datasets._info_records import _CurrentView
 
 
 def _collection(X):
@@ -150,7 +151,7 @@ def _validate_view(view, sources):
                 )
             ):
                 raise ValueError("Current units must align with channel names")
-        return deepcopy(view)
+        return _CurrentView.from_dict(view)
     except (KeyError, TypeError, IndexError) as exc:
         raise ValueError("Incomplete current-layout view") from exc
 
@@ -161,8 +162,8 @@ def _source_units(descriptor, names):
     from mne.io.constants import FIFF
 
     labels = {int(FIFF.FIFF_UNIT_V): "V", int(FIFF.FIFF_UNIT_T): "T"}
-    codes = descriptor.get("channel_units_fiff", [])
-    indices = {name: i for i, name in enumerate(descriptor["channel_names"])}
+    codes = descriptor.channel_units_fiff
+    indices = {name: i for i, name in enumerate(descriptor.channel_names)}
     return [
         labels.get(codes[indices[name]]) if indices[name] < len(codes) else None
         for name in names
@@ -205,14 +206,13 @@ def _from_arrays(X, sfreq, channel_names, units, subjects, case_ids, groups):
 
 def _case_view(info, dataset):
     sources = {row["recording_id"]: row for row in info.metadata}
+    source_records = {record.recording_id: record._source for record in info.recordings}
     current = (
         {
-            row["recording_id"]: (row, layout)
-            for row, layout in zip(
-                info._view["rows"], info._view["layouts"], strict=True
-            )
+            row.recording_id: (row, layout)
+            for row, layout in zip(info._view.rows, info._view.layouts, strict=True)
         }
-        if info._view is not None and info._view["kind"] == "recordings"
+        if info._view is not None and info._view.kind == "recordings"
         else {}
     )
     names = list(dataset.metadata["channel_names"])
@@ -239,7 +239,7 @@ def _case_view(info, dataset):
             row.setdefault(key, source.get(key, source.get("entities", {}).get(key)))
         input_row, input_layout = current.get(row["recording_id"], (None, None))
         row["source_support"] = (
-            deepcopy(input_row["source_support"])
+            deepcopy(input_row.source_support)
             if input_row is not None
             else [row["start_sample"], row["stop_sample"]]
         )
@@ -249,15 +249,15 @@ def _case_view(info, dataset):
             rate,
             (
                 [
-                    input_layout["units"][input_layout["channel_names"].index(name)]
+                    input_layout.units[input_layout.channel_names.index(name)]
                     for name in input_names
                 ]
                 if input_layout is not None
-                else _source_units(source, input_names)
+                else _source_units(source_records[row["recording_id"]], input_names)
             ),
             row["stop_sample"] - row["start_sample"],
             reference=(
-                input_layout["reference"]
+                input_layout.reference
                 if input_layout is not None
                 else source.get("eeg_metadata", {}).get("EEGReference")
             ),
@@ -269,13 +269,11 @@ def _case_view(info, dataset):
             layout["source_channel_names"] = list(input_names)
         if input_layout is not None:
             layout["source_origin_sample"] = (
-                input_layout["source_origin_sample"]
-                + row["start_sample"] * input_layout["source_sample_step"]
+                input_layout.source_origin_sample
+                + row["start_sample"] * input_layout.source_sample_step
             )
-            layout["source_sample_step"] = input_layout["source_sample_step"]
-            layout["temporal_context"] = input_layout.get(
-                "temporal_context", "whole_row"
-            )
+            layout["source_sample_step"] = input_layout.source_sample_step
+            layout["temporal_context"] = input_layout.temporal_context
             if layout["temporal_context"] == "pointwise":
                 # Pointwise operations do not mix times. Map only this case,
                 # unlike filtering/resampling which retain the full input row.
@@ -283,7 +281,7 @@ def _case_view(info, dataset):
                 stop = first + layout["n_samples"] * layout["source_sample_step"]
                 row["source_support"] = [
                     floor(first),
-                    min(ceil(stop), input_row["source_support"][1]),
+                    min(ceil(stop), input_row.source_support[1]),
                 ]
         layouts.append(layout)
     view = _validate_view(
@@ -295,45 +293,48 @@ def _case_view(info, dataset):
 
 def _recording_view(info):
     rows, layouts = [], []
-    for source in info.metadata:
+    for recording in info.recordings:
+        source = recording._source
         rows.append(
             {
-                "case_id": "recording:" + source["recording_id"],
-                "recording_id": source["recording_id"],
-                "participant_id": source["participant_id"],
-                "group_id": source["participant_id"],
-                "source_support": [0, source["n_samples"]],
+                "case_id": "recording:" + source.recording_id,
+                "recording_id": source.recording_id,
+                "participant_id": source.participant_id,
+                "group_id": source.participant_id,
+                "source_support": [0, source.n_samples],
             }
         )
         layouts.append(
             _layout(
-                source["channel_names"],
-                source["sampling_frequency"],
-                _source_units(source, source["channel_names"]),
-                source["n_samples"],
-                reference=source.get("eeg_metadata", {}).get("EEGReference"),
+                source.channel_names,
+                source.sampling_frequency,
+                _source_units(source, source.channel_names),
+                source.n_samples,
+                reference=source.eeg_metadata.get("EEGReference"),
             )
         )
-    return {"version": 1, "kind": "recordings", "rows": rows, "layouts": layouts}
+    return _CurrentView.from_dict(
+        {"version": 1, "kind": "recordings", "rows": rows, "layouts": layouts}
+    )
 
 
 def _current_metadata(info):
     if info._view is None:
         return info.metadata
-    if info._view["kind"] != "recordings":
+    if info._view.kind != "recordings":
         raise ValueError(
             "Case construction requires recordings, not already built cases"
         )
-    sources = {row["recording_id"]: row for row in info.metadata}
+    sources = {row.recording_id: row for row in info.metadata}
     descriptors = []
-    for row, layout in zip(info._view["rows"], info._view["layouts"], strict=True):
-        descriptor = deepcopy(sources[row["recording_id"]])
+    for row, layout in zip(info._view.rows, info._view.layouts, strict=True):
+        descriptor = deepcopy(sources[row.recording_id])
         descriptor.update(
             # Descriptors are public detached views, so their channel list must
             # not expose the mutable layout used by later estimator checks.
-            channel_names=list(layout["channel_names"]),
-            sampling_frequency=layout["sampling_frequency"],
-            n_samples=layout["n_samples"],
+            channel_names=list(layout.channel_names),
+            sampling_frequency=layout.sampling_frequency,
+            n_samples=layout.n_samples,
         )
         descriptors.append(descriptor)
     return descriptors
@@ -343,13 +344,13 @@ def _recording_inputs(info, onset_column="onset"):
     descriptors = _current_metadata(info)
     if info._view is None:
         return descriptors, info.events
-    sources = {row["recording_id"]: row for row in info.metadata}
+    sources = {row.recording_id: row for row in info.metadata}
     events, grouped = [], {}
     for original in info.events:
         grouped.setdefault(original["recording_id"], []).append(original)
-    for row, layout in zip(info._view["rows"], info._view["layouts"], strict=True):
-        source = sources[row["recording_id"]]
-        for original in grouped.get(row["recording_id"], []):
+    for row, layout in zip(info._view.rows, info._view.layouts, strict=True):
+        source = sources[row.recording_id]
+        for original in grouped.get(row.recording_id, []):
             event = deepcopy(original)
             # Bound onsets remain seconds from the first current sample; retain
             # the entire published row independently for source-level joins.
@@ -362,7 +363,7 @@ def _recording_inputs(info, onset_column="onset"):
             event["acquisition_event"] = deepcopy(original)
             event[onset_column] = (
                 float(event[onset_column])
-                - layout["source_origin_sample"] / source["sampling_frequency"]
+                - layout.source_origin_sample / source["sampling_frequency"]
             )
             events.append(event)
     return descriptors, events
@@ -370,15 +371,15 @@ def _recording_inputs(info, onset_column="onset"):
 
 def _check_layout(X, view):
     arrays = _collection(X)
-    if len(arrays) != len(view["rows"]):
+    if len(arrays) != len(view.rows):
         raise ValueError("X and current metadata have different case counts")
-    for array, layout in zip(arrays, view["layouts"], strict=True):
-        if array.shape != (len(layout["channel_names"]), layout["n_samples"]):
+    for array, layout in zip(arrays, view.layouts, strict=True):
+        if array.shape != (len(layout.channel_names), layout.n_samples):
             raise ValueError("X does not match its current channel/sample layout")
 
 
 def _uniform(layouts, key):
-    values = [layout[key] for layout in layouts]
+    values = [getattr(layout, key) for layout in layouts]
     if not values or any(value != values[0] for value in values[1:]):
         raise ValueError(f"Current {key} is empty or differs across rows")
     value = values[0]

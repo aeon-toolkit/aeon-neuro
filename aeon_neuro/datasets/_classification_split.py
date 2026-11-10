@@ -203,12 +203,12 @@ def _validate_info_source_support(info, partitions):
     sources = {}
     for name, indices in partitions.items():
         for index in indices:
-            row = view["rows"][index]
+            row = view.rows[index]
             # Array-only cases have no original-source identity. Equal shapes or
             # generated IDs cannot establish a shared recording coordinate grid.
-            if row["recording_id"] is not None:
-                start, stop = row["source_support"]
-                sources.setdefault(row["recording_id"], []).append((start, stop, name))
+            if row.recording_id is not None:
+                start, stop = row.source_support
+                sources.setdefault(row.recording_id, []).append((start, stop, name))
     _check_source_overlap(
         sources, "Original source support overlaps across partitions."
     )
