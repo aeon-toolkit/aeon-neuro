@@ -42,14 +42,14 @@ def _names(value, names):
 
 
 def _apply(array, layout, operation, parameters):
-    names, rate = layout["channel_names"], layout["sampling_frequency"]
+    names, rate = layout.channel_names, layout.sampling_frequency
     if operation == "channels":
         picks = _names(parameters["names"], names)
-        layout["channel_names"] = [names[i] for i in picks]
-        layout["units"] = [layout["units"][i] for i in picks]
-        if "source_channel_names" in layout:
-            layout["source_channel_names"] = [
-                layout["source_channel_names"][i] for i in picks
+        layout.channel_names = [names[i] for i in picks]
+        layout.units = [layout.units[i] for i in picks]
+        if layout.source_channel_names is not None:
+            layout.source_channel_names = [
+                layout.source_channel_names[i] for i in picks
             ]
         return array[picks].copy()
     if operation == "scale":
@@ -70,7 +70,7 @@ def _apply(array, layout, operation, parameters):
             or any(not isinstance(unit, str) or not unit for unit in units)
         ):
             raise ValueError("Output units must explicitly name every current channel")
-        layout["units"] = list(units)
+        layout.units = list(units)
         return array * float(factor)
     if operation == "crop":
         from aeon_neuro.datasets._classification import _samples
@@ -83,7 +83,7 @@ def _apply(array, layout, operation, parameters):
             if crop.tmin is None
             else _samples(crop.tmin - crop.start_time, rate, "crop")
         )
-        layout["source_origin_sample"] += start * layout["source_sample_step"]
+        layout.source_origin_sample += start * layout.source_sample_step
         return result
     if operation == "resample":
         from scipy.signal import resample_poly
@@ -110,8 +110,8 @@ def _apply(array, layout, operation, parameters):
             axis=-1,
             padtype="reflect",
         )
-        layout["sampling_frequency"] = target
-        layout["source_sample_step"] *= rate / target
+        layout.sampling_frequency = target
+        layout.source_sample_step *= rate / target
         return result
     if operation == "filter":
         from aeon_neuro.transformations.series import BandPassSeriesTransformer
@@ -124,9 +124,11 @@ def _apply(array, layout, operation, parameters):
         list(range(len(names))) if reference == "average" else _names(reference, names)
     )
     # Subtraction is only meaningful between known commensurate channels.
-    if None in layout["units"] or len(set(layout["units"])) != 1:
+    if None in layout.units or len(set(layout.units)) != 1:
         raise ValueError("Rereferencing requires equal known current channel units")
-    layout["reference"] = {"method": "mean", "channels": [names[i] for i in picks]}
+    layout.reference = {"method": "mean", "channels": [names[i] for i in picks]}
+    # A performed operation supplies this fact even if saved input omitted it.
+    layout._present = layout._present | {"reference"}
     return array - array[picks].mean(axis=0, keepdims=True)
 
 
@@ -143,28 +145,30 @@ def _process(X, info, operation, parameters):
         raise ValueError("Cannot process an empty information view")
     report = info.to_dict()
     view = deepcopy(info._view) if info._view is not None else _recording_view(info)
-    before = deepcopy(view["layouts"])
+    before = [layout.to_dict() for layout in view.layouts]
     arrays = []
-    for array, layout in zip(X, view["layouts"], strict=True):
+    for array, layout in zip(X, view.layouts, strict=True):
         result = _apply(array, layout, operation, parameters)
         if operation in ("filter", "resample"):
             # Later cases can depend on neighboring samples of this input row.
-            layout["temporal_context"] = "whole_row"
+            layout.temporal_context = "whole_row"
+            # Restored optional keys become explicit when execution sets them.
+            layout._present = layout._present | {"temporal_context"}
         if not np.isfinite(result).all() or result.shape[-1] == 0:
             raise ValueError("Processing produced empty or nonfinite samples")
-        layout["n_samples"] = int(result.shape[-1])
+        layout.n_samples = int(result.shape[-1])
         arrays.append(result)
     # Keep support conservative: earlier filtering/resampling may have used the
     # full input row even when a later crop displays only a smaller interval.
-    report["view"] = view
+    report["view"] = view.to_dict()
     processed = EEGDatasetInfo(report)._with_history(
         operation,
         {
             "execution": "performed",
             "parameters": parameters,
-            "case_ids": [row["case_id"] for row in view["rows"]],
+            "case_ids": [row.case_id for row in view.rows],
             "input_layouts": before,
-            "output_layouts": view["layouts"],
+            "output_layouts": [layout.to_dict() for layout in view.layouts],
             "support_policy": "conservative original input interval per row",
             "backend_versions": {
                 name: version(name)
