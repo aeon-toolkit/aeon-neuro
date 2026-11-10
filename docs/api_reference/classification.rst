@@ -24,6 +24,22 @@ Deep learning
     EEGNetClassifier
 
 
+Distance based
+--------------
+
+.. currentmodule:: aeon_neuro.classification.distance_based
+
+
+.. autosummary::
+    :toctree: auto_generated/
+    :template: class.rst
+
+    RiemannianKNNClassifier
+    RiemannianMDMClassifier
+    TemplateCCAClassifier
+    TRCAClassifier
+
+
 Feature based
 -------------
 
@@ -35,4 +51,5 @@ Feature based
     :template: class.rst
 
     CSPClassifier
+    DifferentialEntropyClassifier
     XDAWNClassifier

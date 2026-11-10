@@ -27,6 +27,7 @@ Collection
     :toctree: auto_generated/
     :template: class.rst
 
+    DifferentialEntropy
     DownsampleCollectionTransformer
     ERPCovariances
     LogVariance
