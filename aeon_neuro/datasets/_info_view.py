@@ -1,6 +1,5 @@
 """Validate current case layouts independently of original acquisition facts."""
 
-from copy import deepcopy
 from numbers import Real
 
 import numpy as np
@@ -11,6 +10,7 @@ from aeon_neuro.datasets._classification import (
     _integer,
     _samples,
 )
+from aeon_neuro.datasets._info_records import _CurrentView
 
 
 def _collection(X):
@@ -149,7 +149,7 @@ def _validate_view(view, sources):
                 )
             ):
                 raise ValueError("Current units must align with channel names")
-        return deepcopy(view)
+        return _CurrentView.from_dict(view)
     except (KeyError, TypeError, IndexError) as exc:
         raise ValueError("Incomplete current-layout view") from exc
 
@@ -160,8 +160,8 @@ def _source_units(descriptor, names):
     from mne.io.constants import FIFF
 
     labels = {int(FIFF.FIFF_UNIT_V): "V", int(FIFF.FIFF_UNIT_T): "T"}
-    codes = descriptor.get("channel_units_fiff", [])
-    indices = {name: i for i, name in enumerate(descriptor["channel_names"])}
+    codes = descriptor.channel_units_fiff
+    indices = {name: i for i, name in enumerate(descriptor.channel_names)}
     return [
         labels.get(codes[indices[name]]) if indices[name] < len(codes) else None
         for name in names
@@ -204,39 +204,42 @@ def _from_arrays(X, sfreq, channel_names, units, subjects, case_ids, groups):
 
 def _recording_view(info):
     rows, layouts = [], []
-    for source in info.metadata:
+    for recording in info.recordings:
+        source = recording._source
         rows.append(
             {
-                "case_id": "recording:" + source["recording_id"],
-                "recording_id": source["recording_id"],
-                "participant_id": source["participant_id"],
-                "group_id": source["participant_id"],
-                "source_support": [0, source["n_samples"]],
+                "case_id": "recording:" + source.recording_id,
+                "recording_id": source.recording_id,
+                "participant_id": source.participant_id,
+                "group_id": source.participant_id,
+                "source_support": [0, source.n_samples],
             }
         )
         layouts.append(
             _layout(
-                source["channel_names"],
-                source["sampling_frequency"],
-                _source_units(source, source["channel_names"]),
-                source["n_samples"],
-                reference=source.get("eeg_metadata", {}).get("EEGReference"),
+                source.channel_names,
+                source.sampling_frequency,
+                _source_units(source, source.channel_names),
+                source.n_samples,
+                reference=source.eeg_metadata.get("EEGReference"),
             )
         )
-    return {"version": 1, "kind": "recordings", "rows": rows, "layouts": layouts}
+    return _CurrentView.from_dict(
+        {"version": 1, "kind": "recordings", "rows": rows, "layouts": layouts}
+    )
 
 
 def _check_layout(X, view):
     arrays = _collection(X)
-    if len(arrays) != len(view["rows"]):
+    if len(arrays) != len(view.rows):
         raise ValueError("X and current metadata have different case counts")
-    for array, layout in zip(arrays, view["layouts"], strict=True):
-        if array.shape != (len(layout["channel_names"]), layout["n_samples"]):
+    for array, layout in zip(arrays, view.layouts, strict=True):
+        if array.shape != (len(layout.channel_names), layout.n_samples):
             raise ValueError("X does not match its current channel/sample layout")
 
 
 def _uniform(layouts, key):
-    values = [layout[key] for layout in layouts]
+    values = [getattr(layout, key) for layout in layouts]
     if not values or any(value != values[0] for value in values[1:]):
         raise ValueError(f"Current {key} is empty or differs across rows")
     value = values[0]

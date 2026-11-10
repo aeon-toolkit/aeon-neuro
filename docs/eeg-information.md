@@ -80,13 +80,31 @@ validation are separate consumers of this metadata contract.
 
 ## Dictionary structure
 
-This is the reference for the internal dictionaries and their portable encoding.
-`EEGDatasetInfo._report` holds detached version-2 state. `_view` is its optional
-`view` dictionary, or `None` for source-only information. `_recordings` is a tuple
-of `RecordingInfo` objects built from the source descriptors and grouped events.
-Each recording stores its detached descriptor in `_metadata` and event rows in
-`_events`. Use public properties and `to_dict()` rather than mutating these
-private fields: mutation bypasses the constructor's alignment checks.
+This is the reference for portable dictionaries. Internally, fixed metadata
+structures use named dataclass fields:
+
+| Record | Contents |
+| --- | --- |
+| `_DatasetFacts` | Dataset description, README, participant table/dictionary and selected source participants. |
+| `_RecordingDescriptor` | Original recording identity, participant, source channels/rate/length, entities and optional source annotations. |
+| `_CaseRow` | Current case, recording, participant and group identities with contributing sample support. |
+| `_SignalLayout` | Current channels, sampling rate, units, sample count, reference and source-grid mapping. |
+| `_CurrentView` | Version, kind and aligned lists of typed case rows and layouts. |
+
+`EEGDatasetInfo._dataset` holds dataset facts. `_recordings` contains
+`RecordingInfo` views, each with a typed `_source` descriptor and original event
+rows. `_view` contains typed current rows/layouts, or `None` for source-only
+information. Original events and diagnostics remain separate lists. Flexible
+EEG JSON fields, table rows and unrecognized source extensions remain dictionaries.
+
+Conversion to and from dictionaries happens at the portable-state and public
+property boundaries. Each record tracks supplied keys so omitted optional fields
+stay omitted; unrecognized fields round-trip without becoming fixed attributes.
+The outer version-2 and current-view version-1 formats are unchanged. Records are
+private mutable implementation details, not public immutable value objects.
+Construction, properties and selection retain detached ownership. Use the public
+properties and `to_dict()` rather than mutating private fields, which bypasses
+alignment checks.
 
 The following tables describe the core keys. Additional supplied source fields
 are retained; this container does not validate every source annotation or make

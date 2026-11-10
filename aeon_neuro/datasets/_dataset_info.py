@@ -12,6 +12,7 @@ from aeon_neuro.datasets._classification import (
     _recordings,
     _required,
 )
+from aeon_neuro.datasets._info_records import _DatasetFacts, _RecordingDescriptor
 from aeon_neuro.datasets._info_view import _event_sample
 
 
@@ -63,24 +64,24 @@ class RecordingInfo:
     """
 
     def __init__(self, metadata, events):
-        self._metadata = deepcopy(metadata)
+        self._source = _RecordingDescriptor.from_dict(metadata)
         self._events = deepcopy(events)
 
     @property
     def recording_id(self):
         """Original root-relative recording identity."""
-        return self._metadata["recording_id"]
+        return self._source.recording_id
 
     @property
     def metadata(self):
         """Detached complete descriptor for the existing case APIs."""
-        return deepcopy(self._metadata)
+        return self._source.to_dict()
 
     @property
     def entities(self):
         """Published BIDS identifiers, without their entity prefixes."""
         return {
-            name: self._metadata.get(key)
+            name: getattr(self._source, key)
             for name, key in (
                 ("subject", "subject"),
                 ("session", "session"),
@@ -93,12 +94,12 @@ class RecordingInfo:
     @property
     def sfreq(self):
         """Original recording sampling frequency in Hz, not the current case rate."""
-        return self._metadata["sampling_frequency"]
+        return self._source.sampling_frequency
 
     @property
     def channel_names(self):
         """Tuple of str: Decoded source channel names in signal-array order."""
-        return tuple(self._metadata["channel_names"])
+        return tuple(self._source.channel_names)
 
     @property
     def channels(self):
@@ -107,14 +108,14 @@ class RecordingInfo:
         Their units describe the source file, not necessarily decoded or
         current arrays.
         """
-        if self._metadata.get("channel_metadata") is None:
+        if self._source.channel_metadata is None:
             return None
-        return deepcopy(self._metadata["channel_metadata"])
+        return deepcopy(self._source.channel_metadata)
 
     @property
     def eeg_json(self):
         """Supplied original EEG JSON fields, empty when not supplied."""
-        return deepcopy(self._metadata.get("eeg_metadata", {}))
+        return deepcopy(self._source.eeg_metadata)
 
     @property
     def events(self):
@@ -124,17 +125,17 @@ class RecordingInfo:
     @property
     def electrodes(self):
         """Dict or None: Original electrode table as columns and rows."""
-        return deepcopy(self._metadata.get("electrodes"))
+        return deepcopy(self._source.electrodes)
 
     @property
     def coordsystem(self):
         """Dict or None: Source coordinate system and units, without conversion."""
-        return deepcopy(self._metadata.get("coordsystem"))
+        return deepcopy(self._source.coordsystem)
 
     @property
     def scan(self):
         """Dict or None: Matched scans row and its original zero-based row index."""
-        return deepcopy(self._metadata.get("scan"))
+        return deepcopy(self._source.scan)
 
 
 class EEGDatasetInfo:
@@ -275,22 +276,22 @@ class EEGDatasetInfo:
                 if issue.get("severity") == "error"
             )
             raise ValueError(f"The supplied metadata must be ready: {messages}")
-        self._report = deepcopy(report)
+        report = deepcopy(report)
         try:
-            entries = self._report["recordings"]
+            entries = report["recordings"]
             if not isinstance(entries, list):
                 raise ValueError("Recording descriptors must be a list")
             entries = _recording_info(entries) if entries else []
             ids = [entry["recording_id"] for entry in entries]
-            if self._report["source_ids"] != ids:
+            if report["source_ids"] != ids:
                 raise ValueError("Source IDs and recording descriptors are not aligned")
             participants = _participant_scope(entries)
-            if self._report["dataset"]["selected_participants"] != participants:
+            if report["dataset"]["selected_participants"] != participants:
                 raise ValueError("Selected participants do not match recording scope")
             grouped = {entry["recording_id"]: [] for entry in entries}
             by_id = {entry["recording_id"]: entry for entry in entries}
             seen = set()
-            for row in self._report["events"]:
+            for row in report["events"]:
                 recording_id = row["recording_id"]
                 if recording_id not in grouped:
                     raise ValueError("Event refers to an unselected recording")
@@ -310,22 +311,36 @@ class EEGDatasetInfo:
                 grouped[recording_id].append(row)
         except (KeyError, TypeError) as exc:
             raise ValueError("Incomplete supplied metadata") from exc
-        self._report["recordings"] = entries
         self._recordings = tuple(
             RecordingInfo(entry, grouped[entry["recording_id"]]) for entry in entries
         )
         from aeon_neuro.datasets._info_view import _validate_view
 
-        self._view = (
-            _validate_view(self._report["view"], by_id)
-            if "view" in self._report
-            else None
-        )
+        self._dataset = _DatasetFacts.from_dict(report["dataset"])
+        self._events = report["events"]
+        self._issues = report.get("issues", [])
+        self._has_issues = "issues" in report
+        # Keep free-form extensions separately from the named core. Adapters
+        # can retain source manifests without making them part of row layouts.
+        self._extra = {
+            key: value
+            for key, value in report.items()
+            if key
+            not in {
+                "version",
+                "ready",
+                "dataset",
+                "recordings",
+                "source_ids",
+                "events",
+                "issues",
+                "view",
+            }
+        }
+        self._view = _validate_view(report["view"], by_id) if "view" in report else None
 
     def __len__(self):
-        return (
-            len(self._view["rows"]) if self._view is not None else len(self._recordings)
-        )
+        return len(self._view.rows) if self._view is not None else len(self._recordings)
 
     def __getitem__(self, selector):
         """Select detached information in the same order as X[selector]."""
@@ -415,7 +430,7 @@ class EEGDatasetInfo:
             },
             "view": _from_arrays(
                 X, sfreq, channel_names, units, subjects, case_ids, groups
-            ),
+            ).to_dict(),
         }
         return cls(report)
 
@@ -429,7 +444,7 @@ class EEGDatasetInfo:
         """
         if self._view is None:
             raise ValueError("This object describes recordings, not constructed cases")
-        return deepcopy(self._view["rows"])
+        return [row.to_dict() for row in self._view.rows]
 
     @property
     def case_ids(self):
@@ -437,7 +452,9 @@ class EEGDatasetInfo:
 
         Raises ValueError for source-only information, like cases.
         """
-        return tuple(row["case_id"] for row in self.cases)
+        if self._view is None:
+            raise ValueError("This object describes recordings, not constructed cases")
+        return tuple(row.case_id for row in self._view.rows)
 
     @property
     def groups(self):
@@ -447,7 +464,7 @@ class EEGDatasetInfo:
         """
         return np.asarray(
             (
-                [row["group_id"] for row in self.cases]
+                [row.group_id for row in self._view.rows]
                 if self._view is not None
                 else self.participant_ids
             ),
@@ -471,19 +488,24 @@ class EEGDatasetInfo:
         if not 0 <= index < len(self):
             raise ValueError("Subject index is outside the information view")
         # A single lookup must not rebuild the identities for every case.
-        rows = (
-            self._view["rows"] if self._view is not None else self._report["recordings"]
+        row = (
+            self._view.rows[index]
+            if self._view is not None
+            else self._recordings[index]._source
         )
-        return rows[index]["participant_id"]
+        return row.participant_id
 
     @property
     def layouts(self):
         """Detached current layouts, separate from original source descriptors."""
+        return [layout.to_dict() for layout in self._current_layouts()]
+
+    def _current_layouts(self):
         if self._view is None:
             from aeon_neuro.datasets._info_view import _recording_view
 
-            return _recording_view(self)["layouts"]
-        return deepcopy(self._view["layouts"])
+            return _recording_view(self).layouts
+        return self._view.layouts
 
     @property
     def sfreq(self):
@@ -493,7 +515,7 @@ class EEGDatasetInfo:
         """
         from aeon_neuro.datasets._info_view import _uniform
 
-        return _uniform(self.layouts, "sampling_frequency")
+        return _uniform(self._current_layouts(), "sampling_frequency")
 
     @property
     def channel_names(self):
@@ -503,7 +525,7 @@ class EEGDatasetInfo:
         """
         from aeon_neuro.datasets._info_view import _uniform
 
-        return _uniform(self.layouts, "channel_names")
+        return _uniform(self._current_layouts(), "channel_names")
 
     @property
     def units(self):
@@ -514,7 +536,7 @@ class EEGDatasetInfo:
         """
         from aeon_neuro.datasets._info_view import _uniform
 
-        return _uniform(self.layouts, "units")
+        return _uniform(self._current_layouts(), "units")
 
     @property
     def recordings(self):
@@ -537,11 +559,11 @@ class EEGDatasetInfo:
         if self._view is not None:
             return tuple(
                 dict.fromkeys(
-                    row["recording_id"] or "array:" + row["case_id"]
-                    for row in self._view["rows"]
+                    row.recording_id or "array:" + row.case_id
+                    for row in self._view.rows
                 )
             )
-        return tuple(self._report["source_ids"])
+        return tuple(record.recording_id for record in self._recordings)
 
     @property
     def participant_ids(self):
@@ -550,8 +572,8 @@ class EEGDatasetInfo:
         Unknown identities remain None; integer and string IDs stay distinct.
         """
         if self._view is not None:
-            return tuple(row["participant_id"] for row in self._view["rows"])
-        return tuple(entry["participant_id"] for entry in self._report["recordings"])
+            return tuple(row.participant_id for row in self._view.rows)
+        return tuple(record._source.participant_id for record in self._recordings)
 
     @property
     def metadata(self):
@@ -560,7 +582,7 @@ class EEGDatasetInfo:
         Returns detached dictionaries in recordings order; empty without source
         facts, including for from_arrays objects.
         """
-        return deepcopy(self._report["recordings"])
+        return [record.metadata for record in self._recordings]
 
     @property
     def events(self):
@@ -568,7 +590,7 @@ class EEGDatasetInfo:
 
         Returns detached rows, empty when no events were supplied.
         """
-        return deepcopy(self._report["events"])
+        return deepcopy(self._events)
 
     @property
     def dataset(self):
@@ -577,17 +599,17 @@ class EEGDatasetInfo:
         In a current view, selected_participants belongs to the retained source
         context; it need not match participants in the selected current rows.
         """
-        return deepcopy(self._report["dataset"])
+        return self._dataset.to_dict()
 
     @property
     def description(self):
         """Dict or None: Original dataset description."""
-        return deepcopy(self._report["dataset"]["description"])
+        return deepcopy(self._dataset.description)
 
     @property
     def readme(self):
         """Str or None: Original dataset README text."""
-        return self._report["dataset"]["readme"]
+        return self._dataset.readme
 
     @property
     def participants(self):
@@ -596,12 +618,12 @@ class EEGDatasetInfo:
         The table has columns and rows. Selection does not trim the original
         source population.
         """
-        return deepcopy(self._report["dataset"]["participants"])
+        return deepcopy(self._dataset.participants)
 
     @property
     def participants_json(self):
         """Dict or None: Original participant-column dictionary."""
-        return deepcopy(self._report["dataset"]["participants_json"])
+        return deepcopy(self._dataset.participants_json)
 
     def to_dict(self):
         """Return detached version-2 metadata for restoration with EEGDatasetInfo.
@@ -612,7 +634,20 @@ class EEGDatasetInfo:
             Source context and the optional current view, without signal arrays.
             This is metadata serialization, not a certificate of signal contents.
         """
-        return deepcopy(self._report)
+        report = deepcopy(self._extra)
+        report.update(
+            version=2,
+            ready=True,
+            dataset=self._dataset.to_dict(),
+            source_ids=[record.recording_id for record in self._recordings],
+            recordings=self.metadata,
+            events=self.events,
+        )
+        if self._has_issues:
+            report["issues"] = deepcopy(self._issues)
+        if self._view is not None:
+            report["view"] = self._view.to_dict()
+        return report
 
     def validate_layout(self, X):
         """Check the collection count, shapes and numeric types against metadata.
@@ -645,7 +680,7 @@ class EEGDatasetInfo:
                 "X and metadata must contain the same number of recordings"
             )
         if len(self):
-            _recordings(X, self._report["recordings"])
+            _recordings(X, self.metadata)
 
     def select(self, X, selector):
         """Copy recordings and matching metadata together in the requested order.
