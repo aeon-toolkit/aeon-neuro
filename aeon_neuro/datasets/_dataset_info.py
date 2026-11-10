@@ -53,6 +53,10 @@ class RecordingInfo:
         Original coordinate-system fields and units, or None if unavailable.
     scan : dict or None
         Matched original scans row and its zero-based index, or None if absent.
+    channels_frame : pandas.DataFrame or None
+        Detached original channel table, or None when channel rows are unavailable.
+    events_frame : pandas.DataFrame
+        Detached original event table, empty when no events were supplied.
 
     Notes
     -----
