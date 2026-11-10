@@ -6,10 +6,10 @@ import numpy as np
 from aeon.transformations.series.base import BaseSeriesTransformer
 from scipy.linalg import LinAlgError, solve, solve_sylvester
 
-__all__ = ["NuttallStrand"]
+__all__ = ["NuttallStrandSeriesTransformer"]
 
 
-class NuttallStrand(BaseSeriesTransformer):
+class NuttallStrandSeriesTransformer(BaseSeriesTransformer):
     """Estimate spectral density matrices with the Nuttall-Strand algorithm.
 
     Nuttall-Strand, also known as multivariate Burg, fits a vector
@@ -31,9 +31,15 @@ class NuttallStrand(BaseSeriesTransformer):
 
     Notes
     -----
-    The input should be approximately stationary and zero-mean. The output has
-    shape ``(n_freqs, n_channels, n_channels)`` and uses the frequency grid
-    ``np.linspace(fmin, fmax, n_freqs)``.
+    The input should be approximately stationary. Channel means are not removed;
+    demean the input before transforming it, particularly when ``fmin=0``, to
+    prevent an offset from producing a large 0 Hz term.
+
+    The output has shape ``(n_freqs, n_channels, n_channels)`` and uses the
+    frequency grid ``np.linspace(fmin, fmax, n_freqs)``. It is a two-sided
+    spectral density divided by ``sfreq``, so positive-frequency values are half
+    the corresponding one-sided Welch PSD. For inputs measured in units ``U``,
+    the spectral matrix entries have units ``U**2 / Hz``.
 
     References
     ----------
@@ -47,10 +53,12 @@ class NuttallStrand(BaseSeriesTransformer):
     Examples
     --------
     >>> import numpy as np
-    >>> from aeon_neuro.transformations.series import NuttallStrand
+    >>> from aeon_neuro.transformations.series import NuttallStrandSeriesTransformer
     >>> rng = np.random.default_rng(0)
     >>> X = rng.standard_normal((3, 200))
-    >>> psd = NuttallStrand(model_order=3, n_freqs=5).fit_transform(X)
+    >>> psd = NuttallStrandSeriesTransformer(
+    ...     model_order=3, n_freqs=5
+    ... ).fit_transform(X)
     >>> psd.shape
     (5, 3, 3)
     """

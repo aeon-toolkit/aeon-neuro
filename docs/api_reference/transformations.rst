@@ -18,7 +18,7 @@ Transformers applied to a single series of shape ``(n_channels, n_timepoints)``.
     BandPassSeriesTransformer
     BandPowerSeriesTransformer
     EpochSeriesTransformer
-    NuttallStrand
+    NuttallStrandSeriesTransformer
 
 Collection transformers
 -----------------------

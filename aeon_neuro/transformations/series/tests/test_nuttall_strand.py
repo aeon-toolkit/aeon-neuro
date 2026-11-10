@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from aeon_neuro.transformations.series import NuttallStrand
+from aeon_neuro.transformations.series import NuttallStrandSeriesTransformer
 
 
 def _simulate_var(coefficient, noise_covariance, n_timepoints, seed=0):
@@ -39,7 +39,7 @@ def test_known_var_spectrum():
     n_freqs = 6
     series = _simulate_var(coefficient, noise_covariance, 30000)
 
-    result = NuttallStrand(
+    result = NuttallStrandSeriesTransformer(
         model_order=1, n_freqs=n_freqs, sfreq=sfreq, fmax=40
     ).fit_transform(series)
     expected = _var_spectrum(
@@ -52,7 +52,7 @@ def test_known_var_spectrum():
 def test_spectrum_is_hermitian_positive_definite():
     """Every returned spectral density matrix is Hermitian positive definite."""
     rng = np.random.default_rng(1)
-    result = NuttallStrand(model_order=3, n_freqs=7).fit_transform(
+    result = NuttallStrandSeriesTransformer(model_order=3, n_freqs=7).fit_transform(
         rng.standard_normal((4, 500))
     )
 
@@ -68,7 +68,7 @@ def test_univariate_ar_spectrum():
     sfreq = 80
     series = _simulate_var(coefficient, noise_covariance, 20000, seed=2)
 
-    result = NuttallStrand(
+    result = NuttallStrandSeriesTransformer(
         model_order=1, n_freqs=5, sfreq=sfreq, fmax=30
     ).fit_transform(series)
     expected = _var_spectrum(
@@ -93,10 +93,10 @@ def test_univariate_ar_spectrum():
 def test_invalid_parameters(kwargs, message):
     """Invalid parameters raise informative errors at transform time."""
     with pytest.raises(ValueError, match=message):
-        NuttallStrand(**kwargs).fit_transform(np.ones((2, 20)))
+        NuttallStrandSeriesTransformer(**kwargs).fit_transform(np.ones((2, 20)))
 
 
 def test_model_order_must_fit_series():
     """The model order must be smaller than the series length."""
     with pytest.raises(ValueError, match="smaller than the series length"):
-        NuttallStrand(model_order=20).fit_transform(np.ones((2, 20)))
+        NuttallStrandSeriesTransformer(model_order=20).fit_transform(np.ones((2, 20)))
