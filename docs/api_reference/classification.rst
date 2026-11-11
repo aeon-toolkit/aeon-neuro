@@ -35,4 +35,5 @@ Feature based
     :template: class.rst
 
     CSPClassifier
+    FeatureClassifier
     XDAWNClassifier
