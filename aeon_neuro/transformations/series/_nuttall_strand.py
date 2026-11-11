@@ -35,6 +35,9 @@ class NuttallStrandSeriesTransformer(BaseSeriesTransformer):
     demean the input before transforming it, particularly when ``fmin=0``, to
     prevent an offset from producing a large 0 Hz term.
 
+    The input must have full row rank. Rank-deficient channel data do not define
+    the nonsingular covariance matrices required by the Nuttall-Strand recursion.
+
     The output has shape ``(n_freqs, n_channels, n_channels)`` and uses the
     frequency grid ``np.linspace(fmin, fmax, n_freqs)``. It is a two-sided
     spectral density divided by ``sfreq``, so positive-frequency values are half
@@ -171,6 +174,10 @@ class NuttallStrandSeriesTransformer(BaseSeriesTransformer):
 
         dtype = np.result_type(X.dtype, np.float64)
         X = np.asarray(X, dtype=dtype)
+        if np.linalg.matrix_rank(X) < n_channels:
+            raise ValueError(
+                "X must have full row rank; rank-deficient inputs are not supported."
+            )
         p_forward = X @ X.conj().T / n_timepoints
         p_backward = p_forward.copy()
         identity = np.eye(n_channels, dtype=dtype)

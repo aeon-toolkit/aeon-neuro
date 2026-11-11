@@ -100,3 +100,12 @@ def test_model_order_must_fit_series():
     """The model order must be smaller than the series length."""
     with pytest.raises(ValueError, match="smaller than the series length"):
         NuttallStrandSeriesTransformer(model_order=20).fit_transform(np.ones((2, 20)))
+
+
+def test_rank_deficient_input_raises():
+    """Rank-deficient input is rejected instead of producing negative power."""
+    X = np.random.default_rng(0).standard_normal((20, 12))
+    X -= X.mean(axis=1, keepdims=True)
+
+    with pytest.raises(ValueError, match="full row rank"):
+        NuttallStrandSeriesTransformer(model_order=3).fit_transform(X)
