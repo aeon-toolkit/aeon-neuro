@@ -8,10 +8,12 @@ from aeon.testing.estimator_checking import check_estimator
 from aeon_neuro.classification.experimental import (
     MOABBPipelineClassifier,
     MOABBTSLRClassifier,
+    NeuralBenchCoSpectraLRClassifier,
     NeuralBenchCTNetClassifier,
     NeuralBenchDeepClassifier,
     NeuralBenchPreprocessor,
     NeuralBenchTSLRClassifier,
+    NeuralBenchXdawnTSLRClassifier,
 )
 from aeon_neuro.classification.experimental._neuralbench import (
     MOABB_FILTER_BANK,
@@ -130,6 +132,125 @@ def test_tslr_matches_pyriemann_pipeline():
 
     np.testing.assert_allclose(clf.predict_proba(X), expected.predict_proba(X))
     assert clf.metric_ == "riemann"
+
+
+def _lr_cv():
+    from sklearn.linear_model import LogisticRegressionCV
+
+    return LogisticRegressionCV(
+        Cs=[10.0**k for k in range(-3, 4)],
+        cv=5,
+        max_iter=1000,
+        class_weight="balanced",
+        scoring="accuracy",
+    )
+
+
+def _erp_data(n_cases=40, n_channels=4, n_timepoints=64, random_state=0):
+    """Class "target" (a quarter of cases) carries an evoked bump."""
+    rng = np.random.default_rng(random_state)
+    X = rng.standard_normal((n_cases, n_channels, n_timepoints))
+    y = np.where(np.arange(n_cases) % 4 == 0, "target", "nontarget")
+    bump = np.exp(-0.5 * ((np.arange(n_timepoints) - 30) / 4) ** 2)
+    X[y == "target"] += 2.0 * np.outer(np.linspace(1, 0.2, n_channels), bump)
+    return X, y
+
+
+def test_xdawn_tslr_matches_pyriemann_pipeline():
+    """Check XdawnTsLR equals NeuralBench's pyriemann and sklearn pipeline."""
+    from pyriemann.estimation import Shrinkage, XdawnCovariances
+    from pyriemann.tangentspace import TangentSpace
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    X, y = _erp_data()
+    clf = NeuralBenchXdawnTSLRClassifier(preprocess=False, random_state=0)
+    clf.fit(X, y)
+    assert clf.target_class_ == "target"
+    expected = make_pipeline(
+        XdawnCovariances(nfilter=4, classes=["target"], estimator="lwf"),
+        Shrinkage(shrinkage=0.1),
+        TangentSpace(metric="riemann"),
+        StandardScaler(),
+        _lr_cv(),
+    ).fit(X, y)
+    np.testing.assert_allclose(clf.predict_proba(X), expected.predict_proba(X))
+
+
+def test_xdawn_tslr_detects_evoked_responses():
+    """The evoked class is learned and generalises."""
+    X, y = _erp_data(n_cases=80, random_state=0)
+    X_test, y_test = _erp_data(n_cases=80, random_state=1)
+    clf = NeuralBenchXdawnTSLRClassifier(preprocess=False, cv=3).fit(X, y)
+    assert np.mean(clf.predict(X_test) == y_test) >= 0.9
+
+
+def test_xdawn_tslr_target_class():
+    """An explicit target class is used, and an unknown one raises."""
+    X, y = _erp_data()
+    clf = NeuralBenchXdawnTSLRClassifier(
+        preprocess=False, target_class="nontarget", cv=2
+    ).fit(X, y)
+    assert clf.target_class_ == "nontarget"
+    with pytest.raises(ValueError, match="target_class"):
+        NeuralBenchXdawnTSLRClassifier(preprocess=False, target_class="x").fit(X, y)
+
+
+def test_cospectra_lr_matches_pyriemann_pipeline():
+    """Check CoSpectraLogLR equals NeuralBench's pipeline on long enough cases."""
+    from pyriemann.estimation import CoSpectra
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    from aeon_neuro.classification.experimental._neuralbench import _UpperTriLog1p
+
+    X, y = _covariance_data(n_timepoints=256)
+    clf = NeuralBenchCoSpectraLRClassifier(sfreq=120.0, preprocess=False)
+    clf.fit(X, y)
+    expected = make_pipeline(
+        CoSpectra(window=128, overlap=0.75, fmin=2.0, fmax=40.0, fs=120.0),
+        _UpperTriLog1p(),
+        StandardScaler(),
+        _lr_cv(),
+    ).fit(X, y)
+    np.testing.assert_allclose(clf.predict_proba(X), expected.predict_proba(X))
+
+
+def test_cospectra_lr_caps_the_window_on_short_cases():
+    """Cases shorter than the window still give finite features."""
+    X, y = _covariance_data(n_timepoints=100)
+    clf = NeuralBenchCoSpectraLRClassifier(sfreq=120.0, preprocess=False, cv=2)
+    clf.fit(X, y)
+    spectra = clf.pipeline_.steps[0][1]
+    assert spectra.window_ == 64
+    assert np.all(np.isfinite(spectra.transform(X)))
+
+
+def test_cospectra_lr_separates_tones():
+    """Cases with a 10 Hz or a 15 Hz tone in noise are told apart."""
+    rng = np.random.default_rng(0)
+    t = np.arange(240) / 120.0
+
+    def tones(n):
+        y = np.arange(n) % 2
+        f = np.where(y == 0, 10.0, 15.0)
+        phase = rng.uniform(0, 2 * np.pi, n)
+        X = 2 * rng.standard_normal((n, 3, len(t)))
+        X += np.sin(2 * np.pi * f[:, None] * t + phase[:, None])[:, None, :]
+        return X, y
+
+    X, y = tones(40)
+    X_test, y_test = tones(40)
+    clf = NeuralBenchCoSpectraLRClassifier(sfreq=120.0, preprocess=False, cv=3)
+    clf.fit(X, y)
+    assert np.mean(clf.predict(X_test) == y_test) >= 0.9
+
+
+def test_cospectra_lr_needs_sfreq():
+    """Sfreq is required even without preprocessing."""
+    X, y = _covariance_data()
+    with pytest.raises(ValueError, match="sfreq"):
+        NeuralBenchCoSpectraLRClassifier(preprocess=False).fit(X, y)
 
 
 def test_tslr_separates_variance_classes():
@@ -316,9 +437,7 @@ def test_moabb_unknown_pipeline_raises():
     """Check an unknown pipeline name raises."""
     X, y = _covariance_data()
     with pytest.raises(ValueError, match="pipeline must be one of"):
-        MOABBPipelineClassifier(pipeline="NotAPipeline", fmin=None, fmax=None).fit(
-            X, y
-        )
+        MOABBPipelineClassifier(pipeline="NotAPipeline", fmin=None, fmax=None).fit(X, y)
 
 
 @pytest.mark.parametrize("model", sorted(NEURALBENCH_MIN_TIMEPOINTS))
@@ -396,6 +515,8 @@ def test_ctnet_pads_short_cases():
     [
         NeuralBenchPreprocessor,
         NeuralBenchTSLRClassifier,
+        NeuralBenchXdawnTSLRClassifier,
+        NeuralBenchCoSpectraLRClassifier,
         NeuralBenchCTNetClassifier,
         NeuralBenchDeepClassifier,
         MOABBTSLRClassifier,

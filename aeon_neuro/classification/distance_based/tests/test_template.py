@@ -37,6 +37,7 @@ def test_template_classifier_estimator_checks(cls):
         TRCAClassifier(),
         TRCAClassifier(ensemble=False),
         TRCAClassifier(n_components=2),
+        TRCAClassifier(filter_bank=3, sfreq=250.0),
         TemplateCCAClassifier(),
     ],
 )
@@ -89,3 +90,46 @@ def test_trca_invalid_n_components():
     X, y = _ssvep_problem(3, np.random.default_rng(0))
     with pytest.raises(ValueError, match="n_components"):
         TRCAClassifier(n_components=0).fit(X, y)
+
+
+def test_filter_bank_trca_bands_and_drift():
+    """Sub-bands follow Nakanishi et al., and drift does not hurt the bank."""
+    rng = np.random.default_rng(0)
+    X_train, y_train = _ssvep_problem(10, rng)
+    X_test, y_test = _ssvep_problem(10, rng)
+    drift = 50 * np.linspace(-1, 1, X_train.shape[-1])
+    X_train = X_train + rng.standard_normal((len(X_train), 6, 1)) * drift
+    X_test = X_test + rng.standard_normal((len(X_test), 6, 1)) * drift
+
+    clf = TRCAClassifier(filter_bank=5, sfreq=250.0).fit(X_train, y_train)
+    assert clf.bands_ == [
+        (6.0, 90.0),
+        (14.0, 90.0),
+        (22.0, 90.0),
+        (30.0, 90.0),
+        (38.0, 90.0),
+    ]
+    np.testing.assert_allclose(clf.band_weights_[0], 1.25)
+    assert np.mean(clf.predict(X_test) == y_test) >= 0.9
+
+
+def test_filter_bank_trca_caps_and_drops_bands():
+    """At 64 Hz the upper edge is capped and bands above it are dropped."""
+    X, y = _ssvep_problem(3, np.random.default_rng(0), sfreq=64.0, n_timepoints=128)
+    clf = TRCAClassifier(filter_bank=5, sfreq=64.0).fit(X, y)
+    assert clf.bands_ == [(6.0, 0.45 * 64), (14.0, 0.45 * 64), (22.0, 0.45 * 64)]
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"filter_bank": 2}, "sfreq"),
+        ({"filter_bank": 0, "sfreq": 250.0}, "filter_bank"),
+        ({"filter_bank": 2, "sfreq": 10.0}, "Nyquist"),
+    ],
+)
+def test_filter_bank_trca_invalid_parameters(kwargs, match):
+    """A filter bank needs a positive size and a usable sampling rate."""
+    X, y = _ssvep_problem(3, np.random.default_rng(0))
+    with pytest.raises(ValueError, match=match):
+        TRCAClassifier(**kwargs).fit(X, y)

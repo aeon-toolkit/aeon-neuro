@@ -12,6 +12,7 @@ __all__ = ["TRCAClassifier", "TemplateCCAClassifier"]
 import numpy as np
 from aeon.classification import BaseClassifier
 from scipy.linalg import eigh
+from scipy.signal import butter, sosfiltfilt
 
 
 def _softmax(scores, temperature):
@@ -43,6 +44,12 @@ class TRCAClassifier(BaseClassifier):
     class are stacked into one matrix and used for every comparison, which is
     usually more accurate [1]_.
 
+    With ``filter_bank=n``, the data is split into ``n`` sub-bands as in [1]_:
+    sub-band ``m`` (``m = 1, ..., n``) passes ``8m - 2`` Hz up to 90 Hz, capped
+    at 90% of the Nyquist frequency. TRCA is fitted in each sub-band, and the
+    class score is the weighted mean of the sub-band correlations, with
+    weights ``m ** -1.25 + 0.25``.
+
     Parameters
     ----------
     n_components : int, default=1
@@ -57,21 +64,34 @@ class TRCAClassifier(BaseClassifier):
         Scale of the correlations in the softmax that gives
         ``predict_proba``. The probabilities rank classes; they are not
         calibrated.
+    filter_bank : int or None, default=None
+        Number of filter bank sub-bands. If None, TRCA is applied to the data
+        as given. Sub-bands whose lower edge is not below the upper edge are
+        dropped.
+    sfreq : float or None, default=None
+        Sampling frequency of the input in Hz. Required when ``filter_bank``
+        is set.
 
     Attributes
     ----------
     templates_ : np.ndarray of shape (n_classes, n_channels, n_timepoints)
-        Mean (channel-centred) training trial of each class.
+        Mean (channel-centred) training trial of each class. With a filter
+        bank, the templates of the first sub-band.
     filters_ : list of np.ndarray of shape (n_channels, n_components)
-        Spatial filters of each class.
+        Spatial filters of each class. With a filter bank, those of the first
+        sub-band.
+    bands_ : list of (low, high)
+        Sub-bands in Hz if ``filter_bank`` is set, otherwise empty.
 
     Notes
     -----
     Stimulus-locked trials of equal length are assumed, as in SSVEP and c-VEP
-    problems. Band-pass the data first (for example 6-40 Hz): slow drifts
-    otherwise dominate the correlations. On one 12-class SSVEP problem the
-    balanced accuracy rose from chance to above 0.99 with a 6-40 Hz band-pass.
-    A filter bank variant [1]_ is not implemented.
+    problems. Without a filter bank, band-pass the data first (for example
+    6-40 Hz): slow drifts otherwise dominate the correlations. On one 12-class
+    SSVEP problem the balanced accuracy rose from chance to above 0.99 with a
+    6-40 Hz band-pass. The filter bank removes drift itself, since its lowest
+    edge is 6 Hz, so give it unfiltered data. Its sub-bands are zero-phase
+    order 4 Butterworth filters, where [1]_ uses Chebyshev type I filters.
 
     References
     ----------
@@ -104,11 +124,15 @@ class TRCAClassifier(BaseClassifier):
         ensemble: bool = True,
         reg: float = 1e-6,
         temperature: float = 10.0,
+        filter_bank: int | None = None,
+        sfreq: float | None = None,
     ):
         self.n_components = n_components
         self.ensemble = ensemble
         self.reg = reg
         self.temperature = temperature
+        self.filter_bank = filter_bank
+        self.sfreq = sfreq
         super().__init__()
 
     def _class_filters(self, Xc):
@@ -124,17 +148,64 @@ class TRCAClassifier(BaseClassifier):
     def _fit(self, X, y):
         if self.n_components < 1:
             raise ValueError("n_components must be at least 1.")
-        X = _centre(X)
-        self.templates_ = np.stack([X[y == c].mean(axis=0) for c in self.classes_])
-        self.filters_ = [self._class_filters(X[y == c]) for c in self.classes_]
+        self.bands_ = self._filter_bank_bands()
+        self.band_weights_ = np.array(
+            [m**-1.25 + 0.25 for m in range(1, len(self.bands_) + 1)]
+        )
+        self.band_models_ = []
+        for Xb in self._sub_bands(X):
+            Xb = _centre(Xb)
+            templates = np.stack([Xb[y == c].mean(axis=0) for c in self.classes_])
+            filters = [self._class_filters(Xb[y == c]) for c in self.classes_]
+            self.band_models_.append((templates, filters))
+        self.templates_, self.filters_ = self.band_models_[0]
         return self
 
+    def _filter_bank_bands(self):
+        if self.filter_bank is None:
+            return []
+        if self.filter_bank < 1:
+            raise ValueError("filter_bank must be None or at least 1.")
+        if self.sfreq is None or not self.sfreq > 0:
+            raise ValueError("sfreq must be a positive number to use filter_bank.")
+        high = min(90.0, 0.45 * float(self.sfreq))
+        bands = [(8.0 * m - 2.0, high) for m in range(1, self.filter_bank + 1)]
+        bands = [(lo, hi) for lo, hi in bands if lo < hi]
+        if not bands:
+            raise ValueError(
+                f"No filter bank sub-band fits below Nyquist for sfreq {self.sfreq}."
+            )
+        return bands
+
+    def _sub_bands(self, X):
+        X = np.asarray(X, dtype=np.float64)
+        if not self.bands_:
+            yield X
+            return
+        for lo, hi in self.bands_:
+            sos = butter(4, [lo, hi], btype="bandpass", fs=self.sfreq, output="sos")
+            # the default pad length of sosfiltfilt can exceed short series
+            padlen = min(3 * (2 * len(sos) + 1), X.shape[-1] - 1)
+            yield sosfiltfilt(sos, X, axis=-1, padlen=padlen)
+
     def _scores(self, X):
+        scores = sum(
+            w * self._band_scores(Xb, *model)
+            for w, Xb, model in zip(
+                self._weights(), self._sub_bands(X), self.band_models_
+            )
+        )
+        return scores / self._weights().sum()
+
+    def _weights(self):
+        return self.band_weights_ if self.bands_ else np.ones(1)
+
+    def _band_scores(self, X, templates, filters):
         X = _centre(X)
-        W_all = np.concatenate(self.filters_, axis=1)
+        W_all = np.concatenate(filters, axis=1)
         scores = np.zeros((len(X), self.n_classes_))
-        for k, template in enumerate(self.templates_):
-            W = W_all if self.ensemble else self.filters_[k]
+        for k, template in enumerate(templates):
+            W = W_all if self.ensemble else filters[k]
             a = np.einsum("ck,nct->nkt", W, X).reshape(len(X), -1)
             b = (W.T @ template).ravel()
             a = a - a.mean(axis=1, keepdims=True)
@@ -153,7 +224,11 @@ class TRCAClassifier(BaseClassifier):
     @classmethod
     def _get_test_params(cls, parameter_set: str = "default"):
         """Return testing parameter settings for estimator checks."""
-        return [{}, {"n_components": 2, "ensemble": False}]
+        return [
+            {},
+            {"n_components": 2, "ensemble": False},
+            {"filter_bank": 2, "sfreq": 100.0},
+        ]
 
 
 class TemplateCCAClassifier(BaseClassifier):

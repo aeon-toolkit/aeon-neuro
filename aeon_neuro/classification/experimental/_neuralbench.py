@@ -107,10 +107,12 @@ from __future__ import annotations
 __all__ = [
     "MOABBPipelineClassifier",
     "MOABBTSLRClassifier",
+    "NeuralBenchCoSpectraLRClassifier",
     "NeuralBenchCTNetClassifier",
     "NeuralBenchDeepClassifier",
     "NeuralBenchPreprocessor",
     "NeuralBenchTSLRClassifier",
+    "NeuralBenchXdawnTSLRClassifier",
 ]
 
 import numpy as np
@@ -412,7 +414,6 @@ class NeuralBenchTSLRClassifier(BaseClassifier):
     def _build_pipeline(self, metric):
         from pyriemann.estimation import Covariances, Shrinkage
         from pyriemann.tangentspace import TangentSpace
-        from sklearn.linear_model import LogisticRegressionCV
         from sklearn.pipeline import make_pipeline
         from sklearn.preprocessing import StandardScaler
 
@@ -421,14 +422,19 @@ class NeuralBenchTSLRClassifier(BaseClassifier):
             Shrinkage(shrinkage=self.shrinkage),
             TangentSpace(metric=metric),
             StandardScaler(),
-            LogisticRegressionCV(
-                Cs=list(self.Cs),
-                cv=self.cv,
-                max_iter=1000,
-                class_weight="balanced",
-                scoring="accuracy",
-                n_jobs=check_n_jobs(self.n_jobs),
-            ),
+            self._lr_head(),
+        )
+
+    def _lr_head(self):
+        from sklearn.linear_model import LogisticRegressionCV
+
+        return LogisticRegressionCV(
+            Cs=list(self.Cs),
+            cv=self.cv,
+            max_iter=1000,
+            class_weight="balanced",
+            scoring="accuracy",
+            n_jobs=check_n_jobs(self.n_jobs),
         )
 
     @classmethod
@@ -436,6 +442,274 @@ class NeuralBenchTSLRClassifier(BaseClassifier):
         return [
             {"sfreq": 100.0, "Cs": (0.1, 1.0), "cv": 2, "random_state": 0},
             {"preprocess": False, "Cs": (1.0,), "cv": 2, "random_state": 0},
+        ]
+
+
+class NeuralBenchXdawnTSLRClassifier(NeuralBenchTSLRClassifier):
+    """Xdawn covariances and tangent space LR, as NeuralBench's XdawnTsLR.
+
+    The pipeline is ``XdawnCovariances(lwf, nfilter=4) -> Shrinkage(0.1) ->
+    TangentSpace(riemann) -> StandardScaler -> LogisticRegressionCV``, on data
+    preprocessed as for ``NeuralBenchTSLRClassifier``. It follows NeuralBench's
+    ``XdawnTsLR`` (``neuralbench/baselines.py``), its standard ERP baseline.
+    The Xdawn filters are computed for one target class, by default the
+    smallest class, which in ERP problems is usually the class that evokes the
+    response (for example the target flashes of a P300 speller).
+
+    Fitting, flat-case dropping, the metric fallback and prediction are as in
+    ``NeuralBenchTSLRClassifier``.
+
+    Parameters
+    ----------
+    sfreq : float
+        Sampling frequency of the input in Hz. Required when ``preprocess`` is
+        True.
+    preprocess : bool, default=True
+        If True, apply ``NeuralBenchPreprocessor`` (without clamping) first.
+    nfilter : int, default=4
+        Number of Xdawn spatial filters.
+    target_class : label or None, default=None
+        Class for which the Xdawn filters are computed. If None, the smallest
+        class in the training data (the first in sorted order on a tie).
+    cov_estimator : str, default="lwf"
+        Covariance estimator for ``XdawnCovariances``.
+    shrinkage : float, default=0.1
+        Shrinkage for ``pyriemann.estimation.Shrinkage``.
+    metric : str, default="riemann"
+        First metric tried for ``pyriemann.tangentspace.TangentSpace``.
+    Cs : tuple of float, default=(1e-3, 1e-2, 1e-1, 1, 10, 100, 1000)
+        Inverse regularisation strengths searched by ``LogisticRegressionCV``.
+    cv : int, default=5
+        Number of stratified folds used to choose ``C``.
+    min_trial_variance : float, default=1e-8
+        Training cases with variance at or below this value are dropped.
+    n_jobs : int, default=1
+        Number of jobs for ``LogisticRegressionCV``.
+    random_state : int or None, default=None
+        Seed for breaking ties between equally probable classes in predict.
+
+    Attributes
+    ----------
+    target_class_ : label
+        The class the Xdawn filters were computed for.
+    """
+
+    # pyriemann's Xdawn needs at least two channels
+    _tags = {"capability:univariate": False}
+
+    def __init__(
+        self,
+        sfreq: float | None = None,
+        preprocess: bool = True,
+        nfilter: int = 4,
+        target_class=None,
+        cov_estimator: str = "lwf",
+        shrinkage: float = 0.1,
+        metric: str = "riemann",
+        Cs: tuple = _LR_CS,
+        cv: int = 5,
+        min_trial_variance: float = 1e-8,
+        n_jobs: int = 1,
+        random_state: int | None = None,
+    ):
+        self.nfilter = nfilter
+        self.target_class = target_class
+        super().__init__(
+            sfreq=sfreq,
+            preprocess=preprocess,
+            cov_estimator=cov_estimator,
+            shrinkage=shrinkage,
+            metric=metric,
+            Cs=Cs,
+            cv=cv,
+            min_trial_variance=min_trial_variance,
+            n_jobs=n_jobs,
+            random_state=random_state,
+        )
+
+    def _fit(self, X, y):
+        if self.target_class is None:
+            labels, counts = np.unique(y, return_counts=True)
+            self.target_class_ = labels[int(np.argmin(counts))]
+        elif self.target_class in self.classes_:
+            self.target_class_ = self.target_class
+        else:
+            raise ValueError(f"target_class {self.target_class!r} is not a class in y.")
+        return super()._fit(X, y)
+
+    def _build_pipeline(self, metric):
+        from pyriemann.estimation import Shrinkage, XdawnCovariances
+        from pyriemann.tangentspace import TangentSpace
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import StandardScaler
+
+        return make_pipeline(
+            XdawnCovariances(
+                nfilter=self.nfilter,
+                classes=[self.target_class_],
+                estimator=self.cov_estimator,
+            ),
+            Shrinkage(shrinkage=self.shrinkage),
+            TangentSpace(metric=metric),
+            StandardScaler(),
+            self._lr_head(),
+        )
+
+    @classmethod
+    def _get_test_params(cls, parameter_set="default"):
+        return [
+            {"sfreq": 100.0, "nfilter": 1, "Cs": (0.1, 1.0), "cv": 2},
+            {"preprocess": False, "nfilter": 1, "Cs": (1.0,), "cv": 2},
+        ]
+
+
+class _UpperTriLog1p(BaseEstimator, TransformerMixin):
+    """Flatten (n_cases, C, C, F) co-spectra to upper triangles per frequency.
+
+    Diagonal entries (power) get ``log1p`` after clipping at 0; off-diagonal
+    entries (real cross-spectra, which can be negative) are kept as they are.
+    As NeuralBench's ``_UpperTriLog1p``.
+    """
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        n, c, _, f = X.shape
+        iu, ju = np.triu_indices(c)
+        feats = X[:, iu, ju, :].astype(np.float64, copy=True)
+        diag = iu == ju
+        feats[:, diag, :] = np.log1p(np.clip(feats[:, diag, :], 0.0, None))
+        return feats.reshape(n, -1)
+
+
+class _CappedCoSpectra(BaseEstimator, TransformerMixin):
+    """pyriemann ``CoSpectra`` with the window capped at the case length."""
+
+    def __init__(self, window=128, overlap=0.75, fmin=None, fmax=None, fs=None):
+        self.window = window
+        self.overlap = overlap
+        self.fmin = fmin
+        self.fmax = fmax
+        self.fs = fs
+
+    def fit(self, X, y=None):
+        n_timepoints = max(X.shape[-1], 2)
+        self.window_ = int(min(self.window, 2 ** int(np.log2(n_timepoints))))
+        return self
+
+    def transform(self, X):
+        from pyriemann.estimation import CoSpectra
+
+        return CoSpectra(
+            window=self.window_,
+            overlap=self.overlap,
+            fmin=self.fmin,
+            fmax=self.fmax,
+            fs=self.fs,
+        ).transform(X)
+
+
+class NeuralBenchCoSpectraLRClassifier(NeuralBenchTSLRClassifier):
+    """Co-spectra and logistic regression, as NeuralBench's CoSpectraLogLR.
+
+    The pipeline is ``CoSpectra(window=128, overlap=0.75, 2-40 Hz) -> upper
+    triangle per frequency, log1p on the power terms -> StandardScaler ->
+    LogisticRegressionCV``, on data preprocessed as for
+    ``NeuralBenchTSLRClassifier`` (so at 120 Hz by default). It follows
+    NeuralBench's ``CoSpectraLogLR`` (``neuralbench/baselines.py``), its
+    spectral baseline for steady-state problems. There is no tangent space
+    step.
+
+    Unlike NeuralBench, the Welch window is capped at the largest power of two
+    that fits in a case, because pyriemann's ``CoSpectra`` returns NaN when the
+    window is longer than the case.
+
+    Parameters
+    ----------
+    sfreq : float
+        Sampling frequency of the input in Hz. Always required: it maps FFT
+        bins to frequencies when ``preprocess`` is False.
+    preprocess : bool, default=True
+        If True, apply ``NeuralBenchPreprocessor`` (without clamping) first.
+    window : int, default=128
+        Welch window length in samples (at the preprocessed sampling rate).
+    overlap : float, default=0.75
+        Fractional overlap between Welch windows.
+    fmin, fmax : float or None, default=2.0 and 40.0
+        Frequencies outside ``[fmin, fmax]`` Hz are dropped.
+    Cs : tuple of float, default=(1e-3, 1e-2, 1e-1, 1, 10, 100, 1000)
+        Inverse regularisation strengths searched by ``LogisticRegressionCV``.
+    cv : int, default=5
+        Number of stratified folds used to choose ``C``.
+    min_trial_variance : float, default=1e-8
+        Training cases with variance at or below this value are dropped.
+    n_jobs : int, default=1
+        Number of jobs for ``LogisticRegressionCV``.
+    random_state : int or None, default=None
+        Seed for breaking ties between equally probable classes in predict.
+    """
+
+    def __init__(
+        self,
+        sfreq: float | None = None,
+        preprocess: bool = True,
+        window: int = 128,
+        overlap: float = 0.75,
+        fmin: float | None = 2.0,
+        fmax: float | None = 40.0,
+        Cs: tuple = _LR_CS,
+        cv: int = 5,
+        min_trial_variance: float = 1e-8,
+        n_jobs: int = 1,
+        random_state: int | None = None,
+    ):
+        self.window = window
+        self.overlap = overlap
+        self.fmin = fmin
+        self.fmax = fmax
+        super().__init__(
+            sfreq=sfreq,
+            preprocess=preprocess,
+            Cs=Cs,
+            cv=cv,
+            min_trial_variance=min_trial_variance,
+            n_jobs=n_jobs,
+            random_state=random_state,
+        )
+
+    def _fit(self, X, y):
+        if self.sfreq is None or not self.sfreq > 0:
+            raise ValueError(f"sfreq must be a positive number, got {self.sfreq!r}.")
+        if self.preprocess:
+            self.fs_ = float(NeuralBenchPreprocessor(sfreq=self.sfreq).output_sfreq)
+        else:
+            self.fs_ = float(self.sfreq)
+        return super()._fit(X, y)
+
+    def _build_pipeline(self, metric):
+        # the metric fallback in fit never applies: there is no tangent space
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import StandardScaler
+
+        return make_pipeline(
+            _CappedCoSpectra(
+                window=self.window,
+                overlap=self.overlap,
+                fmin=self.fmin,
+                fmax=self.fmax,
+                fs=self.fs_,
+            ),
+            _UpperTriLog1p(),
+            StandardScaler(),
+            self._lr_head(),
+        )
+
+    @classmethod
+    def _get_test_params(cls, parameter_set="default"):
+        return [
+            {"sfreq": 100.0, "window": 16, "Cs": (0.1, 1.0), "cv": 2},
+            {"sfreq": 100.0, "preprocess": False, "window": 8, "Cs": (1.0,), "cv": 2},
         ]
 
 
