@@ -76,5 +76,6 @@ Channel creation
     :template: class.rst
 
     CommonSpatialPatterns
+    RiemannianSpatialFilter
     UMAPChannelCreator
     XDAWN
