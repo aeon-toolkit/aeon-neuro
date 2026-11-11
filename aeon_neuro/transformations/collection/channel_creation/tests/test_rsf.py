@@ -394,5 +394,9 @@ def test_rsf_matches_authors_implementation(n_components, params):
         AUTHORS_DISTANCE[n_components],
         rtol=1e-7,
     )
+    # With 4 components the weakest filter has an eigenvalue close to 1, so it
+    # barely changes the distance and the optimisers (the authors' included)
+    # stop at slightly different directions depending on the platform's
+    # floating point. 0.1 degrees still rules out a different filter subspace.
     angles = subspace_angles(W, AUTHORS_FILTERS[n_components])
-    assert np.degrees(angles.max()) < 0.01
+    assert np.degrees(angles.max()) < 0.1
