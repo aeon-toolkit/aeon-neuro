@@ -4,6 +4,8 @@ from __future__ import annotations
 
 __all__ = ["CSPClassifier"]
 
+import warnings
+
 import numpy as np
 from aeon.base._base import _clone_estimator
 from aeon.classification import BaseClassifier
@@ -43,7 +45,10 @@ class CSPClassifier(BaseClassifier):
         so the object passed in is not modified. If None,
         ``sklearn.discriminant_analysis.LinearDiscriminantAnalysis()`` is used.
     n_components : int, default=4
-        Number of CSP components.
+        Number of CSP components. If it exceeds the number of CSP filters that
+        can be learned (the number of channels, or the rank of the data if
+        lower), the number of filters is used instead and a ``UserWarning`` is
+        raised; ``n_components_`` records the value used.
     reg : float, str or None, default=None
         Covariance regularisation for CSP: None, a shrinkage float in [0, 1],
         "empirical", "ledoit_wolf" or "oas". See ``CommonSpatialPatterns``.
@@ -69,6 +74,9 @@ class CSPClassifier(BaseClassifier):
     ----------
     csp_ : CommonSpatialPatterns
         The fitted CSP spatial filter.
+    n_components_ : int
+        The number of CSP components used:
+        ``min(n_components, csp_.filters_.shape[0])``.
     log_variance_ : LogVariance
         The (log-)variance feature extractor applied to the CSP components.
     classifier_ : sklearn classifier
@@ -143,17 +151,39 @@ class CSPClassifier(BaseClassifier):
 
     def _fit(self, X: np.ndarray, y: np.ndarray):
         """Fit the CSP plus classifier pipeline."""
+        if (
+            isinstance(self.n_components, bool)
+            or not isinstance(self.n_components, (int, np.integer))
+            or self.n_components < 1
+        ):
+            raise ValueError(
+                f"n_components must be a positive int, got {self.n_components!r}."
+            )
+        # The filters do not depend on n_components, so fit with one component
+        # (always valid) and then keep as many as the data allows.
         self.csp_ = CommonSpatialPatterns(
-            n_components=self.n_components,
+            n_components=1,
             reg=self.reg,
             cov_est=self.cov_est,
             norm_trace=self.norm_trace,
             cov_method_params=self.cov_method_params,
             component_order=self.component_order,
-        )
-        self.log_variance_ = LogVariance(log=self.log)
+        ).fit(X, y)
+        n_filters = self.csp_.filters_.shape[0]
+        self.n_components_ = min(int(self.n_components), n_filters)
+        if self.n_components_ < self.n_components:
+            warnings.warn(
+                f"n_components={self.n_components} exceeds the number of CSP "
+                f"filters ({n_filters}), which is the number of channels or the "
+                f"rank of the data if lower; using n_components={n_filters}.",
+                UserWarning,
+                stacklevel=2,
+            )
+        self.csp_.set_params(n_components=self.n_components_)
+        Xt = self.csp_.transform(X)
+        self.log_variance_ = LogVariance(log=self.log).fit(Xt)
         self.classifier_ = self._build_classifier()
-        self.classifier_.fit(self._csp_features(X, y), y)
+        self.classifier_.fit(self.log_variance_.transform(Xt), y)
         return self
 
     def _build_classifier(self):
@@ -198,14 +228,8 @@ class CSPClassifier(BaseClassifier):
             aligned[:, self._class_dictionary[label]] = probs[:, i]
         return aligned
 
-    def _csp_features(self, X: np.ndarray, y: np.ndarray | None = None) -> np.ndarray:
-        """Return CSP log-variance features of shape (n_cases, n_components).
-
-        Fits the CSP and LogVariance transformers when ``y`` is given, otherwise
-        uses the fitted ones.
-        """
-        if y is not None:
-            return self.log_variance_.fit_transform(self.csp_.fit_transform(X, y))
+    def _csp_features(self, X: np.ndarray) -> np.ndarray:
+        """Return CSP log-variance features of shape (n_cases, n_components_)."""
         return self.log_variance_.transform(self.csp_.transform(X))
 
     @classmethod

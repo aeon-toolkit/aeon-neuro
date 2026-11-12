@@ -254,3 +254,56 @@ def test_csp_classifier_filters_learned_from_training_data_only():
         clf._csp_features(X_test),
         np.log(np.var(reference.transform(X_test), axis=2)),
     )
+
+
+def test_csp_classifier_caps_n_components_at_available_filters():
+    """Test n_components above the number of filters is capped with a warning."""
+    X, y = make_example_3d_numpy(
+        n_cases=20, n_channels=3, n_timepoints=64, random_state=0
+    )
+    clf = CSPClassifier(n_components=6, reg="oas", cov_est="epoch")
+    with pytest.warns(UserWarning, match="using n_components=3"):
+        clf.fit(X, y)
+
+    assert clf.n_components == 6
+    assert clf.n_components_ == 3
+    assert clf.csp_.n_components == 3
+    assert clf._csp_features(X).shape == (20, 3)
+    assert clf.predict_proba(X).shape == (20, 2)
+
+    reference = CSPClassifier(n_components=3, reg="oas", cov_est="epoch").fit(X, y)
+    np.testing.assert_array_equal(clf.predict_proba(X), reference.predict_proba(X))
+
+
+def test_csp_classifier_caps_n_components_at_data_rank():
+    """Test average-referenced (rank n_channels - 1) data caps at the rank."""
+    X, y = make_example_3d_numpy(
+        n_cases=20, n_channels=4, n_timepoints=64, random_state=0
+    )
+    X = X - X.mean(axis=1, keepdims=True)
+    with pytest.warns(UserWarning, match="using n_components=3"):
+        clf = CSPClassifier(n_components=4).fit(X, y)
+    assert clf.n_components_ == 3
+
+
+def test_csp_classifier_no_warning_when_n_components_fits():
+    """Test no warning and n_components_ == n_components when enough filters."""
+    import warnings
+
+    X, y = make_example_3d_numpy(
+        n_cases=20, n_channels=4, n_timepoints=64, random_state=0
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        clf = CSPClassifier(n_components=4).fit(X, y)
+    assert clf.n_components_ == 4
+
+
+@pytest.mark.parametrize("n_components", [0, -1, 2.0, True])
+def test_csp_classifier_invalid_n_components(n_components):
+    """Test non-positive or non-int n_components raises."""
+    X, y = make_example_3d_numpy(
+        n_cases=12, n_channels=4, n_timepoints=64, random_state=0
+    )
+    with pytest.raises(ValueError, match="n_components"):
+        CSPClassifier(n_components=n_components).fit(X, y)
