@@ -23,8 +23,8 @@ def _make_ssvep_data(n_cases=80, random_state=0):
 
 
 # MOABB SSVEP_CCA(n_harmonics=3, freq_map=freqs) on _make_ssvep_data(n_cases=20),
-# generated offline with moabb 1.8.0 (commit 8901391), which uses the QR closed
-# form. Rows are cases, columns are classes "a", "b", "c", "d".
+# generated offline by Claude (Anthropic) with moabb 1.8.0 (commit 8901391), which
+# uses the QR closed form. Rows are cases, columns are classes "a", "b", "c", "d".
 MOABB_PREDICTIONS = list("dccbbaaaadcdccdccccd")
 MOABB_SCORES = np.array(
     [
