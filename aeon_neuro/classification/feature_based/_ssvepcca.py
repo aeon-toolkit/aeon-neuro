@@ -9,6 +9,34 @@ from sklearn.cross_decomposition import CCA
 __all__ = ["SSVEPCCAClassifier"]
 
 
+def _qr_basis(A):
+    """Orthonormal basis for the centred, non-flat columns of A.
+
+    Each column is centred to zero mean. Columns with (near) zero norm after
+    centring are flat and are dropped. A thin QR decomposition of what
+    remains gives an orthonormal basis for its column space.
+
+    Parameters
+    ----------
+    A : np.ndarray of shape (n_timepoints, n_columns)
+        Signals as columns, e.g. a case's channels or a reference's sine and
+        cosine rows, transposed.
+
+    Returns
+    -------
+    np.ndarray of shape (n_timepoints, n_kept) or None
+        Orthonormal basis ``Q``, or ``None`` if every column is flat.
+    """
+    A = A - A.mean(axis=0)
+    norms = np.linalg.norm(A, axis=0)
+    # relative tolerance: a flat column may not centre to exact zeros
+    A = A[:, norms > 1e-12 * max(norms.max(), 1.0)]
+    if A.shape[1] == 0:
+        return None
+    Q, _ = np.linalg.qr(A)
+    return Q
+
+
 class SSVEPCCAClassifier(BaseClassifier):
     """Steady-state visual evoked potential (SSVEP) classifier using CCA.
 
@@ -68,10 +96,11 @@ class SSVEPCCAClassifier(BaseClassifier):
         "algorithm_type": "feature",
     }
 
-    def __init__(self, sfreq, class_frequencies, n_harmonics=2):
+    def __init__(self, sfreq, class_frequencies, n_harmonics=2, solver="nipals"):
         self.sfreq = sfreq
         self.class_frequencies = class_frequencies
         self.n_harmonics = n_harmonics
+        self.solver = solver
         super().__init__()
 
     def _fit(self, X, y=None):
@@ -145,27 +174,44 @@ class SSVEPCCAClassifier(BaseClassifier):
         if missing:
             raise ValueError(f"Labels {missing} in y are not in class_frequencies.")
 
-        # sine and cosine at each harmonic, one reference per class in
-        # self.classes_ order so argmax in predict maps back to the right label
-        t = np.arange(X.shape[2]) / self.sfreq
-        self._references = []
+        return self
+
+    def _build_references(self, n_timepoints):
+        """Build a sine and cosine reference signal for each class.
+
+        References are in ``self.classes_`` order so argmax maps back to the
+        right label.
+
+        Parameters
+        ----------
+        n_timepoints : int
+            Length of the cases the references are compared with.
+
+        Returns
+        -------
+        list of np.ndarray of shape (2 * n_harmonics, n_timepoints)
+            One reference signal per class.
+        """
+        t = np.arange(n_timepoints) / self.sfreq
+        references = []
         for label in self.classes_:
             freq = self.class_frequencies[label]
             reference = []
             for h in range(1, self.n_harmonics + 1):
                 reference.append(np.sin(2 * np.pi * h * freq * t))
                 reference.append(np.cos(2 * np.pi * h * freq * t))
-            self._references.append(np.array(reference))
+            references.append(np.array(reference))
+        return references
 
-        return self
-
-    def _cca_scores(self, X):
+    def _cca_scores(self, X, references):
         """Canonical correlation between each case and every class reference.
 
         Parameters
         ----------
         X : np.ndarray of shape (n_cases, n_channels, n_timepoints)
             Cases to score.
+        references : list of np.ndarray of shape (2 * n_harmonics, n_timepoints)
+            One reference signal per class, in ``self.classes_`` order.
 
         Returns
         -------
@@ -173,12 +219,23 @@ class SSVEPCCAClassifier(BaseClassifier):
             ``scores[i, j]`` is the canonical correlation between case ``i`` and
             the reference of ``self.classes_[j]``.
         """
-        cca = CCA(n_components=1)
         scores = np.zeros((len(X), len(self.classes_)))
-        for i, case in enumerate(X):
-            for j, reference in enumerate(self._references):
-                S_x, S_y = cca.fit_transform(case.T, reference.T)
-                scores[i, j] = np.corrcoef(S_x.ravel(), S_y.ravel())[0, 1]
+        if self.solver == "nipals":
+            cca = CCA(n_components=1)
+            for i, case in enumerate(X):
+                for j, reference in enumerate(references):
+                    S_x, S_y = cca.fit_transform(case.T, reference.T)
+                    scores[i, j] = np.corrcoef(S_x.ravel(), S_y.ravel())[0, 1]
+            scores = np.nan_to_num(scores, nan=0.0)
+        elif self.solver == "cf":
+            q_ys = [_qr_basis(ref.T) for ref in references]
+            for i, case in enumerate(X):
+                q_x = _qr_basis(case.T)
+                if q_x is None:
+                    continue  # flat trial, score stays 0
+                for j, q_y in enumerate(q_ys):
+                    s = np.linalg.svd(q_x.T @ q_y, compute_uv=False)
+                    scores[i, j] = min(s[0], 1.0)
         return scores
 
     def _predict(self, X):
@@ -194,7 +251,8 @@ class SSVEPCCAClassifier(BaseClassifier):
         np.ndarray of shape (n_cases,)
             Predicted class label for each case.
         """
-        return self.classes_[np.argmax(self._cca_scores(X), axis=1)]
+        references = self._build_references(X.shape[2])
+        return self.classes_[np.argmax(self._cca_scores(X, references), axis=1)]
 
     def _predict_proba(self, X):
         """Return class probabilities from the canonical correlations.
@@ -214,7 +272,8 @@ class SSVEPCCAClassifier(BaseClassifier):
         np.ndarray of shape (n_cases, n_classes)
             Probability of each class for each case, summing to one per case.
         """
-        scores = np.clip(self._cca_scores(X), 0, None)
+        references = self._build_references(X.shape[2])
+        scores = np.clip(self._cca_scores(X, references), 0, None)
         row_sums = scores.sum(axis=1, keepdims=True)
         safe = np.where(row_sums > 0, row_sums, 1)
         proba = scores / safe

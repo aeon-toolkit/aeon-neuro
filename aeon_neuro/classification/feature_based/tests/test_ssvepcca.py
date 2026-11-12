@@ -22,6 +22,66 @@ def _make_ssvep_data(n_cases=80, random_state=0):
     return X, labels
 
 
+# MOABB SSVEP_CCA(n_harmonics=3, freq_map=freqs) on _make_ssvep_data(n_cases=20),
+# generated offline with moabb 1.8.0 (commit 8901391), which uses the QR closed
+# form. Rows are cases, columns are classes "a", "b", "c", "d".
+MOABB_PREDICTIONS = list("dccbbaaaadcdccdccccd")
+MOABB_SCORES = np.array(
+    [
+        [0.2140858282, 0.1330024670, 0.1336409743, 0.6905267759],
+        [0.1622697010, 0.1251676185, 0.8520074602, 0.1044712017],
+        [0.1501000214, 0.1620732909, 0.8567823842, 0.1377154938],
+        [0.1364216011, 0.7865842508, 0.1260511446, 0.1669863376],
+        [0.1740210211, 0.7813370179, 0.1406678379, 0.1373528586],
+        [0.7938491018, 0.1472796142, 0.1540242621, 0.1368351461],
+        [0.9006862781, 0.1582116715, 0.1773500858, 0.1664124585],
+        [0.8101960770, 0.1533229198, 0.1614916558, 0.1292644759],
+        [0.8740318468, 0.1204086160, 0.1324830742, 0.1559195819],
+        [0.1774987109, 0.1899451004, 0.1342504721, 0.6098059832],
+        [0.1648223071, 0.1263911611, 0.7919013211, 0.1571221094],
+        [0.1829168060, 0.1415705277, 0.1369831995, 0.7853701584],
+        [0.1189962337, 0.1330194932, 0.7619838098, 0.1076181498],
+        [0.1648099673, 0.1390340659, 0.8027287687, 0.1552326503],
+        [0.1739479328, 0.1557568898, 0.1344118101, 0.7885210251],
+        [0.1521665844, 0.1665889892, 0.8554084351, 0.1218915804],
+        [0.1206967682, 0.1185203270, 0.8604285941, 0.1074882286],
+        [0.1373380583, 0.1130456763, 0.7780663206, 0.1072449111],
+        [0.1694233974, 0.1487836913, 0.7149735181, 0.1510681709],
+        [0.2009198939, 0.1504507646, 0.1767894403, 0.8288005734],
+    ]
+)
+
+
+@pytest.mark.parametrize("solver", ["nipals", "cf"])
+def test_matches_moabb(solver):
+    """Predictions and correlations match MOABB's SSVEP_CCA.
+
+    MOABB turns correlations into probabilities differently (it subtracts each
+    row's minimum), so predict_proba is compared with MOABB's correlations
+    normalised the way this classifier does it: divided by their row sum.
+    """
+    X, y = _make_ssvep_data(n_cases=20)
+    clf = SSVEPCCAClassifier(
+        sfreq=sfreq, class_frequencies=freqs, n_harmonics=3, solver=solver
+    ).fit(X, y)
+    np.testing.assert_array_equal(clf.predict(X), MOABB_PREDICTIONS)
+    expected = MOABB_SCORES / MOABB_SCORES.sum(axis=1, keepdims=True)
+    np.testing.assert_allclose(clf.predict_proba(X), expected, atol=1e-6)
+
+
+def test_solvers_agree():
+    """The closed form and sklearn's iterative CCA give the same results."""
+    X, y = _make_ssvep_data(n_cases=40, random_state=1)
+    results = {}
+    for solver in ("nipals", "cf"):
+        clf = SSVEPCCAClassifier(
+            sfreq=sfreq, class_frequencies=freqs, n_harmonics=3, solver=solver
+        ).fit(X, y)
+        results[solver] = (clf.predict(X), clf.predict_proba(X))
+    np.testing.assert_array_equal(results["nipals"][0], results["cf"][0])
+    np.testing.assert_allclose(results["nipals"][1], results["cf"][1], atol=1e-6)
+
+
 def test_predict_shape_and_labels():
     """Predictions have the right shape and only contain known labels."""
     X, y = _make_ssvep_data()
@@ -38,8 +98,9 @@ def test_references_shape():
     clf = SSVEPCCAClassifier(sfreq=sfreq, class_frequencies=freqs, n_harmonics=3).fit(
         X, y
     )
-    assert len(clf._references) == len(freqs)
-    for reference in clf._references:
+    references = clf._build_references(n_timepoints)
+    assert len(references) == len(freqs)
+    for reference in references:
         assert reference.shape == (2 * 3, n_timepoints)
 
 
@@ -63,8 +124,8 @@ def test_predict_proba_sums_to_one():
     np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-6)
 
 
-def test_references_from_fit_length_only():
-    """References depend on fit length and labels, not case values."""
+def test_references_from_length_only():
+    """References depend on the series length and labels, not case values."""
     X, y = _make_ssvep_data()
     clf = SSVEPCCAClassifier(sfreq=sfreq, class_frequencies=freqs).fit(X, y)
     expected = []
@@ -74,7 +135,7 @@ def test_references_from_fit_length_only():
             rows.append(np.sin(2 * np.pi * h * freqs[label] * t))
             rows.append(np.cos(2 * np.pi * h * freqs[label] * t))
         expected.append(np.array(rows))
-    for ref, exp in zip(clf._references, expected):
+    for ref, exp in zip(clf._build_references(n_timepoints), expected):
         np.testing.assert_allclose(ref, exp)
 
 
