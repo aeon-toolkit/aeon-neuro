@@ -54,12 +54,14 @@ def current_state():
 
 
 @pytest.mark.parametrize("subject", ["02", 1, "1"])
-def test_restore_rejects_subject_conflicting_with_known_source(subject):
-    """The original participant identity cannot silently change in case state."""
+def test_restore_retains_declared_subject_and_original_source(subject):
+    """Explicit case identities stay separate from original recording subjects."""
     state = current_state()
     state["view"]["rows"][0]["participant_id"] = subject
-    with pytest.raises(ValueError):
-        EEGDatasetInfo(state)
+    info = EEGDatasetInfo(state)
+    assert info.participant_ids == (subject,)
+    assert info.recordings[0].metadata["participant_id"] == "01"
+    assert EEGDatasetInfo(info.to_dict()).to_dict() == state
 
 
 @pytest.mark.parametrize(
@@ -157,7 +159,7 @@ def test_recording_reference_type_is_checked_without_source_descriptors(identity
     ],
 )
 def test_compatible_or_unknown_subjects_allow_independent_groups(original, current):
-    """Subject consistency must not infer unknowns or constrain declared groups."""
+    """Unknown subjects remain unknown and declared groups stay independent."""
     state = current_state()
     state["recordings"][0]["participant_id"] = original
     state["dataset"]["selected_participants"] = [] if original is None else [original]
@@ -168,14 +170,15 @@ def test_compatible_or_unknown_subjects_allow_independent_groups(original, curre
     assert info.recordings[0].metadata["participant_id"] == original
 
 
-def test_subject_consistency_keeps_integer_and_string_identities_distinct():
-    """A textual representation does not identify the same declared subject."""
+def test_case_and_source_subjects_keep_distinct_identifier_types():
+    """Case and source identities retain their own integer or string type."""
     state = current_state()
     state["recordings"][0]["participant_id"] = 1
     state["dataset"]["selected_participants"] = [1]
     state["view"]["rows"][0]["participant_id"] = "1"
-    with pytest.raises(ValueError, match="participant disagrees"):
-        EEGDatasetInfo(state)
+    info = EEGDatasetInfo(state)
+    assert info.participant_ids == ("1",)
+    assert info.recordings[0].metadata["participant_id"] == 1
 
 
 @pytest.mark.parametrize("step,length", [(np.int8(2), 4), (np.float32(0.5), 16)])

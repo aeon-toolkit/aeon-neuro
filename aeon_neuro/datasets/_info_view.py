@@ -104,13 +104,8 @@ def _validate_view(view, sources):
             source = sources.get(recording_id)
             if source is not None and stop > source["n_samples"]:
                 raise ValueError("Source support exceeds its recording")
-            if (
-                source is not None
-                and source["participant_id"] is not None
-                and row["participant_id"] is not None
-                and row["participant_id"] != source["participant_id"]
-            ):
-                raise ValueError("Current participant disagrees with its source")
+            # A case may declare its own participant, for example an event's
+            # actor. Keep that identity separate from the recording subject.
             names = layout["channel_names"]
             if layout.get("temporal_context", "whole_row") not in (
                 "pointwise",

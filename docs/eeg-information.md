@@ -75,9 +75,10 @@ and rows are detached from stored state. Metadata contains no
 signal samples, and layout checks cannot detect equal-shaped array swaps or
 external value changes.
 
-Known current and source participant IDs must agree when a case references a
-retained recording. Unknown identities remain unknown and groups stay separately
-configurable. Known NumPy integer identities normalize to Python integers without
+Current cases retain their explicitly declared participant IDs, which may differ
+from original recording subjects, for example event-level actors. Original
+subjects remain available in recording metadata. Unknown identities remain
+unknown and groups stay separately configurable. NumPy integer identities normalize to Python integers without
 converting strings such as `"1"` to integers. Required current numeric layout and
 support fields also normalize to Python numbers; flexible annotations retain
 their supplied values.
@@ -232,7 +233,7 @@ Each `rows` entry contains:
 | --- | --- | --- |
 | `case_id` | str | Unique nonempty identity within the current view. |
 | `recording_id` | str or None | Nonblank original source recording identity, or `None` for arrays without source context. The type is checked even when source descriptors are absent. |
-| `participant_id` | str, int or None | Original subject for this current row, or unknown. |
+| `participant_id` | str, int or None | Declared participant for this current row, or unknown. It may differ from the original recording subject. |
 | `group_id` | str, int or None | Declared current split group, defaulting to the supplied subject in `from_arrays`. |
 | `source_support` | list of two int | Zero-based half-open contributing interval `[start, stop)` in source samples. Without source context, `from_arrays` uses the supplied row's `[0, n_samples)` interval; it establishes no physical source lineage. |
 

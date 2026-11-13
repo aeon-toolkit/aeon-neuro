@@ -190,7 +190,8 @@ class EEGDatasetInfo:
         source identities in first-occurrence order for a current view.
         Rows without a source use an array: prefix followed by their case ID.
     participant_ids : tuple of (str, int or None)
-        One original subject ID per current case or aligned source recording.
+        One declared participant ID per case, or original recording subject
+        for source-only information. Case and source identities may differ.
         Unknown identities remain None; integer and string IDs stay distinct.
     metadata : list of dict
         Retained original recording descriptors, in recordings order, rather
@@ -489,7 +490,8 @@ class EEGDatasetInfo:
         Returns
         -------
         str, int or None
-            Original known subject identity, or None when not supplied.
+            Declared case participant or original recording subject, or None
+            when not supplied.
         """
         index = _integer(index, "subject index")
         if not 0 <= index < len(self):
@@ -574,9 +576,10 @@ class EEGDatasetInfo:
 
     @property
     def participant_ids(self):
-        """Original subject identities, one per aligned recording or current case.
+        """Declared case participants, or original subjects for source-only data.
 
         Unknown identities remain None; integer and string IDs stay distinct.
+        Original recording subjects remain available in recordings metadata.
         """
         if self._view is not None:
             return tuple(row.participant_id for row in self._view.rows)
