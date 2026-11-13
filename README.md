@@ -100,8 +100,13 @@ of method work well or fail.
 ## EEG side information
 
 Describe EEG arrays with optional source metadata, retain aligned row identities
-through selection, and save detached metadata for later restoration. See the
-experimental [EEG information guide](docs/eeg-information.md).
+through selection, save detached metadata, and pass optional information to EEG
+classifiers at fitting and prediction. See the
+experimental [EEG information guide](docs/eeg-information.md). Supplied prediction
+information must match retained fitting facts, including known constructor rate
+and channel settings when fitting received plain arrays. Pretrained CBraMod and
+LaBraM also enforce their 200 Hz requirement on supplied prediction information,
+even when the training sampling rate was unknown.
 
 ## Installation
 

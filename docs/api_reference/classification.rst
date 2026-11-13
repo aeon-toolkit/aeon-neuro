@@ -7,6 +7,16 @@ Classification
 (n_cases, n_channels, n_timepoints).
 
 
+Shared EEG information
+----------------------
+
+.. autoclass:: aeon_neuro.classification.BaseEEGClassifier
+   :members: fit, predict, predict_proba
+   :no-inherited-members:
+
+See :doc:`../eeg-information` for optional side information, current layout
+validation.
+
 Deep learning
 -------------
 

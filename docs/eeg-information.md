@@ -75,8 +75,52 @@ and rows are detached from stored state. Metadata contains no
 signal samples, and layout checks cannot detect equal-shaped array swaps or
 external value changes.
 
+Current cases retain their explicitly declared participant IDs, which may differ
+from original recording subjects, for example event-level actors. Original
+subjects remain available in recording metadata. Unknown identities remain
+unknown and groups stay separately configurable. NumPy integer identities
+normalize to Python integers without
+converting strings such as `"1"` to integers. Required current numeric layout and
+support fields also normalize to Python numbers; flexible annotations retain
+their supplied values.
+
+Empty dense collections still require real numeric values, nonempty channel and
+sample axes, a channel count matching the supplied names and aligned valid units.
+An empty case axis and empty variable-length lists remain supported.
+
 BIDS inspection/loading, estimator integration, processing and training-time
 validation are separate consumers of this metadata contract.
+
+## Optional information in classifiers
+
+EEG classifiers accept keyword-only `info` in `fit`, `predict` and
+`predict_proba`. `BaseEEGClassifier` validates and retains detached fitting
+information while preserving aeon's reset and validation lifecycle. Constructor
+rate/channel conflicts raise. Prediction information must match the fitted
+rate, ordered names and known units. Call-specific prediction information is
+removed after success or failure. When fitting uses plain arrays, known rate and
+channel constructor settings are retained as fitting facts too. Changing a
+constructor parameter after fitting does not redefine the layout of the trained
+model; supplied prediction information must still agree with those retained facts.
+Unknown fitting facts remain unknown. Pretrained CBraMod and LaBraM require
+200 Hz whenever a rate is supplied, including prediction after plain-array
+fitting. This fitted model requirement is independent of the unknown training
+rate and does not change when constructor parameters are later edited.
+
+```python
+from aeon_neuro.classification.deep_learning import EEGNetClassifier
+
+clf = EEGNetClassifier(n_epochs=1)
+clf.fit(X, y, info=info)
+probabilities = clf.predict_proba(X, info=info)
+```
+
+Plain arrays, cloning, sklearn pipelines and ordinary CV calls retain their
+interfaces. Automatic metadata forwarding through pipelines/CV is separate.
+Native aeon reexports keep their native interfaces. Information-derived channel
+names alone imply no positions; spatial models or explicit constructor names
+use the existing standard_1005 template policy, recorded in channel_geometry_.
+Measured source electrodes are not silently converted to model geometry.
 
 ## Dictionary structure
 
@@ -117,7 +161,7 @@ are stored.
 | --- | --- | --- |
 | `version` | int | `2`, the outer state format. |
 | `ready` | bool | Must be `True` for construction; describes supplied metadata readiness, not source authentication. |
-| `issues` | list of dict, optional | Source diagnostics, empty for explicit construction. Omission is preserved through restoration and selection. Diagnostic rows use `severity`, `message` and `recording_id`; a `None` recording ID denotes dataset scope. |
+| `issues` | list of dict, optional | Source diagnostics, empty for explicit construction. Omission is preserved through restoration and selection. Each diagnostic requires a nonblank text `severity`, text `message` and `recording_id` that is nonblank text or `None` for dataset scope. Malformed diagnostics raise during construction; extra fields remain intact. |
 | `dataset` | dict | Dataset facts described below. |
 | `source_ids` | list of str | Original recording identities, exactly aligned with `recordings`. Unlike the public property, this is not derived from current cases. |
 | `recordings` | list of dict | Original recording descriptors, empty for `from_arrays`. |
@@ -189,8 +233,8 @@ Each `rows` entry contains:
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `case_id` | str | Unique nonempty identity within the current view. |
-| `recording_id` | str or None | Original source recording, or `None` for arrays without source context. |
-| `participant_id` | str, int or None | Original subject for this current row, or unknown. |
+| `recording_id` | str or None | Nonblank original source recording identity, or `None` for arrays without source context. The type is checked even when source descriptors are absent. |
+| `participant_id` | str, int or None | Declared participant for this current row, or unknown. It may differ from the original recording subject. |
 | `group_id` | str, int or None | Declared current split group, defaulting to the supplied subject in `from_arrays`. |
 | `source_support` | list of two int | Zero-based half-open contributing interval `[start, stop)` in source samples. Without source context, `from_arrays` uses the supplied row's `[0, n_samples)` interval; it establishes no physical source lineage. |
 
@@ -211,6 +255,8 @@ Each `layouts` entry contains:
 The source coordinate for current sample `j` is
 `source_origin_sample + j * source_sample_step`. Grid points must fall inside
 the row's contributing support `[start, stop)`; a point at `stop` is outside it.
+Grid arithmetic uses normalized Python numbers and rejects nonfinite results,
+so NumPy integer overflow cannot bypass the support check.
 A source-only object has no stored current view;
 `layouts` derives recording layouts on demand, while `cases` and `case_ids`
 raise `ValueError`. Uniform `sfreq`, `channel_names` and `units` accessors also
