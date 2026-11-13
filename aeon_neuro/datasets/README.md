@@ -19,3 +19,7 @@ table rows and custom metadata fields remain available without schema coercion.
 Source participant IDs may be unknown (`None`), including in a collection with
 known IDs. Aligned rows retain these unknowns; the serialized selected-participant
 scope lists only known string/integer IDs, preserving their types through selection.
+
+Source-only selection preserves omitted optional diagnostics and filters supplied
+diagnostics to the selected recordings and dataset scope. Restored sample grids
+must lie inside their half-open source support `[start, stop)`, excluding `stop`.
