@@ -269,6 +269,9 @@ class EEGDatasetInfo:
             or report["version"] != 2
         ):
             raise ValueError("Supply version-2 information state")
+        # Both readiness reporting and later selection rely on these fields.
+        # Reject malformed diagnostics here instead of failing on first use.
+        _validate_issues(report.get("issues", []))
         if report.get("ready") is not True:
             messages = "; ".join(
                 issue["message"]
@@ -288,6 +291,7 @@ class EEGDatasetInfo:
             participants = _participant_scope(entries)
             if report["dataset"]["selected_participants"] != participants:
                 raise ValueError("Selected participants do not match recording scope")
+            report["dataset"]["selected_participants"] = participants
             grouped = {entry["recording_id"]: [] for entry in entries}
             by_id = {entry["recording_id"]: entry for entry in entries}
             seen = set()
@@ -753,6 +757,26 @@ def _participant_scope(recordings):
     return sorted(participants, key=lambda value: (isinstance(value, str), value))
 
 
+def _validate_issues(issues):
+    if not isinstance(issues, list):
+        raise ValueError("Source diagnostics must be a list of dictionaries")
+    for issue in issues:
+        if not isinstance(issue, dict):
+            raise ValueError("Source diagnostics must be dictionaries")
+        _required(issue, ("recording_id", "severity", "message"))
+        identity = issue["recording_id"]
+        if identity is not None and (
+            not isinstance(identity, str) or not identity.strip()
+        ):
+            raise ValueError("Diagnostic recording_id must be nonempty text or None")
+        if (
+            not isinstance(issue["severity"], str)
+            or not issue["severity"].strip()
+            or not isinstance(issue["message"], str)
+        ):
+            raise ValueError("Diagnostic severity and message must be text")
+
+
 def _recording_info(metadata):
     # Inspecting source metadata and checking loaded arrays must use the same
     # identity/layout rules, without requiring dummy signals for inspection.
@@ -787,5 +811,11 @@ def _recording_info(metadata):
         item["n_samples"] = _integer(item["n_samples"], "n_samples")
         if item["n_samples"] < 1:
             raise ValueError("n_samples must be positive.")
+        if item.get("participant_id") is not None:
+            # Keep the descriptor as portable as its normalized participant
+            # scope, including when callers supply NumPy integral identities.
+            item["participant_id"] = _identifier(
+                item["participant_id"], "participant_id"
+            )
         info.append(item)
     return info
