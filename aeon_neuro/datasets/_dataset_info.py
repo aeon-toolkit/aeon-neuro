@@ -68,7 +68,7 @@ class RecordingInfo:
     """
 
     def __init__(self, metadata, events):
-        self._source = _RecordingDescriptor.from_dict(metadata)
+        self._source = _RecordingDescriptor._from_dict(metadata)
         self._events = deepcopy(events)
 
     @property
@@ -388,7 +388,7 @@ class EEGDatasetInfo:
         )
         from aeon_neuro.datasets._info_view import _validate_view
 
-        self._dataset = _DatasetFacts.from_dict(report["dataset"])
+        self._dataset = _DatasetFacts._from_dict(report["dataset"])
         self._events = report["events"]
         self._issues = report.get("issues", [])
         self._has_issues = "issues" in report
@@ -429,11 +429,14 @@ class EEGDatasetInfo:
             report["dataset"]["selected_participants"] = _participant_scope(
                 report["recordings"]
             )
-            report["issues"] = [
-                issue
-                for issue in report["issues"]
-                if issue["recording_id"] is None or issue["recording_id"] in ids
-            ]
+            # Legacy state may omit diagnostics. Selection must preserve that
+            # absence rather than inventing an empty diagnostic collection.
+            if "issues" in report:
+                report["issues"] = [
+                    issue
+                    for issue in report["issues"]
+                    if issue["recording_id"] is None or issue["recording_id"] in ids
+                ]
         else:
             report = self.to_dict()
             # to_dict already detached the whole view. Copying it again for

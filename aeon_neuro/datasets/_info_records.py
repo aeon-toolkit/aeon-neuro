@@ -14,7 +14,7 @@ class _Record:
     _extra: dict = field(default_factory=dict, repr=False)
 
     @classmethod
-    def from_dict(cls, value):
+    def _from_dict(cls, value):
         """Detach named fields and retain unrecognized source extensions."""
         names = {item.name for item in fields(cls) if not item.name.startswith("_")}
         return cls(
@@ -108,13 +108,13 @@ class _CurrentView(_Record):
     layouts: list[_SignalLayout]
 
     @classmethod
-    def from_dict(cls, value):
+    def _from_dict(cls, value):
         """Restore typed children after portable-state validation."""
         return cls(
             version=value["version"],
             kind=value["kind"],
-            rows=[_CaseRow.from_dict(row) for row in value["rows"]],
-            layouts=[_SignalLayout.from_dict(layout) for layout in value["layouts"]],
+            rows=[_CaseRow._from_dict(row) for row in value["rows"]],
+            layouts=[_SignalLayout._from_dict(layout) for layout in value["layouts"]],
             _present=frozenset(value),
             _extra={
                 key: deepcopy(v)
