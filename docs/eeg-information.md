@@ -78,7 +78,8 @@ external value changes.
 Current cases retain their explicitly declared participant IDs, which may differ
 from original recording subjects, for example event-level actors. Original
 subjects remain available in recording metadata. Unknown identities remain
-unknown and groups stay separately configurable. NumPy integer identities normalize to Python integers without
+unknown and groups stay separately configurable. NumPy integer identities
+normalize to Python integers without
 converting strings such as `"1"` to integers. Required current numeric layout and
 support fields also normalize to Python numbers; flexible annotations retain
 their supplied values.

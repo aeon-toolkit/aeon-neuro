@@ -148,7 +148,7 @@ class BaseEEGClassifier(BaseClassifier):
         Returns
         -------
         np.ndarray
-            Probabilities in fitted classes_ order, one row per prediction case.
+            Probabilities in fitted ``classes_`` order, one row per prediction case.
         """
         self._check_is_fitted()
         self._prediction_context(X, info)

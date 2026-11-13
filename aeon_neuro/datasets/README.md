@@ -25,7 +25,6 @@ diagnostics to the selected recordings and dataset scope. Restored sample grids
 must lie inside their half-open source support `[start, stop)`, excluding `stop`.
 Declared case participants may differ from original recording subjects, such as
 event-level actors. Unknown identities and independent groups remain supported.
-NumPy integer identities and
-layout numbers normalize to Python values for portable state. Grid checks reject
-overflow, and malformed diagnostics fail during construction. Empty collections
+NumPy integer identities and layout numbers normalize to Python values for
+portable state. Grid checks reject overflow, and malformed diagnostics fail during construction. Empty collections
 still validate dense channel/sample axes, numeric types and supplied units.
