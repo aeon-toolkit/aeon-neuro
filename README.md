@@ -123,6 +123,11 @@ pip install aeon-neuro[all_extras]
 To install the latest development version from GitHub, see the
 installation guide.
 
+For exact, versioned NEMAR EEG acquisition, install `aeon-neuro[nemar]` and use
+`fetch_nemar_dataset` with explicit subjects or recording paths. The
+[dataset guide](docs/datasets.md#nemar-bids-recordings) describes verified caches,
+offline reuse and the acquisition report.
+
 ## Documentation
 
 - Project documentation: https://aeon-neuro.readthedocs.io
