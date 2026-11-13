@@ -73,6 +73,7 @@ dl = [
 ]
 dev = [
     "aeon[dev]",
+    "nemar-py>=0.3.3,<0.4",
     "edfio",
     "eeglabio",
     "pybv>=0.7.5",

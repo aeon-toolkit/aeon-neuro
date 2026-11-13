@@ -40,8 +40,11 @@ spaces absent from signal filenames. Participant tables retain unselected rows;
 this is a selected local copy. Other modalities, derivatives, stimuli and
 phenotype folders are outside this EEG selection.
 
-The returned folder can be passed to existing BIDS readers. Acquisition does
-not decode recordings, validate complete BIDS compliance, correct metadata,
+The returned folder can be passed to `mne_bids.read_raw_bids`. For EEGLAB
+`.set` recordings, include `.set` in the `formatts` argument when using
+`aeon_neuro.datasets.load_bids.load_bids_data`; its default formats are
+`(".vhdr", ".bdf", ".edf")`. Acquisition does not decode recordings,
+validate complete BIDS compliance, correct metadata,
 infer labels, construct epochs or choose preparation/evaluation. Catalogue
 search and download previews belong in applications. EEGLAB files with unusual
 external companion naming may need a separately acquired complete source copy.

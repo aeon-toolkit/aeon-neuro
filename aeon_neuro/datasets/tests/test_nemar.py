@@ -140,6 +140,48 @@ def test_selection_receipt_and_offline_reuse(provider, tmp_path, monkeypatch):
     assert fresh["files"][RAW]["size"] == len(provider.content[RAW])
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        RAW.replace("sub-021_task", "sub-021-extra_task"),
+        RAW.replace("P3", "P3-practice"),
+        RAW.replace("P3", "P3.other"),
+    ],
+)
+def test_malformed_recording_entities(provider, tmp_path, name):
+    """Never truncate malformed entity labels into a requested identity."""
+    data = provider.content.pop(RAW)
+    del provider.files[RAW]
+    provider.content[name] = data
+    provider.files[name] = _File(name, len(data), hashlib.sha256(data).hexdigest())
+    with pytest.raises(ValueError, match="requested subject"):
+        _fetch(tmp_path)
+    assert provider.transfers == []
+    with pytest.raises(ValueError, match="supported raw BIDS EEG paths"):
+        _fetch(tmp_path, subjects=None, task=None, recordings=name)
+
+
+def test_metadata_entities_and_root_documentation(provider, tmp_path):
+    """Keep hyphenated documentation without inheriting partial task matches."""
+    additions = {
+        "README-v1.md": b"Versioned attribution",
+        "task-P3-other_events.json": b"{}",
+        "task-P3.other_events.json": b"{}",
+        "task-P3_events.tsv.gz": b"compressed events",
+        "sub-021/eeg/sub-021_task-P3_run-2_events.tsv": b"other run",
+    }
+    for path, data in additions.items():
+        provider.content[path] = data
+        provider.files[path] = _File(path, len(data), hashlib.sha256(data).hexdigest())
+    root, report = _fetch(tmp_path, return_report=True)
+    assert (root / "README-v1.md").read_bytes() == additions["README-v1.md"]
+    assert "task-P3_events.tsv.gz" in report["files"]
+    assert not (set(additions) - {"README-v1.md", "task-P3_events.tsv.gz"}) & set(
+        report["files"]
+    )
+    assert _fetch(tmp_path, download=False) == root
+
+
 def test_paths_and_requests_have_separate_cache_entries(provider, tmp_path):
     """Canonical ordering reuses a selection; new releases/requests cannot."""
     root = _fetch(tmp_path, subjects=None, task=None, recordings=[OTHER, RAW, RAW])
@@ -233,7 +275,10 @@ def test_changed_cache_never_redownloads(provider, tmp_path, change):
         receipt.write_text(json.dumps(report))
     else:
         (root / RAW).unlink()
-        (root / RAW).symlink_to(root / "README")
+        try:
+            (root / RAW).symlink_to(root / "README")
+        except OSError:
+            pytest.skip("Symbolic links are unavailable on this platform")
     before = list(provider.transfers)
     with pytest.raises(ValueError, match="Invalid NEMAR cache"):
         _fetch(tmp_path)
@@ -288,13 +333,15 @@ def test_missing_cache_and_dependency(tmp_path, monkeypatch):
     assert not list(tmp_path.iterdir())
 
 
-def test_brainvision_declared_companions(provider, tmp_path):
+@pytest.mark.parametrize("section", ["Common Infos", "common infos"])
+def test_brainvision_declared_companions(provider, tmp_path, section):
     """Resolve non-stem companion references and retain their exact bytes."""
     header = "sub-021/eeg/sub-021_task-P3_eeg.vhdr"
     content = {
         header: (
             b"Brain Vision Data Exchange Header File Version 1.0\n"
-            b"[Common Infos]\nDataFile=signal.eeg\nMarkerFile=markers.vmrk\n"
+            + f"[{section}]\nDataFile=signal.eeg\nMarkerFile=markers.vmrk\n".encode()
+            + b"[Comment]\nDataFile=comment.eeg\nMarkerFile=comment.vmrk\n"
         ),
         "sub-021/eeg/signal.eeg": b"signal bytes",
         "sub-021/eeg/markers.vmrk": b"markers",
@@ -311,6 +358,25 @@ def test_brainvision_declared_companions(provider, tmp_path):
         _fetch(tmp_path, subjects=None, task=None, recordings=header, download=False)
         == root
     )
+
+
+def test_brainvision_companions_require_common_infos(provider, tmp_path):
+    """Comment text cannot supply a missing companion declaration."""
+    header = "sub-021/eeg/sub-021_task-P3_eeg.vhdr"
+    data = b"[Common Infos]\nDataFile=signal.eeg\n[Comment]\nMarkerFile=markers.vmrk\n"
+    content = {
+        header: data,
+        "sub-021/eeg/signal.eeg": b"signal",
+        "sub-021/eeg/markers.vmrk": b"markers",
+    }
+    for path, payload in content.items():
+        provider.content[path] = payload
+        provider.files[path] = _File(
+            path, len(payload), hashlib.sha256(payload).hexdigest()
+        )
+    with pytest.raises(ValueError, match="Missing BrainVision"):
+        _fetch(tmp_path, subjects=None, task=None, recordings=header)
+    assert not list(tmp_path.rglob("complete.json"))
 
 
 @pytest.mark.parametrize(

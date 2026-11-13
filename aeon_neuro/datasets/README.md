@@ -1,5 +1,16 @@
 # Dataset utilities
 
+## NEMAR acquisition
+
+`fetch_nemar_dataset` downloads an exact release and explicit EEG selection,
+including compatible BIDS metadata and declared signal companions. Completed
+selections are verified locally on reuse. Entity labels must match complete
+alphanumeric tokens; malformed labels are excluded from subject/task selection.
+BrainVision companion references come from the header's Common Infos section.
+See [the dataset guide](../../docs/datasets.md#nemar-bids-recordings) for installation,
+offline caches and reading EEGLAB files. Development installs include nemar-py
+so the offline provider integration tests run alongside the ordinary suite.
+
 ## Aligned EEG information
 
 `EEGDatasetInfo.from_arrays` records explicit rate, ordered channels, optional

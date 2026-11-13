@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+from collections import defaultdict
 from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 
@@ -280,7 +281,8 @@ def _primary(value):
     # Subject/session filenames must agree with their containing folders;
     # filtering a conflicting path would otherwise misidentify its participant.
     return (
-        entities.get("sub") == parts[0].removeprefix("sub-")
+        entities is not None
+        and entities.get("sub") == parts[0].removeprefix("sub-")
         and entities.get("ses")
         == (parts[1].removeprefix("ses-") if len(parts) == 4 else None)
         and "task" in entities
@@ -301,7 +303,26 @@ def _paths(values):
 
 def _entities(path):
     # Directory entities retain subject/session context for scans and geometry.
-    return dict(re.findall(r"(?:^|[/_])([A-Za-z0-9]+)-([A-Za-z0-9]+)", path))
+    path = PurePosixPath(path)
+    stem = (
+        path.name.removesuffix(".tsv.gz")
+        if path.name.endswith(".tsv.gz")
+        else path.stem
+    )
+    fields = {}
+    for part in (*path.parts[:-1], stem):
+        for token in part.split("_"):
+            if "-" not in token:
+                continue
+            match = re.fullmatch(r"([A-Za-z0-9]+)-([A-Za-z0-9]+)", token)
+            # A partial label must never become a different subject or task.
+            if match is None:
+                return None
+            key, value = match.groups()
+            if key in fields and fields[key] != value:
+                return None
+            fields[key] = value
+    return fields
 
 
 def _select(files, subjects, task, recordings):
@@ -322,29 +343,36 @@ def _select(files, subjects, task, recordings):
                 "The release has no matching EEG recording for a requested subject"
             )
     needed = {"dataset_description.json", *chosen}
+    # Parse metadata once and inspect only ancestor directories per recording.
+    # Completed-cache validation uses this selection path too.
+    metadata = defaultdict(list)
+    for path in files:
+        candidate = PurePosixPath(path)
+        if candidate.suffix in {".json", ".tsv"} or candidate.name.endswith(".tsv.gz"):
+            fields = _entities(path)
+        elif candidate.suffix in {".txt", ".md", ".rst", ".yml", ".yaml"} or (
+            candidate.parent == PurePosixPath(".") and not candidate.suffix
+        ):
+            # Documentation names are free text, not BIDS entity declarations.
+            fields = _entities(candidate.parent.as_posix())
+        else:
+            continue
+        if fields is not None:
+            metadata[candidate.parent].append((path, fields))
     for name in chosen:
         raw = PurePosixPath(name)
         companion = raw.with_suffix(".fdt").as_posix()
         if raw.suffix == ".set" and companion in files:
             needed.add(companion)
         entities = _entities(name)
-        for path in files:
-            candidate = PurePosixPath(path)
-            if candidate.parent not in raw.parents:
-                continue
-            metadata = (
-                candidate.suffix
-                in {".json", ".tsv", ".txt", ".md", ".rst", ".yml", ".yaml"}
-                or candidate.name.endswith(".tsv.gz")
-                or (candidate.parent == PurePosixPath(".") and not candidate.suffix)
-            )
-            # Geometry can declare a coordinate space absent from signal names.
-            fields = _entities(path)
-            if metadata and all(
-                key == "space" or entities.get(key) == value
-                for key, value in fields.items()
-            ):
-                needed.add(path)
+        for parent in raw.parents:
+            for path, fields in metadata.get(parent, ()):
+                # Geometry can declare a coordinate space absent from signal names.
+                if all(
+                    key == "space" or entities.get(key) == value
+                    for key, value in fields.items()
+                ):
+                    needed.add(path)
     if any(path not in files for path in needed):
         raise ValueError("The release is missing dataset_description.json")
     return chosen, needed
@@ -352,7 +380,18 @@ def _select(files, subjects, task, recordings):
 
 def _brainvision_companions(root, name):
     text = (root / name).read_bytes().decode("utf-8-sig", errors="replace")
-    values = dict(re.findall(r"(?m)^(DataFile|MarkerFile)\s*=\s*(.+?)\s*$", text))
+    values = {}
+    in_common = False
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("[") and line.endswith("]"):
+            in_common = line.casefold() == "[common infos]"
+        elif in_common:
+            # Free-form comments can contain assignment-like text; only the
+            # Common Infos section declares the recording's dependencies.
+            match = re.fullmatch(r"(DataFile|MarkerFile)\s*=\s*(.+)", line)
+            if match:
+                values[match[1]] = match[2].strip()
     if set(values) != {"DataFile", "MarkerFile"}:
         raise ValueError(f"Missing BrainVision DataFile/MarkerFile in {name}")
     parent = PurePosixPath(name).parent
