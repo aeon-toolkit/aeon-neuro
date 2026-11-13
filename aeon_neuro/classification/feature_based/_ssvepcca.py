@@ -40,14 +40,16 @@ def _qr_basis(A):
 class SSVEPCCAClassifier(BaseClassifier):
     """Steady-state visual evoked potential (SSVEP) classifier using CCA.
 
-    Each class is associated with a stimulation frequency. During ``fit``, a
-    reference signal is built for every class from sines and cosines at that
-    frequency and its harmonics. During ``predict``, canonical correlation
-    analysis (CCA) measures how strongly each case correlates with every
-    reference, and the class whose reference correlates most is returned [1]_.
+    Each class is associated with a stimulation frequency. During ``predict``,
+    a reference signal is built for every class from sines and cosines at that
+    frequency and its harmonics, with the same length as the input. Canonical
+    correlation analysis (CCA) then measures how strongly each case correlates
+    with every reference, and the class whose reference correlates most is
+    returned [1]_.
 
-    No training data is used to build the references beyond its length and the
-    set of class labels, so the classifier is effectively training-free.
+    The references depend only on ``sfreq``, ``class_frequencies`` and the
+    length of the input, so the classifier is effectively training-free:
+    ``fit`` only validates the parameters and records the class labels.
 
     The input shape is aeon's standard collection format:
     ``(n_cases, n_channels, n_timepoints)``.
@@ -62,9 +64,26 @@ class SSVEPCCAClassifier(BaseClassifier):
         present in ``y`` must be a key, the frequencies must be distinct, and
         the highest harmonic of each must be below the Nyquist frequency
         (``sfreq / 2``).
-    n_harmonics : int, default=2
+    n_harmonics : int, default=3
         Number of harmonics (including the fundamental) used to build each
         reference signal. Must be a positive integer.
+    solver : {"cf", "nipals"}, default="cf"
+        How the canonical correlation is computed. "cf" uses a closed form
+        (QR decompositions and an SVD); "nipals" uses scikit-learn's
+        iterative ``CCA``. Both give the same correlations to about 1e-6.
+
+    Notes
+    -----
+    ``predict_proba`` turns the canonical correlations of each case into
+    probabilities by clipping them at 0 and dividing by their sum. A case
+    whose correlations are all 0, such as a flat case, gets a uniform
+    distribution. These are relative correlation strengths, not calibrated
+    probabilities, but their ``argmax`` agrees with ``predict``.
+
+    MOABB's ``SSVEP_CCA`` instead subtracts each case's smallest correlation
+    before normalising, so its weakest class always gets a probability close
+    to 0. The canonical correlations and the predictions are the same as
+    MOABB's.
 
     References
     ----------
@@ -96,7 +115,7 @@ class SSVEPCCAClassifier(BaseClassifier):
         "algorithm_type": "feature",
     }
 
-    def __init__(self, sfreq, class_frequencies, n_harmonics=2, solver="nipals"):
+    def __init__(self, sfreq, class_frequencies, n_harmonics=3, solver="cf"):
         self.sfreq = sfreq
         self.class_frequencies = class_frequencies
         self.n_harmonics = n_harmonics
@@ -104,12 +123,13 @@ class SSVEPCCAClassifier(BaseClassifier):
         super().__init__()
 
     def _fit(self, X, y=None):
-        """Validate parameters and build a reference signal for each class.
+        """Validate the parameters.
 
-        The classifier is training-free: references are built from
-        ``class_frequencies`` and the series length only, so ``y`` is not used
-        here (the class set and ordering come from ``self.classes_``). It is
-        accepted for compatibility with the classifier API.
+        The classifier is training-free: references are built in ``predict``
+        from ``class_frequencies`` and the length of the input, so ``fit``
+        only checks the parameters. ``y`` is not used here (the class set and
+        ordering come from ``self.classes_``); it is accepted for
+        compatibility with the classifier API.
 
         Parameters
         ----------
@@ -139,6 +159,9 @@ class SSVEPCCAClassifier(BaseClassifier):
             raise ValueError(
                 f"n_harmonics must be a positive integer, got {self.n_harmonics!r}."
             )
+
+        if self.solver not in ("cf", "nipals"):
+            raise ValueError(f"solver must be 'cf' or 'nipals', got {self.solver!r}.")
 
         if not self.class_frequencies:
             raise ValueError("class_frequencies must contain at least one class.")
@@ -223,10 +246,15 @@ class SSVEPCCAClassifier(BaseClassifier):
         if self.solver == "nipals":
             cca = CCA(n_components=1)
             for i, case in enumerate(X):
+                channel_ranges = case.max(axis=1) - case.min(axis=1)
+                channel_is_flat = channel_ranges == 0
+                if channel_is_flat.all():
+                    continue  # flat trial, score stays 0
                 for j, reference in enumerate(references):
                     S_x, S_y = cca.fit_transform(case.T, reference.T)
                     scores[i, j] = np.corrcoef(S_x.ravel(), S_y.ravel())[0, 1]
             scores = np.nan_to_num(scores, nan=0.0)
+
         elif self.solver == "cf":
             q_ys = [_qr_basis(ref.T) for ref in references]
             for i, case in enumerate(X):
@@ -257,10 +285,8 @@ class SSVEPCCAClassifier(BaseClassifier):
     def _predict_proba(self, X):
         """Return class probabilities from the canonical correlations.
 
-        The non-negative correlations of each case are normalised to sum to one.
-        A case whose correlations are all non-positive is given a uniform
-        distribution. These are relative correlation strengths, not calibrated
-        probabilities, but their ``argmax`` agrees with ``predict``.
+        See the Notes section of the class docstring for how the correlations
+        are normalised.
 
         Parameters
         ----------
@@ -294,4 +320,4 @@ class SSVEPCCAClassifier(BaseClassifier):
         params : dict or list of dict
             Parameters to create testing instances of the class.
         """
-        return {"sfreq": 100, "class_frequencies": {0: 8, 1: 13, 2: 17}}
+        return {"sfreq": 120, "class_frequencies": {0: 8, 1: 13, 2: 17}}

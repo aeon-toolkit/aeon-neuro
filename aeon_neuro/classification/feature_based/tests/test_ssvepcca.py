@@ -131,12 +131,24 @@ def test_references_from_length_only():
     expected = []
     for label in clf.classes_:
         rows = []
-        for h in (1, 2):
+        for h in (1, 2, 3):
             rows.append(np.sin(2 * np.pi * h * freqs[label] * t))
             rows.append(np.cos(2 * np.pi * h * freqs[label] * t))
         expected.append(np.array(rows))
     for ref, exp in zip(clf._build_references(n_timepoints), expected):
         np.testing.assert_allclose(ref, exp)
+
+
+@pytest.mark.parametrize("solver", ["nipals", "cf"])
+def test_flat_case(solver):
+    """A flat case does not crash and gets uniform probabilities."""
+    X, y = _make_ssvep_data(n_cases=20)
+    clf = SSVEPCCAClassifier(sfreq=sfreq, class_frequencies=freqs, solver=solver).fit(
+        X, y
+    )
+    X_flat = np.zeros((1, n_channels, n_timepoints))
+    np.testing.assert_allclose(clf.predict_proba(X_flat), 1 / len(clf.classes_))
+    assert clf.predict(X_flat)[0] in clf.classes_
 
 
 def test_extra_keys_in_class_frequencies_allowed():
@@ -157,6 +169,7 @@ def test_extra_keys_in_class_frequencies_allowed():
         ({"n_harmonics": 0}, "n_harmonics must be a positive integer"),
         ({"n_harmonics": True}, "n_harmonics must be a positive integer"),
         ({"n_harmonics": 1.5}, "n_harmonics must be a positive integer"),
+        ({"solver": "cff"}, "solver must be 'cf' or 'nipals'"),
         ({"class_frequencies": {}}, "must contain at least one class"),
         (
             {"class_frequencies": {"a": 8, "b": 11, "c": 15, "d": -1}},
