@@ -40,6 +40,21 @@ class DownsampleCollectionTransformer(BaseCollectionTransformer):
         `downsample_by = "frequency"`.
         If `source_sfreq` < `target_sfreq` when `downsample_by = "frequency"`.
         If `proportion` is not between 0-1 when `downsample_by = "proportion"`.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from aeon_neuro.transformations.collection import (
+    ...     DownsampleCollectionTransformer,
+    ... )
+    >>> rng = np.random.default_rng(0)
+    >>> X = rng.standard_normal((4, 2, 100))
+    >>> downsample = DownsampleCollectionTransformer(
+    ...     source_sfreq=100, target_sfreq=25
+    ... )
+    >>> Xt = downsample.fit_transform(X)
+    >>> Xt.shape
+    (4, 2, 25)
     """
 
     _tags = {
