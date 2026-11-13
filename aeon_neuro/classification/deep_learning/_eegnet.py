@@ -74,6 +74,15 @@ class EEGNetClassifier(_BaseBraindecodeClassifier):
         Whether to apply the final layer norm constraint.
     norm_rate : float, default=0.25
         Norm constraint rate.
+    validation_size : float or None, default=None
+        Optional inner validation fraction. With information, holds out entire
+        subjects; without it, stratifies cases. None trains without validation.
+    patience : int, default=5
+        Stop after this many epochs without improved validation loss and restore
+        the best weights. Used only when validation_size is set.
+    validation_strategy : {"auto", "subject", "stratified"}, default="auto"
+        Auto uses subjects with information and stratifies cases without it.
+        Stratified explicitly permits within-person validation with metadata.
 
     References
     ----------
@@ -110,6 +119,9 @@ class EEGNetClassifier(_BaseBraindecodeClassifier):
         drop_prob: float = 0.25,
         final_layer_with_constraint: bool = False,
         norm_rate: float = 0.25,
+        validation_size: float | None = None,
+        patience: int = 5,
+        validation_strategy: str = "auto",
     ):
         self.final_conv_length = final_conv_length
         self.pool_mode = pool_mode
@@ -137,6 +149,9 @@ class EEGNetClassifier(_BaseBraindecodeClassifier):
             device=device,
             verbose=verbose,
             random_state=random_state,
+            validation_size=validation_size,
+            patience=patience,
+            validation_strategy=validation_strategy,
         )
 
     def _build_network(self, n_channels: int, n_timepoints: int):
@@ -147,6 +162,7 @@ class EEGNetClassifier(_BaseBraindecodeClassifier):
             n_chans=n_channels,
             n_outputs=self.n_classes_,
             n_times=n_timepoints,
+            sfreq=self.sfreq_,
             final_conv_length=self.final_conv_length,
             pool_mode=self.pool_mode,
             F1=self.F1,

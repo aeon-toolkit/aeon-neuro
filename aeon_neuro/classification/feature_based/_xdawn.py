@@ -6,13 +6,13 @@ __all__ = ["XDAWNClassifier"]
 
 import numpy as np
 from aeon.base._base import _clone_estimator
-from aeon.classification import BaseClassifier
 from sklearn.base import BaseEstimator, is_classifier
 
+from aeon_neuro.classification.base import BaseEEGClassifier
 from aeon_neuro.transformations.collection.channel_creation import XDAWN
 
 
-class XDAWNClassifier(BaseClassifier):
+class XDAWNClassifier(BaseEEGClassifier):
     """xDAWN spatial filtering plus a scikit-learn classifier.
 
     This estimator applies the ``XDAWN`` transformer, which wraps

@@ -6,7 +6,7 @@ from pathlib import Path
 from mne_bids import get_bids_path_from_fname
 
 
-def _read_eeg_json(bids_path):
+def _read_eeg_json(bids_path, *, read_json=None):
     """Combine applicable ancestor JSON objects, rejecting same-level ambiguity."""
     if bids_path.root is None:
         raise ValueError("A BIDS root is required for EEG JSON inheritance.")
@@ -49,7 +49,13 @@ def _read_eeg_json(bids_path):
         if not candidates:
             continue
         path = candidates[0]
-        values = json.loads(path.read_text(encoding="utf-8-sig"))
+        # Inspection supplies a reader that binds parsed values to file hashes.
+        # Other callers retain the ordinary inheritance reader without snapshots.
+        values = (
+            json.loads(path.read_text(encoding="utf-8-sig"))
+            if read_json is None
+            else read_json(path)
+        )
         if not isinstance(values, dict):
             raise ValueError(f"EEG JSON metadata must be an object: {path.name}")
         json.dumps(values, allow_nan=False)
