@@ -17,6 +17,9 @@ Usage
    :maxdepth: 1
 
    ../classification-problems
+   ../eeg-information
+   ../bids-problem-input
+   ../bids-dataset-info
 
 Classification case construction
 --------------------------------
@@ -34,3 +37,21 @@ Classification case construction
 .. autofunction:: aeon_neuro.datasets.validate_group_split
 
 .. autofunction:: aeon_neuro.datasets.validate_classification_split
+
+Aligned EEG information
+-----------------------
+
+.. autoclass:: aeon_neuro.datasets.EEGDatasetInfo
+   :members:
+
+.. autoclass:: aeon_neuro.datasets.RecordingInfo
+   :members:
+
+BIDS inspection and loading
+---------------------------
+
+.. autofunction:: aeon_neuro.datasets.inspect_bids_eeg
+
+.. autofunction:: aeon_neuro.datasets.open_bids_eeg_recording
+
+.. autofunction:: aeon_neuro.datasets.load_bids_dataset

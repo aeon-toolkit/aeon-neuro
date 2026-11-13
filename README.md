@@ -97,6 +97,17 @@ This also makes `aeon-neuro` useful beyond software alone. It is a research scaf
 building stronger baselines, reproducing studies, and understanding where different classes
 of method work well or fail.
 
+## EEG side information
+
+Describe EEG arrays with optional source metadata, retain aligned row identities
+through selection, save detached metadata, and pass optional information to EEG
+classifiers at fitting and prediction. See the
+experimental [EEG information guide](docs/eeg-information.md). Supplied prediction
+information must match retained fitting facts, including known constructor rate
+and channel settings when fitting received plain arrays. Pretrained CBraMod and
+LaBraM also enforce their 200 Hz requirement on supplied prediction information,
+even when the training sampling rate was unknown.
+
 ## Installation
 
 `aeon-neuro` requires Python 3.9 or later. Full installation instructions are available in the
