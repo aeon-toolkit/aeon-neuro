@@ -127,3 +127,83 @@ def test_current_selection_retains_source_scope_with_named_records():
     assert selected.dataset["selected_participants"] == [1, "1"]
     assert len(selected.recordings) == 2
     assert EEGDatasetInfo(selected.to_dict()).to_dict() == selected.to_dict()
+
+
+@pytest.mark.parametrize("paired", [False, True])
+@pytest.mark.parametrize("indices", [[1], [1, 0], []])
+@pytest.mark.parametrize("diagnostics", [None, [], [None, "a", "b"]])
+def test_source_selection_preserves_optional_issues(paired, indices, diagnostics):
+    """Source selection filters supplied diagnostics without inventing the key."""
+    state = saved_state()
+    state.pop("view")
+    if diagnostics is not None:
+        state["issues"] = [
+            dict(recording_id=identity, severity="warning", message="source warning")
+            for identity in diagnostics
+        ]
+    before = deepcopy(state)
+    info = EEGDatasetInfo(state)
+    if paired:
+        X = np.arange(32.0).reshape(2, 1, 16)
+        selected_X, selected = info.select(X, indices)
+        np.testing.assert_array_equal(selected_X, X[indices])
+    else:
+        selected = info[indices]
+    result = selected.to_dict()
+    ids = [state["source_ids"][i] for i in indices]
+    assert result["source_ids"] == ids
+    assert result["events"] == [
+        event
+        for identity in ids
+        for event in state["events"]
+        if event["recording_id"] == identity
+    ]
+    if diagnostics is None:
+        assert "issues" not in result
+    else:
+        assert result["issues"] == [
+            issue
+            for issue in state["issues"]
+            if issue["recording_id"] is None or issue["recording_id"] in ids
+        ]
+        result["issues"].append({"message": "changed"})
+    assert info.to_dict() == before
+    assert state == before
+    assert EEGDatasetInfo(selected.to_dict()).to_dict() == selected.to_dict()
+
+
+@pytest.mark.parametrize(
+    "start, origin, step, length, valid",
+    [
+        (0, 0.0, 1.0, 8, True),
+        (0, 0.0, 1.0, 9, False),
+        (2, 2.0, 1.0, 6, True),
+        (2, 2.0, 1.0, 7, False),
+        (2, np.nextafter(2.0, 0.0), 1.0, 1, False),
+        (0, 0.0, 0.5, 16, True),
+        (0, 0.0, 0.5, 17, False),
+        (0, np.nextafter(8.0, 0.0), 1.0, 1, True),
+        (0, 8.0, 1.0, 1, False),
+        (0, np.nextafter(8.0, np.inf), 1.0, 1, False),
+        (0, 8.0 + 5e-9, 1.0, 1, False),
+    ],
+)
+def test_restored_grid_respects_half_open_source_support(
+    start, origin, step, length, valid
+):
+    """Every current sample belongs to [start, stop), including fractional grids."""
+    state = saved_state()
+    state["view"]["rows"][0]["source_support"] = [start, 8]
+    state["view"]["layouts"][0].update(
+        n_samples=length,
+        source_origin_sample=origin,
+        source_sample_step=step,
+        sampling_frequency=8.0 / step,
+    )
+    if valid:
+        info = EEGDatasetInfo(state)
+        info.validate_layout(np.zeros((1, 1, length)))
+        assert info.to_dict() == state
+    else:
+        with pytest.raises(ValueError, match="sample grid exceeds"):
+            EEGDatasetInfo(state)

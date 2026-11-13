@@ -124,7 +124,9 @@ def _validate_view(view, sources):
                 raise ValueError("Current n_samples must be positive")
             first = layout["source_origin_sample"]
             last = first + (length - 1) * layout["source_sample_step"]
-            if first < start or last >= stop + 1e-8:
+            # The stop coordinate is excluded even for fractional sample grids;
+            # adding a tolerance here would admit samples outside the support.
+            if first < start or last >= stop:
                 raise ValueError(
                     "Current sample grid exceeds its original source support"
                 )
@@ -149,7 +151,7 @@ def _validate_view(view, sources):
                 )
             ):
                 raise ValueError("Current units must align with channel names")
-        return _CurrentView.from_dict(view)
+        return _CurrentView._from_dict(view)
     except (KeyError, TypeError, IndexError) as exc:
         raise ValueError("Incomplete current-layout view") from exc
 
@@ -224,7 +226,7 @@ def _recording_view(info):
                 reference=source.eeg_metadata.get("EEGReference"),
             )
         )
-    return _CurrentView.from_dict(
+    return _CurrentView._from_dict(
         {"version": 1, "kind": "recordings", "rows": rows, "layouts": layouts}
     )
 
