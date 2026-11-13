@@ -155,3 +155,13 @@ Explicit events with nonzero ``first_samp`` and unknown annotation time origin
 are rejected because the underlying writer can shift their timing. Dated offsets
 retain MNE's sample convention; use a complete zero-based recording when timing
 is unknown rather than assigning an arbitrary measurement date.
+
+Estimator discovery
+-------------------
+
+``all_estimators`` crawls the package and returns the estimators implemented in
+aeon-neuro, optionally filtered by estimator type or tag. Estimators imported from
+aeon and aliases of other estimators are not returned, and only estimators exported
+by a public module are found.
+
+.. autofunction:: aeon_neuro.utils.discovery.all_estimators
