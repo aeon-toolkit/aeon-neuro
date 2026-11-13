@@ -97,6 +97,12 @@ This also makes `aeon-neuro` useful beyond software alone. It is a research scaf
 building stronger baselines, reproducing studies, and understanding where different classes
 of method work well or fail.
 
+## EEG side information
+
+Describe EEG arrays with optional source metadata, retain aligned row identities
+through selection, and save detached metadata for later restoration. See the
+experimental [EEG information guide](docs/eeg-information.md).
+
 ## Installation
 
 `aeon-neuro` requires Python 3.9 or later. Full installation instructions are available in the
