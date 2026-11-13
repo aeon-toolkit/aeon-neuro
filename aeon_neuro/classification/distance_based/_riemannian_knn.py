@@ -20,10 +20,24 @@ class _BaseRiemannianCovarianceClassifier(BaseEEGClassifier):
 
     Parameters
     ----------
+    covariance_type : {"cov", "erp"}, default="cov"
+        Which covariance step to use. ``"cov"`` estimates a plain covariance
+        matrix per case with ``pyriemann.estimation.Covariances``. ``"erp"``
+        uses the supervised
+        ``aeon_neuro.transformations.collection.ERPCovariances``, which augments
+        each case with per-class ERPs before computing the covariance and
+        therefore requires the labels ``y`` at fit time.
     covariance_estimator : str, default="scm"
-        Covariance estimator passed to ``pyriemann.estimation.Covariances``.
+        Covariance estimator passed to the covariance step (the ``estimator``
+        argument of ``Covariances`` or ``ERPCovariances``).
     covariance_params : dict or None, default=None
-        Optional keyword arguments forwarded to the covariance estimator.
+        Optional keyword arguments forwarded to the covariance step. The valid
+        keys depend on ``covariance_type``. For ``"cov"`` they are the remaining
+        arguments of ``pyriemann.estimation.Covariances``. For ``"erp"`` they are
+        the remaining arguments of
+        ``aeon_neuro.transformations.collection.ERPCovariances``: ``classes``
+        (list of int or None), ``svd`` (int or None) and ``estimator_params``
+        (dict or None).
     """
 
     _tags = {
@@ -36,9 +50,11 @@ class _BaseRiemannianCovarianceClassifier(BaseEEGClassifier):
 
     def __init__(
         self,
+        covariance_type: str = "cov",
         covariance_estimator: str = "scm",
         covariance_params: dict | None = None,
     ):
+        self.covariance_type = covariance_type
         self.covariance_estimator = covariance_estimator
         self.covariance_params = covariance_params
 
@@ -49,7 +65,7 @@ class _BaseRiemannianCovarianceClassifier(BaseEEGClassifier):
 
     def _fit(self, X: np.ndarray, y: np.ndarray):
         """Fit the classifier."""
-        X_cov = self._compute_covariances(X, fit=True)
+        X_cov = self._compute_covariances(X, fit=True, y=y)
         self.classifier_ = self._build_classifier()
         self.classifier_.fit(X_cov, y)
         return self
@@ -74,28 +90,41 @@ class _BaseRiemannianCovarianceClassifier(BaseEEGClassifier):
         return aligned
 
     def _build_covariance_transformer(self):
-        """Construct the pyRiemann covariance transformer."""
-        from pyriemann.estimation import Covariances
-
+        """Construct the covariance transformer for ``covariance_type``."""
         kwargs = {} if self.covariance_params is None else dict(self.covariance_params)
-        return Covariances(estimator=self.covariance_estimator, **kwargs)
 
-    def _compute_covariances(self, X, fit=False):
+        if self.covariance_type == "cov":
+            from pyriemann.estimation import Covariances
+
+            return Covariances(estimator=self.covariance_estimator, **kwargs)
+        if self.covariance_type == "erp":
+            from aeon_neuro.transformations.collection import ERPCovariances
+
+            return ERPCovariances(estimator=self.covariance_estimator, **kwargs)
+        raise ValueError(
+            "covariance_type must be one of {'cov', 'erp'}, "
+            f"got {self.covariance_type!r}."
+        )
+
+    def _compute_covariances(self, X, fit=False, y=None):
         """Estimate covariance matrices, on GPU if available.
 
-        Covariances are computed on CUDA when available, then returned as a
-        numpy array for the pyRiemann classifier.
+        Plain covariances are computed on CUDA when available, then returned as
+        a numpy array for the pyRiemann classifier. The supervised ERP step runs
+        on numpy and uses ``y`` at fit time.
         """
         import torch
 
         if fit:
             self.covariance_transformer_ = self._build_covariance_transformer()
 
-        if torch.cuda.is_available():
+        # The ERP transformer is a numpy/aeon estimator, so only the plain
+        # covariance path is moved onto the GPU.
+        if self.covariance_type == "cov" and torch.cuda.is_available():
             X = torch.as_tensor(X, dtype=torch.float64, device="cuda")
 
         if fit:
-            X_cov = self.covariance_transformer_.fit_transform(X)
+            X_cov = self.covariance_transformer_.fit_transform(X, y)
         else:
             X_cov = self.covariance_transformer_.transform(X)
 
@@ -125,10 +154,16 @@ class RiemannianMDMClassifier(_BaseRiemannianCovarianceClassifier):
         Metric passed to ``pyriemann.classification.MDM``.
     n_jobs : int, default=1
         Number of jobs passed to ``pyriemann.classification.MDM``.
+    covariance_type : {"cov", "erp"}, default="cov"
+        Which covariance step to use. ``"cov"`` estimates a plain covariance
+        matrix per case; ``"erp"`` uses the supervised
+        ``aeon_neuro.transformations.collection.ERPCovariances``.
     covariance_estimator : str, default="scm"
-        Covariance estimator passed to ``pyriemann.estimation.Covariances``.
+        Covariance estimator passed to the covariance step.
     covariance_params : dict or None, default=None
-        Optional keyword arguments forwarded to the covariance estimator.
+        Optional keyword arguments forwarded to the covariance step. Valid keys
+        depend on ``covariance_type``; for ``"erp"`` these are ``classes``,
+        ``svd`` and ``estimator_params``.
 
     References
     ----------
@@ -144,12 +179,14 @@ class RiemannianMDMClassifier(_BaseRiemannianCovarianceClassifier):
         self,
         metric: str | dict = "riemann",
         n_jobs: int = 1,
+        covariance_type: str = "cov",
         covariance_estimator: str = "scm",
         covariance_params: dict | None = None,
     ):
         self.metric = metric
         self.n_jobs = n_jobs
         super().__init__(
+            covariance_type=covariance_type,
             covariance_estimator=covariance_estimator,
             covariance_params=covariance_params,
         )
@@ -184,10 +221,16 @@ class RiemannianKNNClassifier(_BaseRiemannianCovarianceClassifier):
         Metric passed to ``pyriemann.classification.KNearestNeighbor``.
     n_jobs : int, default=1
         Number of jobs passed to ``pyriemann.classification.KNearestNeighbor``.
+    covariance_type : {"cov", "erp"}, default="cov"
+        Which covariance step to use. ``"cov"`` estimates a plain covariance
+        matrix per case; ``"erp"`` uses the supervised
+        ``aeon_neuro.transformations.collection.ERPCovariances``.
     covariance_estimator : str, default="scm"
-        Covariance estimator passed to ``pyriemann.estimation.Covariances``.
+        Covariance estimator passed to the covariance step.
     covariance_params : dict or None, default=None
-        Optional keyword arguments forwarded to the covariance estimator.
+        Optional keyword arguments forwarded to the covariance step. Valid keys
+        depend on ``covariance_type``; for ``"erp"`` these are ``classes``,
+        ``svd`` and ``estimator_params``.
 
     References
     ----------
@@ -201,6 +244,7 @@ class RiemannianKNNClassifier(_BaseRiemannianCovarianceClassifier):
         n_neighbors: int = 5,
         metric: str = "riemann",
         n_jobs: int = 1,
+        covariance_type: str = "cov",
         covariance_estimator: str = "scm",
         covariance_params: dict | None = None,
     ):
@@ -208,6 +252,7 @@ class RiemannianKNNClassifier(_BaseRiemannianCovarianceClassifier):
         self.metric = metric
         self.n_jobs = n_jobs
         super().__init__(
+            covariance_type=covariance_type,
             covariance_estimator=covariance_estimator,
             covariance_params=covariance_params,
         )
