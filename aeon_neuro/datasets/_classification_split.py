@@ -85,7 +85,9 @@ def validate_classification_split(
     canonical source identities and original bounds when aliases or transforms
     are involved. Include any filter/sequence context in the supplied support.
     Validation cannot discover missing identity links, certify earlier fitting,
-    check hidden estimator CV or infer chronology across separate sources.
+    check hidden estimator CV or infer chronology across separate sources. Shared
+    information provenance additionally enforces its original source support,
+    including dependencies broader than the displayed case intervals.
     """
     if not isinstance(dataset, ClassificationDataset):
         raise ValueError("dataset must be a ClassificationDataset.")
@@ -161,14 +163,10 @@ def validate_classification_split(
                 raise ValueError("Source bounds must satisfy 0 <= start < stop.")
             sources.setdefault(source, []).append((start, stop, name))
 
-    for intervals in sources.values():
-        stops = {}
-        # Track the furthest stop for each partition: an immediately preceding
-        # interval can be shorter than another still-overlapping interval.
-        for start, stop, name in sorted(intervals):
-            if any(end > start for part, end in stops.items() if part != name):
-                raise ValueError("Source sample intervals overlap across partitions.")
-            stops[name] = max(stops.get(name, 0), stop)
+    _check_source_overlap(sources)
+    if dataset.metadata.get("provenance", {}).get("source") is not None:
+        # A displayed window can depend on a broader, earlier processing input.
+        _validate_info_source_support(dataset.info, indices)
 
     return {
         "eligible_indices": scope,
@@ -183,6 +181,37 @@ def validate_classification_split(
             for name, values in indices.items()
         },
     }
+
+
+def _check_source_overlap(
+    sources, message="Source sample intervals overlap across partitions."
+):
+    for intervals in sources.values():
+        stops = {}
+        # Track the furthest stop for each partition: an immediately preceding
+        # interval can be shorter than another still-overlapping interval.
+        for start, stop, name in sorted(intervals):
+            if any(end > start for part, end in stops.items() if part != name):
+                raise ValueError(message)
+            stops[name] = max(stops.get(name, 0), stop)
+
+
+def _validate_info_source_support(info, partitions):
+    from aeon_neuro.datasets._info_view import _recording_view
+
+    view = info._view if info._view is not None else _recording_view(info)
+    sources = {}
+    for name, indices in partitions.items():
+        for index in indices:
+            row = view.rows[index]
+            # Array-only cases have no original-source identity. Equal shapes or
+            # generated IDs cannot establish a shared recording coordinate grid.
+            if row.recording_id is not None:
+                start, stop = row.source_support
+                sources.setdefault(row.recording_id, []).append((start, stop, name))
+    _check_source_overlap(
+        sources, "Original source support overlaps across partitions."
+    )
 
 
 def _case_indices(values, size):

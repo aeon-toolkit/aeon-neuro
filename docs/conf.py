@@ -114,6 +114,10 @@ autodoc_default_options = {
     "members": True,
     "inherited-members": True,
     "member-order": "bysource",
+    # sklearn creates these routing helpers for optional method arguments. Their
+    # docstrings require sklearn's glossary; the EEG guide documents direct info
+    # calls and the boundary of pipeline/CV forwarding instead.
+    "exclude-members": "set_fit_request,set_predict_request,set_predict_proba_request",
 }
 
 
