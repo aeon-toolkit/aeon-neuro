@@ -130,6 +130,7 @@ class EEGConformerClassifier(_BaseBraindecodeClassifier):
             n_chans=n_channels,
             n_outputs=self.n_classes_,
             n_times=n_timepoints,
+            sfreq=self.sfreq_,
             n_filters_time=self.n_filters_time,
             filter_time_length=self.filter_time_length,
             pool_time_length=self.pool_time_length,
