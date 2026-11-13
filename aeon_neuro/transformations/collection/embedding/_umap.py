@@ -18,6 +18,9 @@ class UMAP(BaseCollectionTransformer):
     ``(n_cases, 1, n_timepoints)`` to ``(n_cases, n_timepoints)`` before
     fitting the embedding.
 
+    The embedding is fitted on the series length seen in ``fit``, so
+    ``transform`` requires series of the same length.
+
     For input data of shape ``(n_cases, 1, n_timepoints)``, the output has
     shape ``(n_cases, n_components)``.
 
@@ -105,8 +108,6 @@ class UMAP(BaseCollectionTransformer):
         self._validate_params()
         X = self._validate_X(X)
 
-        self.n_timepoints_in_ = X.shape[2]
-
         X_tabular = self._reshape_collection(X)
 
         try:
@@ -144,12 +145,6 @@ class UMAP(BaseCollectionTransformer):
             Embedded feature representation of the input collection.
         """
         X = self._validate_X(X)
-
-        if X.shape[2] != self.n_timepoints_in_:
-            raise ValueError(
-                "Number of time points in X does not match the data seen in fit. "
-                f"Expected {self.n_timepoints_in_}, got {X.shape[2]}."
-            )
 
         X_tabular = self._reshape_collection(X)
         return self.embedder_.transform(X_tabular)
