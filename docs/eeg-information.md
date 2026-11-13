@@ -231,7 +231,7 @@ are stored.
 | --- | --- | --- |
 | `version` | int | `2`, the outer state format. |
 | `ready` | bool | Must be `True` for construction; describes supplied metadata readiness, not source authentication. |
-| `issues` | list of dict | Source diagnostics, empty for explicit construction. Diagnostic rows use `severity`, `message` and `recording_id`; a `None` recording ID denotes dataset scope. |
+| `issues` | list of dict, optional | Source diagnostics, empty for explicit construction. Omission is preserved through restoration and selection. Diagnostic rows use `severity`, `message` and `recording_id`; a `None` recording ID denotes dataset scope. |
 | `dataset` | dict | Dataset facts described below. |
 | `source_ids` | list of str | Original recording identities, exactly aligned with `recordings`. Unlike the public property, this is not derived from current cases. |
 | `recordings` | list of dict | Original recording descriptors, empty for `from_arrays`. |
@@ -324,7 +324,8 @@ Each `layouts` entry contains:
 
 The source coordinate for current sample `j` is
 `source_origin_sample + j * source_sample_step`. Grid points must fall inside
-the row's contributing support. A source-only object has no stored current view;
+the row's contributing support `[start, stop)`; a point at `stop` is outside it.
+A source-only object has no stored current view;
 `layouts` derives recording layouts on demand, while `cases` and `case_ids`
 raise `ValueError`. Uniform `sfreq`, `channel_names` and `units` accessors also
 raise for empty collections or differing row values. Unknown units appear as
