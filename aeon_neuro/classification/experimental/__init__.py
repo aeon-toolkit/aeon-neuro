@@ -5,6 +5,8 @@ experiments that use them are finished.
 """
 
 __all__ = [
+    "CBraModFineTuneClassifier",
+    "LabramFineTuneClassifier",
     "MOABBPipelineClassifier",
     "MOABBTSLRClassifier",
     "NeuralBenchCoSpectraLRClassifier",
@@ -15,6 +17,10 @@ __all__ = [
     "NeuralBenchXdawnTSLRClassifier",
 ]
 
+from aeon_neuro.classification.experimental._foundation import (
+    CBraModFineTuneClassifier,
+    LabramFineTuneClassifier,
+)
 from aeon_neuro.classification.experimental._neuralbench import (
     MOABBPipelineClassifier,
     MOABBTSLRClassifier,
