@@ -79,7 +79,7 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         Number of training epochs.
     lr : float, default=1e-3
         Learning rate.
-    optimizer : {"adam", "sgd"}, default="adam"
+    optimizer : {"adam", "adamw", "sgd"}, default="adam"
         Optimiser used for training.
     weight_decay : float, default=0.0
         L2 penalty passed to the optimiser.
@@ -126,13 +126,17 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         """Construct the torch network for data of the given shape."""
         raise NotImplementedError("Subclasses must implement _build_network.")
 
+    def _pad(self, X: np.ndarray) -> np.ndarray:
+        """Cast X to float32. Override to pad to the input size a network needs."""
+        return np.asarray(X, dtype=np.float32, order="C")
+
     def _fit(self, X: np.ndarray, y: np.ndarray):
         """Build the network and train it on X and y."""
         import torch
         from torch import nn
         from torch.utils.data import DataLoader, TensorDataset
 
-        X = np.asarray(X, dtype=np.float32, order="C")
+        X = self._pad(X)
         y_int = np.asarray(
             [self._class_dictionary[label] for label in y], dtype=np.int64
         )
@@ -201,7 +205,7 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         import torch
         from torch.utils.data import DataLoader, TensorDataset
 
-        X = np.asarray(X, dtype=np.float32, order="C")
+        X = self._pad(X)
         dataset = TensorDataset(torch.from_numpy(X))
         loader = DataLoader(
             dataset,
@@ -279,9 +283,14 @@ class _BaseBraindecodeClassifier(BaseClassifier):
 
             if self.device_.type == "cuda" and not torch.cuda.is_available():
                 self.device_ = torch.device("cpu")
+            # the network was built for the padded shape
+            _, n_channels, n_timepoints = self._pad(
+                np.zeros(
+                    (1, self.metadata_["n_channels"], self.metadata_["n_timepoints"])
+                )
+            ).shape
             self.network_ = self._build_network(
-                n_channels=self.metadata_["n_channels"],
-                n_timepoints=self.metadata_["n_timepoints"],
+                n_channels=n_channels, n_timepoints=n_timepoints
             )
             self.network_.load_state_dict(network_state)
             self.network_.to(self.device_).eval()
@@ -295,6 +304,10 @@ class _BaseBraindecodeClassifier(BaseClassifier):
             return torch.optim.Adam(
                 parameters, lr=self.lr, weight_decay=self.weight_decay
             )
+        if optimizer == "adamw":
+            return torch.optim.AdamW(
+                parameters, lr=self.lr, weight_decay=self.weight_decay
+            )
         if optimizer == "sgd":
             return torch.optim.SGD(
                 parameters, lr=self.lr, weight_decay=self.weight_decay
@@ -302,7 +315,7 @@ class _BaseBraindecodeClassifier(BaseClassifier):
 
         raise ValueError(
             f"Unknown optimizer='{self.optimizer}'. "
-            "Supported values are {'adam', 'sgd'}."
+            "Supported values are {'adam', 'adamw', 'sgd'}."
         )
 
     def _resolve_device(self):
@@ -436,7 +449,7 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
         training time on small EEG datasets; tune it for each problem.
     lr : float, default=1e-3
         Learning rate.
-    optimizer : {"adam", "sgd"}, default="adam"
+    optimizer : {"adam", "adamw", "sgd"}, default="adam"
         Optimiser used for training.
     weight_decay : float, default=0.0
         L2 penalty passed to the optimiser.
