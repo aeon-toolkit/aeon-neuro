@@ -23,7 +23,7 @@ def test_eegpt_classifier_named_channels():
 
 
 def test_eegpt_classifier_input_errors():
-    """Missing names when pretrained, and unknown names, raise."""
+    """Missing, unknown, too few or duplicate channel names raise."""
     X, y = make_example_3d_numpy(n_cases=10, n_channels=3, n_timepoints=128)
 
     with pytest.raises(ValueError, match="ch_names is required"):
@@ -31,6 +31,12 @@ def test_eegpt_classifier_input_errors():
 
     with pytest.raises(ValueError, match="Unknown channel names"):
         EEGPTClassifier(ch_names=["C3", "Cz", "X9"], pretrained=False).fit(X, y)
+
+    with pytest.raises(ValueError, match="2 names but X has 3 channels"):
+        EEGPTClassifier(ch_names=["C3", "Cz"], pretrained=False).fit(X, y)
+
+    with pytest.raises(ValueError, match="Duplicate channel names"):
+        EEGPTClassifier(ch_names=["C3", "c3", "Cz"], pretrained=False).fit(X, y)
 
 
 def test_eegpt_classifier_old_1020_names():

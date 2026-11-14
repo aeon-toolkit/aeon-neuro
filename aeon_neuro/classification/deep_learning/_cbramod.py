@@ -77,6 +77,10 @@ class CBraModClassifier(_BaseFoundationClassifier):
     validation_data : tuple of (np.ndarray, np.ndarray) or None, default=None
         Validation series and labels. If given, the weights of the epoch with the
         best validation balanced accuracy are kept.
+    estimator : sklearn classifier or None, default=None
+        If set, the network is not trained: this classifier is fitted on the
+        frozen encoder's embeddings, averaged over time patches. For example
+        ``make_pipeline(StandardScaler(), RidgeClassifierCV())``.
 
     See ``_BaseFoundationClassifier`` for details of the training options. The
     authors fine-tune (``finetune_main.py`` and ``finetune_trainer.py`` in the
@@ -127,6 +131,7 @@ class CBraModClassifier(_BaseFoundationClassifier):
         clip_grad: float | None = None,
         label_smoothing: float = 0.0,
         validation_data: tuple | None = None,
+        estimator=None,
         patch_size: int = 200,
         dim_feedforward: int = 800,
         n_layer: int = 12,
@@ -159,6 +164,7 @@ class CBraModClassifier(_BaseFoundationClassifier):
             clip_grad=clip_grad,
             label_smoothing=label_smoothing,
             validation_data=validation_data,
+            estimator=estimator,
         )
 
     def _pad(self, X: np.ndarray) -> np.ndarray:
@@ -167,8 +173,10 @@ class CBraModClassifier(_BaseFoundationClassifier):
         n_pad = -X.shape[-1] % self.patch_size
         return np.pad(X, ((0, 0), (0, 0), (0, n_pad))) if n_pad else X
 
+    _checkpoint = "braindecode/cbramod-pretrained"
+
     def _build_network(self, n_channels: int, n_timepoints: int):
-        """Construct the Braindecode CBraMod model."""
+        """Construct the Braindecode CBraMod model, without pretrained weights."""
         from braindecode.models import CBraMod
 
         if self.pretrained:
@@ -177,11 +185,9 @@ class CBraModClassifier(_BaseFoundationClassifier):
                     "pretrained=True requires patch_size=200, "
                     f"got patch_size={self.patch_size}."
                 )
-            return CBraMod.from_pretrained(
-                "braindecode/cbramod-pretrained",
-                n_outputs=self.n_classes_,
-                n_chans=n_channels,
-                n_times=n_timepoints,
+            # the default architecture is that of the checkpoint
+            return CBraMod(
+                n_outputs=self.n_classes_, n_chans=n_channels, n_times=n_timepoints
             )
 
         return CBraMod(
@@ -195,6 +201,11 @@ class CBraModClassifier(_BaseFoundationClassifier):
             emb_dim=self.emb_dim,
             drop_prob=self.drop_prob,
         )
+
+    def _features(self, X: np.ndarray) -> np.ndarray:
+        """Embeddings averaged over time patches, (n_cases, n_channels * emb_dim)."""
+        # final_layer input: (n_cases, n_channels, n_patches, emb_dim)
+        return self._head_inputs(X).mean(dim=2).flatten(1).numpy()
 
     @classmethod
     def _get_test_params(cls, parameter_set: str = "default"):

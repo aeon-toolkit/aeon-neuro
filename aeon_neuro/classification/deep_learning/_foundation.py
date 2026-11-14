@@ -8,6 +8,7 @@ import re
 from math import cos, pi
 
 import numpy as np
+from aeon.base._base import _clone_estimator
 from sklearn.utils import check_random_state
 
 from aeon_neuro.classification.deep_learning._braindecode import (
@@ -19,11 +20,16 @@ class _BaseFoundationClassifier(_BaseBraindecodeClassifier):
     """Base class fine-tuning a pretrained Braindecode foundation model.
 
     Extends ``_BaseBraindecodeClassifier`` with the training options used to
-    fine-tune pretrained models. Subclasses implement ``_build_network`` and may
-    override ``_pad`` to reshape the input to what the network accepts. The
-    network is trained with cross-entropy loss. Its classification head must be
-    the submodule ``final_layer`` (as in Braindecode), taking the encoder output
-    as its only input.
+    fine-tune pretrained models. Subclasses have a ``pretrained`` parameter, set
+    ``_checkpoint`` to the Hugging Face Hub repository of their weights, and
+    implement ``_build_network``, which builds the network without loading them,
+    and ``_features``. They may override ``_pad`` to reshape the input to what
+    the network accepts. The network is trained with cross-entropy loss. Its
+    classification head must be the submodule ``final_layer`` (as in
+    Braindecode), taking the encoder output as its only input.
+
+    The pretrained weights are loaded in ``fit`` only, so a fitted classifier is
+    unpickled from its own weights without the checkpoint.
 
     Unlike the base class, the incomplete last batch is kept in training: these
     models use layer norm, so a batch of one case is not a problem.
@@ -36,6 +42,9 @@ class _BaseFoundationClassifier(_BaseBraindecodeClassifier):
     With ``validation_data``, the network is scored on it after every epoch, and
     the weights of the epoch with the best balanced accuracy are
     kept (the earliest, on ties) instead of those after the last epoch.
+
+    With ``estimator``, the network is not trained: ``estimator`` is fitted on the
+    frozen encoder's embeddings, averaged over time patches.
 
     Parameters
     ----------
@@ -73,6 +82,10 @@ class _BaseFoundationClassifier(_BaseBraindecodeClassifier):
         Validation series, shaped like the training series, and their labels,
         used to choose the epoch whose weights are kept. It should not share
         subjects with the training data.
+    estimator : sklearn classifier or None, default=None
+        If set, fit this classifier on the frozen encoder's embeddings instead
+        of training the network; the training options above are then unused.
+        For example ``make_pipeline(StandardScaler(), RidgeClassifierCV())``.
     device : str or None, default=None
         Torch device string. If None, uses "cuda" when available, otherwise "cpu".
     verbose : bool, default=False
@@ -88,7 +101,21 @@ class _BaseFoundationClassifier(_BaseBraindecodeClassifier):
         Balanced accuracy on ``validation_data`` after every epoch, or empty.
     best_epoch_ : int
         Epoch (1-based) whose weights were kept.
+    estimator_ : sklearn classifier or None
+        The fitted ``estimator``, or None if the network was trained.
     """
+
+    _tags = {
+        "python_dependencies": [
+            "braindecode",
+            "torch",
+            "huggingface_hub",
+            "safetensors",
+        ],
+    }
+
+    _checkpoint = None  # Hugging Face Hub repository of the pretrained weights
+    _checkpoint_prefix = ""  # load only the checkpoint keys with this prefix
 
     def __init__(
         self,
@@ -108,6 +135,7 @@ class _BaseFoundationClassifier(_BaseBraindecodeClassifier):
         clip_grad: float | None = None,
         label_smoothing: float = 0.0,
         validation_data: tuple | None = None,
+        estimator=None,
     ):
         self.freeze_encoder = freeze_encoder
         self.head_lr = head_lr
@@ -117,6 +145,7 @@ class _BaseFoundationClassifier(_BaseBraindecodeClassifier):
         self.clip_grad = clip_grad
         self.label_smoothing = label_smoothing
         self.validation_data = validation_data
+        self.estimator = estimator
 
         super().__init__(
             batch_size=batch_size,
@@ -147,9 +176,20 @@ class _BaseFoundationClassifier(_BaseBraindecodeClassifier):
             torch.cuda.manual_seed_all(seed)
 
         self.device_ = self._resolve_device()
-        self.network_ = self._build_network(
-            n_channels=X.shape[1], n_timepoints=X.shape[2]
-        ).to(self.device_)
+        network = self._build_network(n_channels=X.shape[1], n_timepoints=X.shape[2])
+        if self.pretrained:
+            self._load_checkpoint(network)
+        self.network_ = network.to(self.device_)
+        self.estimator_ = None
+        if self.estimator is not None:
+            self.network_.eval()
+            self.history_ = []
+            self.validation_scores_ = []
+            self.best_epoch_ = 0
+            self.estimator_ = _clone_estimator(self.estimator, self.random_state)
+            self.estimator_.fit(self._features(X), y)
+            return self
+
         self.loss_ = nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)
         self.history_ = []
         self.validation_scores_ = []
@@ -186,6 +226,49 @@ class _BaseFoundationClassifier(_BaseBraindecodeClassifier):
         del self._best_state
         self.network_.eval()
         return self
+
+    def _predict_proba(self, X: np.ndarray) -> np.ndarray:
+        """Predict class probabilities for X.
+
+        With ``estimator``, these are its probabilities, or if it has no
+        ``predict_proba``, a one-hot encoding of its predicted class.
+        """
+        if self.estimator_ is None:
+            return super()._predict_proba(X)
+        X_t = self._features(self._pad(X))
+        if callable(getattr(self.estimator_, "predict_proba", None)):
+            return self.estimator_.predict_proba(X_t)
+        dists = np.zeros((len(X_t), self.n_classes_))
+        for i, pred in enumerate(self.estimator_.predict(X_t)):
+            dists[i, self._class_dictionary[pred]] = 1
+        return dists
+
+    def _predict(self, X: np.ndarray) -> np.ndarray:
+        """Predict class labels for X."""
+        if self.estimator_ is None:
+            return super()._predict(X)
+        return self.estimator_.predict(self._features(self._pad(X)))
+
+    def _load_checkpoint(self, network):
+        """Load the pretrained weights into network, all but the new head."""
+        from huggingface_hub import hf_hub_download
+        from safetensors.torch import load_file
+
+        state = load_file(hf_hub_download(self._checkpoint, "model.safetensors"))
+        result = network.load_state_dict(
+            {k: v for k, v in state.items() if k.startswith(self._checkpoint_prefix)},
+            strict=False,
+        )
+        missing = [k for k in result.missing_keys if not k.startswith("final_layer.")]
+        if missing or result.unexpected_keys:
+            raise RuntimeError(
+                f"The {self._checkpoint} checkpoint does not match the network: "
+                f"missing keys {missing}, unexpected keys {result.unexpected_keys}."
+            )
+
+    def _features(self, X: np.ndarray) -> np.ndarray:
+        """Return the frozen encoder's embeddings of padded X for estimator."""
+        raise NotImplementedError
 
     def _train(self, module, dataset, param_groups, n_epochs, val=None):
         """Train ``module`` on ``dataset`` for ``n_epochs``.

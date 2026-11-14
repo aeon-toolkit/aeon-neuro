@@ -86,6 +86,10 @@ class LabramClassifier(_BaseFoundationClassifier):
     validation_data : tuple of (np.ndarray, np.ndarray) or None, default=None
         Validation series and labels. If given, the weights of the epoch with the
         best validation balanced accuracy are kept.
+    estimator : sklearn classifier or None, default=None
+        If set, the network is not trained: this classifier is fitted on the
+        frozen encoder's embeddings, averaged over time patches. For example
+        ``make_pipeline(StandardScaler(), RidgeClassifierCV())``.
     drop_path : float, default=0.0
         Stochastic depth: during training, each sample skips transformer block
         ``i`` with a probability rising linearly from 0 for the first block to
@@ -105,10 +109,7 @@ class LabramClassifier(_BaseFoundationClassifier):
        International Conference on Learning Representations (ICLR).
     """
 
-    _tags = {
-        # braindecode's Labram cannot be pickled (lambda inside its MLP blocks)
-        "cant_pickle": True,
-    }
+    _checkpoint = "braindecode/labram-pretrained"
 
     def __init__(
         self,
@@ -130,6 +131,7 @@ class LabramClassifier(_BaseFoundationClassifier):
         clip_grad: float | None = None,
         label_smoothing: float = 0.0,
         validation_data: tuple | None = None,
+        estimator=None,
         drop_path: float = 0.0,
     ):
         self.ch_names = ch_names
@@ -153,6 +155,7 @@ class LabramClassifier(_BaseFoundationClassifier):
             clip_grad=clip_grad,
             label_smoothing=label_smoothing,
             validation_data=validation_data,
+            estimator=estimator,
         )
 
     def _pad(self, X: np.ndarray) -> np.ndarray:
@@ -180,22 +183,31 @@ class LabramClassifier(_BaseFoundationClassifier):
         else:
             self.ch_names_ = LABRAM_CHANNEL_ORDER[:n_channels]
 
-        labram = _labram_class()
-        if self.pretrained:
-            network = labram.from_pretrained(
-                "braindecode/labram-pretrained", drop_path_prob=self.drop_path
-            )
-        else:
-            network = labram(  # same geometry as the pretrained checkpoint
-                n_times=3000,
-                n_outputs=0,
-                chs_info=[{"ch_name": name} for name in LABRAM_CHANNEL_ORDER],
-                drop_path_prob=self.drop_path,
-            )
+        network = _labram_class()(  # same geometry as the pretrained checkpoint
+            n_times=3000,
+            n_outputs=0,
+            chs_info=[{"ch_name": name} for name in LABRAM_CHANNEL_ORDER],
+            drop_path_prob=self.drop_path,
+        )
         network.patch_embed[0].n_patchs = n_patches
         network.ch_names = self.ch_names_
         network.reset_classifier(self.n_classes_)
         return network
+
+    def _features(self, X: np.ndarray) -> np.ndarray:
+        """Embeddings averaged over time patches, (n_cases, n_channels * 200)."""
+        import torch
+
+        features = []
+        self.network_.eval()
+        with torch.no_grad():
+            for start in range(0, len(X), self.batch_size):
+                xb = torch.from_numpy(X[start : start + self.batch_size])
+                tokens = self.network_(xb.to(self.device_), return_features=True)
+                # (batch, n_channels * n_patches, 200) -> (batch, n_channels * 200)
+                emb = tokens["features"].unflatten(1, (xb.shape[1], -1)).mean(dim=2)
+                features.append(emb.flatten(1).cpu().numpy())
+        return np.concatenate(features)
 
     @classmethod
     def _get_test_params(cls, parameter_set: str = "default"):

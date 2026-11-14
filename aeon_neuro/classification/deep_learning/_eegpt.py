@@ -87,14 +87,22 @@ class EEGPTClassifier(_BaseFoundationClassifier):
     validation_data : tuple of (np.ndarray, np.ndarray) or None, default=None
         Validation series and labels. If given, the weights of the epoch with the
         best validation balanced accuracy are kept.
+    estimator : sklearn classifier or None, default=None
+        If set, the network is not trained: this classifier is fitted on the
+        frozen encoder's embeddings, averaged over time patches. For example
+        ``make_pipeline(StandardScaler(), RidgeClassifierCV())``.
 
     See ``_BaseFoundationClassifier`` for details of the training options. The
     authors keep the encoder frozen and train only the head (linear probing,
     ``downstream/linear_probe_EEGPT_*.py`` in the official repository): 100
     epochs with AdamW, a one-cycle schedule peaking at ``lr=4e-4`` after 20% of
-    training, and ``weight_decay=0.01``. In this class that is
-    ``freeze_encoder=True``, ``n_epochs=100``, ``lr_schedule="cosine"`` and
-    ``warmup_epochs=20``.
+    training, and ``weight_decay=0.01``. In this class, use
+    ``freeze_encoder=True``, ``n_epochs=100``, ``optimizer="adamw"``,
+    ``lr=4e-4``, ``weight_decay=0.01``, ``lr_schedule="cosine"`` and
+    ``warmup_epochs=20``. The schedule only approximates theirs: here the rate
+    rises linearly from zero over the first 20% of epochs, then decays to zero
+    on a cosine curve, whereas PyTorch's one-cycle schedule anneals both phases
+    on cosine curves, between nonzero initial and final rates.
 
     References
     ----------
@@ -123,6 +131,7 @@ class EEGPTClassifier(_BaseFoundationClassifier):
         clip_grad: float | None = None,
         label_smoothing: float = 0.0,
         validation_data: tuple | None = None,
+        estimator=None,
     ):
         self.ch_names = ch_names
         self.pretrained = pretrained
@@ -144,6 +153,7 @@ class EEGPTClassifier(_BaseFoundationClassifier):
             clip_grad=clip_grad,
             label_smoothing=label_smoothing,
             validation_data=validation_data,
+            estimator=estimator,
         )
 
     def _pad(self, X: np.ndarray) -> np.ndarray:
@@ -152,13 +162,27 @@ class EEGPTClassifier(_BaseFoundationClassifier):
         n_pad = max(_PATCH_SIZE - X.shape[-1], 0)
         return np.pad(X, ((0, 0), (0, 0), (0, n_pad))) if n_pad else X
 
+    # Only the encoder: the checkpoint's chans_id is sized for its own 62 channels
+    # and is rebuilt from ch_names, and the head is new.
+    _checkpoint = "braindecode/eegpt-pretrained"
+    _checkpoint_prefix = "target_encoder."
+
     def _build_network(self, n_channels: int, n_timepoints: int):
-        """Construct the Braindecode EEGPT model."""
+        """Construct the Braindecode EEGPT model, without pretrained weights."""
         from braindecode.models import EEGPT
         from braindecode.models.eegpt import EEGPT_CHANNELS
 
         if self.ch_names is not None:
             self.ch_names_ = [_OLD_1020_NAMES.get(n.upper(), n) for n in self.ch_names]
+            if len(self.ch_names_) != n_channels:
+                raise ValueError(
+                    f"ch_names has {len(self.ch_names_)} names but X has "
+                    f"{n_channels} channels."
+                )
+            upper = [n.upper() for n in self.ch_names_]
+            dupes = sorted({n for n in upper if upper.count(n) > 1})
+            if dupes:
+                raise ValueError(f"Duplicate channel names in ch_names: {dupes}.")
             unknown = [n for n in self.ch_names_ if n.upper() not in EEGPT_CHANNELS]
             if unknown:
                 raise ValueError(
@@ -179,20 +203,12 @@ class EEGPTClassifier(_BaseFoundationClassifier):
             chan_proj_type="none",
             n_outputs=self.n_classes_,
         )
-        if self.pretrained:
-            from huggingface_hub import hf_hub_download
-            from safetensors.torch import load_file
-
-            state = load_file(
-                hf_hub_download("braindecode/eegpt-pretrained", "model.safetensors")
-            )
-            # Only the encoder: the checkpoint's chans_id is sized for its own 62
-            # channels and is rebuilt above from ch_names, and the head is new.
-            network.load_state_dict(
-                {k: v for k, v in state.items() if k.startswith("target_encoder.")},
-                strict=False,
-            )
         return network
+
+    def _features(self, X: np.ndarray) -> np.ndarray:
+        """Embeddings averaged over time patches, (n_cases, 4 * 512)."""
+        # final_layer input: (n_cases, n_patches, 4, 512)
+        return self._head_inputs(X).mean(dim=1).flatten(1).numpy()
 
     @classmethod
     def _get_test_params(cls, parameter_set: str = "default"):
