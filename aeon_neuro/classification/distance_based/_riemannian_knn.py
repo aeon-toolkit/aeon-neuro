@@ -19,16 +19,19 @@ class _BaseRiemannianCovarianceClassifier(BaseClassifier):
 
     Parameters
     ----------
-    covariance_type : {"cov", "erp"}, default="cov"
+    covariance_type : {"cov", "erp", "xdawn"}, default="cov"
         Which covariance step to use. ``"cov"`` estimates a plain covariance
         matrix per case with ``pyriemann.estimation.Covariances``. ``"erp"``
         uses the supervised
         ``aeon_neuro.transformations.collection.ERPCovariances``, which augments
         each case with per-class ERPs before computing the covariance and
-        therefore requires the labels ``y`` at fit time.
+        therefore requires the labels ``y`` at fit time. ``"xdawn"`` uses
+        ``aeon_neuro.transformations.collection.XdawnCovariances``, which does
+        the same after reducing the channels with Xdawn spatial filters.
     covariance_estimator : str, default="scm"
         Covariance estimator passed to the covariance step (the ``estimator``
-        argument of ``Covariances`` or ``ERPCovariances``).
+        argument of ``Covariances``, ``ERPCovariances`` or
+        ``XdawnCovariances``).
     covariance_params : dict or None, default=None
         Optional keyword arguments forwarded to the covariance step. The valid
         keys depend on ``covariance_type``. For ``"cov"`` they are the remaining
@@ -36,7 +39,10 @@ class _BaseRiemannianCovarianceClassifier(BaseClassifier):
         the remaining arguments of
         ``aeon_neuro.transformations.collection.ERPCovariances``: ``classes``
         (list of int or None), ``svd`` (int or None) and ``estimator_params``
-        (dict or None).
+        (dict or None). For ``"xdawn"`` they are the remaining arguments of
+        ``aeon_neuro.transformations.collection.XdawnCovariances``: ``nfilter``,
+        ``applyfilters``, ``classes``, ``xdawn_estimator`` and
+        ``estimator_params``.
     """
 
     _tags = {
@@ -100,8 +106,12 @@ class _BaseRiemannianCovarianceClassifier(BaseClassifier):
             from aeon_neuro.transformations.collection import ERPCovariances
 
             return ERPCovariances(estimator=self.covariance_estimator, **kwargs)
+        if self.covariance_type == "xdawn":
+            from aeon_neuro.transformations.collection import XdawnCovariances
+
+            return XdawnCovariances(estimator=self.covariance_estimator, **kwargs)
         raise ValueError(
-            "covariance_type must be one of {'cov', 'erp'}, "
+            "covariance_type must be one of {'cov', 'erp', 'xdawn'}, "
             f"got {self.covariance_type!r}."
         )
 
@@ -153,16 +163,19 @@ class RiemannianMDMClassifier(_BaseRiemannianCovarianceClassifier):
         Metric passed to ``pyriemann.classification.MDM``.
     n_jobs : int, default=1
         Number of jobs passed to ``pyriemann.classification.MDM``.
-    covariance_type : {"cov", "erp"}, default="cov"
+    covariance_type : {"cov", "erp", "xdawn"}, default="cov"
         Which covariance step to use. ``"cov"`` estimates a plain covariance
-        matrix per case; ``"erp"`` uses the supervised
-        ``aeon_neuro.transformations.collection.ERPCovariances``.
+        matrix per case; ``"erp"`` and ``"xdawn"`` use the supervised
+        ``aeon_neuro.transformations.collection.ERPCovariances`` and
+        ``XdawnCovariances``.
     covariance_estimator : str, default="scm"
         Covariance estimator passed to the covariance step.
     covariance_params : dict or None, default=None
         Optional keyword arguments forwarded to the covariance step. Valid keys
         depend on ``covariance_type``; for ``"erp"`` these are ``classes``,
-        ``svd`` and ``estimator_params``.
+        ``svd`` and ``estimator_params``, and for ``"xdawn"`` ``nfilter``,
+        ``applyfilters``, ``classes``, ``xdawn_estimator`` and
+        ``estimator_params``.
 
     References
     ----------
@@ -220,16 +233,19 @@ class RiemannianKNNClassifier(_BaseRiemannianCovarianceClassifier):
         Metric passed to ``pyriemann.classification.KNearestNeighbor``.
     n_jobs : int, default=1
         Number of jobs passed to ``pyriemann.classification.KNearestNeighbor``.
-    covariance_type : {"cov", "erp"}, default="cov"
+    covariance_type : {"cov", "erp", "xdawn"}, default="cov"
         Which covariance step to use. ``"cov"`` estimates a plain covariance
-        matrix per case; ``"erp"`` uses the supervised
-        ``aeon_neuro.transformations.collection.ERPCovariances``.
+        matrix per case; ``"erp"`` and ``"xdawn"`` use the supervised
+        ``aeon_neuro.transformations.collection.ERPCovariances`` and
+        ``XdawnCovariances``.
     covariance_estimator : str, default="scm"
         Covariance estimator passed to the covariance step.
     covariance_params : dict or None, default=None
         Optional keyword arguments forwarded to the covariance step. Valid keys
         depend on ``covariance_type``; for ``"erp"`` these are ``classes``,
-        ``svd`` and ``estimator_params``.
+        ``svd`` and ``estimator_params``, and for ``"xdawn"`` ``nfilter``,
+        ``applyfilters``, ``classes``, ``xdawn_estimator`` and
+        ``estimator_params``.
 
     References
     ----------

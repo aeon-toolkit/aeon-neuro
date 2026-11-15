@@ -5,6 +5,7 @@ __all__ = [
     "ERPCovariances",
     "LogVariance",
     "TimeCrop",
+    "XdawnCovariances",
 ]
 
 
@@ -14,3 +15,4 @@ from aeon_neuro.transformations.collection._downsample import (
 from aeon_neuro.transformations.collection._erpcovariance import ERPCovariances
 from aeon_neuro.transformations.collection._log_variance import LogVariance
 from aeon_neuro.transformations.collection._time_crop import TimeCrop
+from aeon_neuro.transformations.collection._xdawncovariance import XdawnCovariances
