@@ -29,6 +29,22 @@ contract, limitations and a COVID/RPS example.
 
 .. autofunction:: aeon_neuro.utils.bids.convert_eeg_to_bids
 
+Continuous MATLAB recordings
+----------------------------
+
+``load_matlab_recording`` uses an explicit ``MatlabSchema`` or a named dataset
+adapter (Tremmel 2024 or BCI Competition III IVa). Pass its complete
+``MatlabRecording`` result to ``convert_eeg_to_bids`` to retain event columns,
+acquisition metadata and source provenance alongside calibrated signals.
+See the :doc:`MATLAB ingestion guide <../ingestion/matlab>` for unit and timing
+contracts, custom adapters, incomplete event windows and validation.
+
+.. autofunction:: aeon_neuro.utils.matlab.load_matlab_recording
+
+.. autoclass:: aeon_neuro.utils.matlab.MatlabSchema
+
+.. autoclass:: aeon_neuro.utils.matlab.MatlabRecording
+
 EEG ingestion
 -------------
 
@@ -136,6 +152,7 @@ EEG conversion guide
    :maxdepth: 1
 
    ../ingestion/README
+   ../ingestion/matlab
 
 Acquisition events
 ------------------
