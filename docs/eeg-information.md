@@ -96,12 +96,14 @@ validation are separate consumers of this metadata contract.
 EEG classifiers accept keyword-only `info` in `fit`, `predict` and
 `predict_proba`. `BaseEEGClassifier` validates and retains detached fitting
 information while preserving aeon's reset and validation lifecycle. Constructor
-rate/channel conflicts raise. Prediction information must match the fitted
-rate, ordered names and known units. Call-specific prediction information is
+rate/channel conflicts raise during fit. Prediction information must match the
+fitted rate, ordered names and known units. Call-specific prediction information is
 removed after success or failure. When fitting uses plain arrays, known rate and
 channel constructor settings are retained as fitting facts too. Changing a
 constructor parameter after fitting does not redefine the layout of the trained
-model; supplied prediction information must still agree with those retained facts.
+model. Metadata matching the original fitting layout remains valid, while
+metadata matching only the changed parameters is rejected. A subsequent fit
+validates those new parameters and replaces the retained fitting facts.
 Unknown fitting facts remain unknown. Pretrained CBraMod and LaBraM require
 200 Hz whenever a rate is supplied, including prediction after plain-array
 fitting. This fitted model requirement is independent of the unknown training
