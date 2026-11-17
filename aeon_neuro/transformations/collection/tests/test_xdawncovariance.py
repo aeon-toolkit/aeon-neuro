@@ -1,14 +1,15 @@
-"""Tests for the XdawnCovariances transformer."""
+"""Tests for the XDAWNCovariances transformer."""
 
 import numpy as np
 import pytest
+from aeon.pipeline import make_pipeline
 from pyriemann.estimation import XdawnCovariances as PyriemannXdawnCovariances
 
 from aeon_neuro.classification.distance_based import (
     RiemannianKNNClassifier,
     RiemannianMDMClassifier,
 )
-from aeon_neuro.transformations.collection import XdawnCovariances
+from aeon_neuro.transformations.collection import ERPCovariances, XDAWNCovariances
 
 n_cases, n_channels, n_timepoints = 60, 6, 100
 
@@ -38,7 +39,7 @@ def _make_erp_data(n_cases=n_cases, random_state=0):
 def test_output_shape(params, n_components):
     """Output is one square matrix per case, sized by classes and nfilter."""
     X, y = _make_erp_data()
-    Xt = XdawnCovariances(**params).fit_transform(X, y)
+    Xt = XDAWNCovariances(**params).fit_transform(X, y)
     assert isinstance(Xt, np.ndarray)
     assert Xt.shape == (n_cases, n_components, n_components)
 
@@ -57,7 +58,7 @@ def test_matches_pyriemann(params):
     X, y = _make_erp_data()
     X_train, y_train, X_test = X[:40], y[:40], X[40:]
     expected = PyriemannXdawnCovariances(**params).fit(X_train, y_train)
-    Xt = XdawnCovariances(**params).fit(X_train, y_train).transform(X_test)
+    Xt = XDAWNCovariances(**params).fit(X_train, y_train).transform(X_test)
     np.testing.assert_allclose(Xt, expected.transform(X_test))
 
 
@@ -65,7 +66,7 @@ def test_requires_y():
     """Fitting without labels raises an error."""
     X, _ = _make_erp_data()
     with pytest.raises(ValueError, match="requires_y"):
-        XdawnCovariances().fit(X)
+        XDAWNCovariances().fit(X)
 
 
 @pytest.mark.parametrize(
@@ -82,7 +83,7 @@ def test_invalid_params(params, match):
     """Invalid parameters raise a ValueError."""
     X, y = _make_erp_data()
     with pytest.raises(ValueError, match=match):
-        XdawnCovariances(**params).fit_transform(X, y)
+        XDAWNCovariances(**params).fit_transform(X, y)
 
 
 @pytest.mark.parametrize("clf", [RiemannianMDMClassifier, RiemannianKNNClassifier])
@@ -106,7 +107,7 @@ def test_classifier_uses_xdawn_covariances():
 
     X, y = _make_erp_data()
     X_train, y_train, X_test = X[:40], y[:40], X[40:]
-    transformer = XdawnCovariances(nfilter=2).fit(X_train, y_train)
+    transformer = XDAWNCovariances(nfilter=2).fit(X_train, y_train)
     mdm = MDM().fit(transformer.transform(X_train), y_train)
     expected = mdm.predict_proba(transformer.transform(X_test))
 
@@ -121,3 +122,31 @@ def test_classifier_invalid_covariance_type():
     X, y = _make_erp_data()
     with pytest.raises(ValueError, match="covariance_type must be one of"):
         RiemannianMDMClassifier(covariance_type="nope").fit(X, y)
+
+
+@pytest.mark.parametrize("clf", [RiemannianMDMClassifier, RiemannianKNNClassifier])
+@pytest.mark.parametrize(
+    "transformer, covariance_type, params",
+    [
+        (ERPCovariances, "erp", {"svd": 2}),
+        (XDAWNCovariances, "xdawn", {"nfilter": 2}),
+    ],
+)
+def test_precomputed_pipeline(clf, transformer, covariance_type, params):
+    """A transformer then a precomputed classifier match the built-in step."""
+    X, y = _make_erp_data()
+    X_train, y_train, X_test = X[:40], y[:40], X[40:]
+
+    pipeline = make_pipeline(
+        transformer(estimator="lwf", **params),
+        clf(covariance_type="precomputed"),
+    ).fit(X_train, y_train)
+    built_in = clf(
+        covariance_type=covariance_type,
+        covariance_estimator="lwf",
+        covariance_params=params,
+    ).fit(X_train, y_train)
+
+    np.testing.assert_allclose(
+        pipeline.predict_proba(X_test), built_in.predict_proba(X_test)
+    )

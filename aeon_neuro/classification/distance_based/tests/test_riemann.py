@@ -177,3 +177,24 @@ def test_cuda_matches_cpu(clf, monkeypatch):
     cpu_clf = clone(clf).fit(X, y)
 
     np.testing.assert_allclose(gpu_probs, cpu_clf.predict_proba(X), atol=1e-8)
+
+
+@pytest.mark.parametrize("clf", CLASSIFIERS)
+def test_precomputed_covariances(clf):
+    """covariance_type="precomputed" uses X as the covariance matrices."""
+    X, y = _make_data()
+
+    precomputed = clone(clf).set_params(covariance_type="precomputed")
+    precomputed.fit(covariances(X), y)
+    np.testing.assert_allclose(
+        precomputed.predict_proba(covariances(X)),
+        clone(clf).fit(X, y).predict_proba(X),
+    )
+
+
+def test_precomputed_covariances_not_square_raises():
+    """With covariance_type="precomputed", non-square input raises a ValueError."""
+    X, y = _make_data()
+    clf = RiemannianMDMClassifier(covariance_type="precomputed")
+    with pytest.raises(ValueError, match="must be covariance matrices"):
+        clf.fit(X, y)

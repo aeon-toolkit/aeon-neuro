@@ -1,21 +1,21 @@
-"""Xdawn covariance estimation, wrapping pyRiemann's XdawnCovariances."""
+"""xDAWN covariance estimation, wrapping pyRiemann's XdawnCovariances."""
 
 from __future__ import annotations
 
-__all__ = ["XdawnCovariances"]
+__all__ = ["XDAWNCovariances"]
 
 from aeon.transformations.collection import BaseCollectionTransformer
 
 from aeon_neuro.transformations.collection._erpcovariance import _check_classes
 
 
-class XdawnCovariances(BaseCollectionTransformer):
-    """Event-related potential (ERP) covariance transformer with Xdawn filtering.
+class XDAWNCovariances(BaseCollectionTransformer):
+    """Event-related potential (ERP) covariance transformer with xDAWN filtering.
 
-    As ``ERPCovariances``, but the signals are first reduced with Xdawn spatial
+    As ``ERPCovariances``, but the signals are first reduced with xDAWN spatial
     filters [1]_, which keep the channel combinations where each class's ERP is
     strongest relative to the noise. This gives smaller, supervised covariance
-    matrices [2]_. During `fit`, the Xdawn filters and an ERP for each class are
+    matrices [2]_. During `fit`, the xDAWN filters and an ERP for each class are
     estimated. During `transform`, the filtered ERPs are concatenated with the
     filtered channels of each case and the covariance of the combined series is
     computed. Uses `pyriemann.estimation.XdawnCovariances`.
@@ -26,7 +26,7 @@ class XdawnCovariances(BaseCollectionTransformer):
     Parameters
     ----------
     nfilter : int, default=4
-        Number of Xdawn filters per class.
+        Number of xDAWN filters per class.
     applyfilters : bool, default=True
         If True, the filters are applied to both the ERPs and the cases. If
         False, they are applied to the ERPs only, so the cases keep all their
@@ -38,7 +38,7 @@ class XdawnCovariances(BaseCollectionTransformer):
         Covariance matrix estimator of the output, see
         `pyriemann.geometry.covariance.covariances` for the available options.
     xdawn_estimator : str, default="scm"
-        Covariance matrix estimator used to fit the Xdawn filters. A regularised
+        Covariance matrix estimator used to fit the xDAWN filters. A regularised
         estimator such as "lwf" or "oas" is more stable with few cases.
     estimator_params : dict or None, default=None
         Additional parameters passed to the output covariance estimator.
@@ -54,9 +54,9 @@ class XdawnCovariances(BaseCollectionTransformer):
     Examples
     --------
     >>> from aeon.testing.data_generation import make_example_3d_numpy
-    >>> from aeon_neuro.transformations.collection import XdawnCovariances
+    >>> from aeon_neuro.transformations.collection import XDAWNCovariances
     >>> X, y = make_example_3d_numpy(n_cases=20, n_channels=8, n_timepoints=100)
-    >>> XdawnCovariances(nfilter=2).fit_transform(X, y).shape
+    >>> XDAWNCovariances(nfilter=2).fit_transform(X, y).shape
     (20, 8, 8)
     """
 
@@ -106,7 +106,7 @@ class XdawnCovariances(BaseCollectionTransformer):
         return self
 
     def _transform(self, X, y=None):
-        """Estimate Xdawn covariance matrices.
+        """Estimate xDAWN covariance matrices.
 
         Parameters
         ----------
@@ -118,7 +118,7 @@ class XdawnCovariances(BaseCollectionTransformer):
         Returns
         -------
         np.ndarray of shape (n_cases, n_components, n_components)
-            Xdawn covariance matrices. With ``n_filters = n_classes * nfilter``
+            xDAWN covariance matrices. With ``n_filters = n_classes * nfilter``
             (at most ``n_classes * n_channels``), ``n_components`` is
             ``2 * n_filters`` if ``applyfilters`` is True, otherwise
             ``n_filters + n_channels``.
