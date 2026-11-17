@@ -12,10 +12,13 @@ from aeon_neuro.classification.deep_learning._foundation import (
 
 
 class CBraModClassifier(_BaseFoundationClassifier):
-    """Fine-tuned CBraMod classifier.
+    """CBraMod classifier: frozen embeddings with an sklearn classifier, or fine-tuning.
 
-    The CBraMod encoder [1]_ from Braindecode is loaded with pretrained weights,
-    a new classification head is added, and the whole network is fine-tuned.
+    By default the pretrained CBraMod encoder [1]_ from Braindecode is used as a
+    fixed feature extractor: each series is embedded by the encoder, the
+    embeddings are averaged over time patches, and ``estimator`` is fitted on the
+    resulting ``n_channels * 200`` features. With ``finetune=True`` a new classification
+    head is added and the network is trained instead (see below).
 
     This classifier is for equal-length collection data and accepts multivariate
     time series in aeon's standard shape: (n_cases, n_channels, n_timepoints).
@@ -78,13 +81,18 @@ class CBraModClassifier(_BaseFoundationClassifier):
         Validation series and labels. If given, the weights of the epoch with the
         best validation balanced accuracy are kept.
     estimator : sklearn classifier or None, default=None
-        If set, the network is not trained: this classifier is fitted on the
-        frozen encoder's embeddings, averaged over time patches. For example
-        ``make_pipeline(StandardScaler(), RidgeClassifierCV())``.
+        Classifier fitted on the frozen encoder's embeddings when
+        ``finetune=False``. If None, ``make_pipeline(StandardScaler(),
+        RidgeClassifierCV(alphas=np.logspace(-3, 3, 10)))``. Must be None when
+        ``finetune=True``.
+    finetune : bool, default=False
+        If False, the network is not trained and the training options above are
+        unused. If True, train the network with them instead of fitting
+        ``estimator``. Fine-tuning takes far longer.
 
     See ``_BaseFoundationClassifier`` for details of the training options. The
     authors fine-tune (``finetune_main.py`` and ``finetune_trainer.py`` in the
-    official repository) for 50 epochs with AdamW, ``lr=1e-4``,
+    official repository; ``finetune=True`` here) for 50 epochs with AdamW, ``lr=1e-4``,
     ``head_lr=1e-3 * (batch_size / 256) ** 0.5``, ``weight_decay=0.05``, a cosine
     schedule without warmup, ``clip_grad=1`` and ``label_smoothing=0.1``, and keep
     the epoch with the best validation score.
@@ -132,6 +140,7 @@ class CBraModClassifier(_BaseFoundationClassifier):
         label_smoothing: float = 0.0,
         validation_data: tuple | None = None,
         estimator=None,
+        finetune: bool = False,
         patch_size: int = 200,
         dim_feedforward: int = 800,
         n_layer: int = 12,
@@ -165,6 +174,7 @@ class CBraModClassifier(_BaseFoundationClassifier):
             label_smoothing=label_smoothing,
             validation_data=validation_data,
             estimator=estimator,
+            finetune=finetune,
         )
 
     def _pad(self, X: np.ndarray) -> np.ndarray:
@@ -210,7 +220,7 @@ class CBraModClassifier(_BaseFoundationClassifier):
     @classmethod
     def _get_test_params(cls, parameter_set: str = "default"):
         """Return testing parameter settings for the aeon estimator checks."""
-        return {
+        params = {
             "pretrained": False,
             "batch_size": 4,
             "n_epochs": 1,
@@ -219,3 +229,4 @@ class CBraModClassifier(_BaseFoundationClassifier):
             "n_layer": 1,
             "nhead": 2,
         }
+        return [params, {**params, "finetune": True}]

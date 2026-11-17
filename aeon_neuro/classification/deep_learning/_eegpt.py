@@ -17,11 +17,13 @@ _PATCH_SIZE = 64  # samples per patch in the pretrained checkpoint
 
 
 class EEGPTClassifier(_BaseFoundationClassifier):
-    """Fine-tuned EEGPT classifier.
+    """EEGPT classifier: frozen embeddings with an sklearn classifier, or fine-tuning.
 
-    The EEGPT encoder [1]_ from Braindecode is loaded with pretrained weights, a
-    new linear classification head is added on its summary tokens, and the whole
-    network is fine-tuned.
+    By default the pretrained EEGPT encoder [1]_ from Braindecode is used as a
+    fixed feature extractor: each series is embedded by the encoder, the
+    embeddings are averaged over time patches, and ``estimator`` is fitted on the
+    resulting ``4 * 512`` features. With ``finetune=True`` a new classification
+    head is added and the network is trained instead (see below).
 
     This classifier is for equal-length collection data and accepts multivariate
     time series in aeon's standard shape: (n_cases, n_channels, n_timepoints).
@@ -88,15 +90,20 @@ class EEGPTClassifier(_BaseFoundationClassifier):
         Validation series and labels. If given, the weights of the epoch with the
         best validation balanced accuracy are kept.
     estimator : sklearn classifier or None, default=None
-        If set, the network is not trained: this classifier is fitted on the
-        frozen encoder's embeddings, averaged over time patches. For example
-        ``make_pipeline(StandardScaler(), RidgeClassifierCV())``.
+        Classifier fitted on the frozen encoder's embeddings when
+        ``finetune=False``. If None, ``make_pipeline(StandardScaler(),
+        RidgeClassifierCV(alphas=np.logspace(-3, 3, 10)))``. Must be None when
+        ``finetune=True``.
+    finetune : bool, default=False
+        If False, the network is not trained and the training options above are
+        unused. If True, train the network with them instead of fitting
+        ``estimator``. Fine-tuning takes far longer.
 
     See ``_BaseFoundationClassifier`` for details of the training options. The
     authors keep the encoder frozen and train only the head (linear probing,
     ``downstream/linear_probe_EEGPT_*.py`` in the official repository): 100
     epochs with AdamW, a one-cycle schedule peaking at ``lr=4e-4`` after 20% of
-    training, and ``weight_decay=0.01``. In this class, use
+    training, and ``weight_decay=0.01``. In this class, use ``finetune=True``,
     ``freeze_encoder=True``, ``n_epochs=100``, ``optimizer="adamw"``,
     ``lr=4e-4``, ``weight_decay=0.01``, ``lr_schedule="cosine"`` and
     ``warmup_epochs=20``. The schedule only approximates theirs: here the rate
@@ -132,6 +139,7 @@ class EEGPTClassifier(_BaseFoundationClassifier):
         label_smoothing: float = 0.0,
         validation_data: tuple | None = None,
         estimator=None,
+        finetune: bool = False,
     ):
         self.ch_names = ch_names
         self.pretrained = pretrained
@@ -154,6 +162,7 @@ class EEGPTClassifier(_BaseFoundationClassifier):
             label_smoothing=label_smoothing,
             validation_data=validation_data,
             estimator=estimator,
+            finetune=finetune,
         )
 
     def _pad(self, X: np.ndarray) -> np.ndarray:
@@ -213,4 +222,10 @@ class EEGPTClassifier(_BaseFoundationClassifier):
     @classmethod
     def _get_test_params(cls, parameter_set: str = "default"):
         """Return testing parameter settings for the aeon estimator checks."""
-        return {"pretrained": False, "batch_size": 4, "n_epochs": 1, "random_state": 0}
+        params = {
+            "pretrained": False,
+            "batch_size": 4,
+            "n_epochs": 1,
+            "random_state": 0,
+        }
+        return [params, {**params, "finetune": True}]

@@ -8,7 +8,7 @@ from aeon_neuro.classification.deep_learning._cbramod import CBraModClassifier
 from aeon_neuro.classification.deep_learning._eegpt import EEGPTClassifier
 from aeon_neuro.classification.deep_learning._labram import LabramClassifier
 
-PARAMS = {**CBraModClassifier._get_test_params(), "n_layer": 2}
+PARAMS = {**CBraModClassifier._get_test_params()[0], "n_layer": 2, "finetune": True}
 
 
 def _initial_state(clf, X, y):
@@ -152,14 +152,15 @@ def test_pretrained_loading(name, tmp_path, monkeypatch):
         clf.fit(X, y)
 
 
+@pytest.mark.parametrize("finetune", [False, True])
 @pytest.mark.parametrize("name", CASES)
-def test_unpickling_does_not_load_the_checkpoint(name, tmp_path, monkeypatch):
+def test_unpickling_does_not_load_the_checkpoint(name, finetune, tmp_path, monkeypatch):
     """A fitted pretrained classifier is restored from its own weights only."""
     import pickle
 
     cls, params, n_timepoints = CASES[name]
     X, y = make_example_3d_numpy(n_cases=4, n_channels=3, n_timepoints=n_timepoints)
-    clf = cls(**params, pretrained=True, n_epochs=1, random_state=0)
+    clf = cls(**params, pretrained=True, n_epochs=1, random_state=0, finetune=finetune)
     _fake_checkpoint(clf, n_timepoints, tmp_path, monkeypatch)
     clf.fit(X, y)
     data = pickle.dumps(clf)
@@ -175,7 +176,7 @@ def test_unpickling_does_not_load_the_checkpoint(name, tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("name", CASES)
 def test_estimator_on_frozen_embeddings(name):
-    """With estimator, it is fitted on the embeddings and the network is unchanged."""
+    """By default, estimator is fitted on the embeddings; the network is unchanged."""
     from sklearn.linear_model import LogisticRegression
 
     cls, params, n_timepoints = CASES[name]
@@ -192,3 +193,48 @@ def test_estimator_on_frozen_embeddings(name):
     assert clf.estimator_.n_features_in_ == features.shape[1]
     assert clf.predict_proba(X).shape == (8, 2)
     assert clf.predict(X).shape == (8,)
+
+
+@pytest.mark.parametrize("name", CASES)
+def test_default_is_ridge_on_frozen_embeddings(name):
+    """By default the network is not trained and a ridge classifier is fitted."""
+    cls, params, n_timepoints = CASES[name]
+    X, y = make_example_3d_numpy(n_cases=8, n_channels=3, n_timepoints=n_timepoints)
+    clf = cls(**params, pretrained=False, random_state=0).fit(X, y)
+
+    assert clf.history_ == []
+    assert type(clf.estimator_[-1]).__name__ == "RidgeClassifierCV"
+    probs = clf.predict_proba(X)
+    assert probs.shape == (8, 2)
+    np.testing.assert_array_equal(probs.max(axis=1), 1.0)  # one-hot, no proba
+
+
+def test_estimator_with_finetune_raises():
+    """Estimator is only used without fine-tuning."""
+    from sklearn.linear_model import LogisticRegression
+
+    X, y = make_example_3d_numpy(n_cases=4, n_channels=3, n_timepoints=200)
+    clf = CBraModClassifier(**PARAMS, estimator=LogisticRegression())
+    with pytest.raises(ValueError, match="estimator is only used with finetune=False"):
+        clf.fit(X, y)
+
+
+@pytest.mark.parametrize("finetune", [False, True])
+@pytest.mark.parametrize("name", CASES)
+def test_seed_is_local(name, finetune):
+    """Fit is reproducible and leaves torch's global random state unchanged."""
+    import torch
+
+    cls, params, n_timepoints = CASES[name]
+    X, y = make_example_3d_numpy(n_cases=6, n_channels=3, n_timepoints=n_timepoints)
+    torch.manual_seed(123)
+    expected = torch.rand(1)
+
+    torch.manual_seed(123)
+    clf1 = cls(**params, pretrained=False, n_epochs=1, finetune=finetune)
+    clf1.set_params(random_state=0).fit(X, y)
+    assert torch.equal(torch.rand(1), expected)
+
+    clf2 = cls(**params, pretrained=False, n_epochs=1, finetune=finetune)
+    clf2.set_params(random_state=0).fit(X, y)
+    np.testing.assert_array_equal(clf1.predict_proba(X), clf2.predict_proba(X))

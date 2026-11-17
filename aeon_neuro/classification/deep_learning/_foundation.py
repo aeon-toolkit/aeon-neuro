@@ -9,6 +9,9 @@ from math import cos, pi
 
 import numpy as np
 from aeon.base._base import _clone_estimator
+from sklearn.linear_model import RidgeClassifierCV
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 from sklearn.utils import check_random_state
 
 from aeon_neuro.classification.deep_learning._braindecode import (
@@ -17,11 +20,16 @@ from aeon_neuro.classification.deep_learning._braindecode import (
 
 
 class _BaseFoundationClassifier(_BaseBraindecodeClassifier):
-    """Base class fine-tuning a pretrained Braindecode foundation model.
+    """Base class for pretrained Braindecode foundation models.
 
-    Extends ``_BaseBraindecodeClassifier`` with the training options used to
-    fine-tune pretrained models. Subclasses have a ``pretrained`` parameter, set
-    ``_checkpoint`` to the Hugging Face Hub repository of their weights, and
+    Extends ``_BaseBraindecodeClassifier`` with two ways of using a pretrained
+    encoder. By default (``finetune=False``) the network is not trained: an
+    sklearn ``estimator`` is fitted on the frozen encoder's embeddings, averaged
+    over time patches. With ``finetune=True`` the network is trained with the
+    training options used to fine-tune pretrained models.
+
+    Subclasses have a ``pretrained`` parameter, set ``_checkpoint`` to the
+    Hugging Face Hub repository of their weights, and
     implement ``_build_network``, which builds the network without loading them,
     and ``_features``. They may override ``_pad`` to reshape the input to what
     the network accepts. The network is trained with cross-entropy loss. Its
@@ -34,20 +42,28 @@ class _BaseFoundationClassifier(_BaseBraindecodeClassifier):
     Unlike the base class, the incomplete last batch is kept in training: these
     models use layer norm, so a batch of one case is not a problem.
 
-    By default the whole network is trained, which for pretrained models is full
-    fine-tuning. With ``freeze_encoder=True`` it is linear probing instead: the
-    encoder is frozen in eval mode, its outputs are computed once, and only the
-    head is trained on them.
+    With ``finetune=True`` the whole network is trained, which for pretrained
+    models is full fine-tuning. Adding ``freeze_encoder=True`` makes it linear
+    probing instead: the encoder is frozen in eval mode, its outputs are computed
+    once, and only the head is trained on them.
 
     With ``validation_data``, the network is scored on it after every epoch, and
     the weights of the epoch with the best balanced accuracy are
     kept (the earliest, on ties) instead of those after the last epoch.
 
-    With ``estimator``, the network is not trained: ``estimator`` is fitted on the
-    frozen encoder's embeddings, averaged over time patches.
+    ``fit`` seeds torch from ``random_state`` without changing torch's global
+    random state.
 
     Parameters
     ----------
+    finetune : bool, default=False
+        If False, fit ``estimator`` on the frozen encoder's embeddings and do not
+        train the network; the training options below are then unused. If True,
+        train the network with them.
+    estimator : sklearn classifier or None, default=None
+        Classifier fitted on the embeddings when ``finetune=False``. If None,
+        ``make_pipeline(StandardScaler(), RidgeClassifierCV(alphas=np.logspace(-3,
+        3, 10)))``. Must be None when ``finetune=True``.
     batch_size : int, default=64
         Mini-batch size used for training and inference.
     n_epochs : int, default=20
@@ -82,10 +98,6 @@ class _BaseFoundationClassifier(_BaseBraindecodeClassifier):
         Validation series, shaped like the training series, and their labels,
         used to choose the epoch whose weights are kept. It should not share
         subjects with the training data.
-    estimator : sklearn classifier or None, default=None
-        If set, fit this classifier on the frozen encoder's embeddings instead
-        of training the network; the training options above are then unused.
-        For example ``make_pipeline(StandardScaler(), RidgeClassifierCV())``.
     device : str or None, default=None
         Torch device string. If None, uses "cuda" when available, otherwise "cpu".
     verbose : bool, default=False
@@ -102,7 +114,7 @@ class _BaseFoundationClassifier(_BaseBraindecodeClassifier):
     best_epoch_ : int
         Epoch (1-based) whose weights were kept.
     estimator_ : sklearn classifier or None
-        The fitted ``estimator``, or None if the network was trained.
+        The fitted estimator, or None if the network was trained.
     """
 
     _tags = {
@@ -136,7 +148,9 @@ class _BaseFoundationClassifier(_BaseBraindecodeClassifier):
         label_smoothing: float = 0.0,
         validation_data: tuple | None = None,
         estimator=None,
+        finetune: bool = False,
     ):
+        self.finetune = finetune
         self.freeze_encoder = freeze_encoder
         self.head_lr = head_lr
         self.layer_decay = layer_decay
@@ -159,7 +173,23 @@ class _BaseFoundationClassifier(_BaseBraindecodeClassifier):
         )
 
     def _fit(self, X: np.ndarray, y: np.ndarray):
-        """Fit the network."""
+        """Fit, seeding torch without changing its global random state."""
+        import torch
+
+        if self.finetune and self.estimator is not None:
+            raise ValueError(
+                "estimator is only used with finetune=False; set estimator=None to "
+                "fine-tune the network."
+            )
+
+        rng = check_random_state(self.random_state)
+        seed = int(rng.randint(np.iinfo(np.int32).max))
+        with torch.random.fork_rng(devices=range(torch.cuda.device_count())):
+            torch.manual_seed(seed)  # also seeds every CUDA device
+            return self._fit_seeded(X, y)
+
+    def _fit_seeded(self, X: np.ndarray, y: np.ndarray):
+        """Build the network, then fit the estimator or train the network."""
         import torch
         from torch import nn
         from torch.utils.data import TensorDataset
@@ -169,24 +199,23 @@ class _BaseFoundationClassifier(_BaseBraindecodeClassifier):
             np.asarray([self._class_dictionary[label] for label in y], dtype=np.int64)
         )
 
-        rng = check_random_state(self.random_state)
-        seed = int(rng.randint(np.iinfo(np.int32).max))
-        torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
-
         self.device_ = self._resolve_device()
         network = self._build_network(n_channels=X.shape[1], n_timepoints=X.shape[2])
         if self.pretrained:
             self._load_checkpoint(network)
         self.network_ = network.to(self.device_)
         self.estimator_ = None
-        if self.estimator is not None:
+        if not self.finetune:
             self.network_.eval()
             self.history_ = []
             self.validation_scores_ = []
             self.best_epoch_ = 0
-            self.estimator_ = _clone_estimator(self.estimator, self.random_state)
+            estimator = self.estimator
+            if estimator is None:
+                estimator = make_pipeline(
+                    StandardScaler(), RidgeClassifierCV(alphas=np.logspace(-3, 3, 10))
+                )
+            self.estimator_ = _clone_estimator(estimator, self.random_state)
             self.estimator_.fit(self._features(X), y)
             return self
 
@@ -230,8 +259,9 @@ class _BaseFoundationClassifier(_BaseBraindecodeClassifier):
     def _predict_proba(self, X: np.ndarray) -> np.ndarray:
         """Predict class probabilities for X.
 
-        With ``estimator``, these are its probabilities, or if it has no
-        ``predict_proba``, a one-hot encoding of its predicted class.
+        With ``finetune=False``, these are the estimator's probabilities, or if it
+        has no ``predict_proba`` (as the default ridge classifier), a one-hot
+        encoding of its predicted class.
         """
         if self.estimator_ is None:
             return super()._predict_proba(X)
