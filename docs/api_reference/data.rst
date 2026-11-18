@@ -10,6 +10,11 @@ OpenNeuro fetching and preparation
 
 .. autoexception:: aeon_neuro.datasets.BIDSPreparationError
 
+NEMAR acquisition
+-----------------
+
+.. autofunction:: aeon_neuro.datasets.fetch_nemar_dataset
+
 Usage
 -----
 

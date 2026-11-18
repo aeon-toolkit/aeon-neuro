@@ -50,6 +50,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+nemar = [
+    "nemar-py>=0.3.3,<0.4",
+]
 openneuro = [
     "openneuro-py>=2026.9.1",
 ]
@@ -70,6 +73,7 @@ dl = [
 ]
 dev = [
     "aeon[dev]",
+    "nemar-py>=0.3.3,<0.4",
     "edfio",
     "eeglabio",
     "pybv>=0.7.5",
