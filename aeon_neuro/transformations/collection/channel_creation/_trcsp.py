@@ -7,14 +7,11 @@ __all__ = ["TRCommonSpatialPatterns"]
 import numbers
 
 import numpy as np
+from aeon.transformations.collection.base import BaseCollectionTransformer
 from scipy import linalg
 
-from aeon_neuro.transformations.collection.channel_creation._csp import (
-    CommonSpatialPatterns,
-)
 
-
-class TRCommonSpatialPatterns(CommonSpatialPatterns):
+class TRCommonSpatialPatterns(BaseCollectionTransformer):
     """Tikhonov-Regularised Common Spatial Patterns (TRCSP) spatial filter.
 
     TRCSP extends Common Spatial Patterns with Tikhonov regularisation of the
@@ -32,9 +29,10 @@ class TRCommonSpatialPatterns(CommonSpatialPatterns):
         Number of spatial filters to keep. Must be even, as half come from each
         class, and at most twice the number of channels.
     alpha : float, default=1.0
-        Strength of the Tikhonov regularisation. Must be non-negative. With
-        ``alpha=0`` the filters are those of unregularised CSP; larger values
-        favour filters with smaller weights.
+        Strength of the Tikhonov regularisation. Must be strictly positive
+        (``alpha > 0``), which keeps the regularised covariance positive
+        definite even for rank-deficient data. Larger values favour filters
+        with smaller weights.
 
     Attributes
     ----------
@@ -42,6 +40,11 @@ class TRCommonSpatialPatterns(CommonSpatialPatterns):
         The learned spatial filters, one per row. The first
         ``n_components // 2`` maximise the variance of ``classes_[1]``, the rest
         that of ``classes_[0]``, each ordered most discriminative first.
+    patterns_ : np.ndarray of shape (n_components, n_channels)
+        The spatial patterns, for visualising the sources each filter extracts.
+        Row ``k`` is the pattern of ``filters_[k]``: how the source it recovers
+        appears on each channel. Computed as in MOABB, by multiplying each filter
+        by the regularised covariance of the other class.
     classes_ : np.ndarray
         The class labels seen in ``fit``.
 
@@ -97,9 +100,17 @@ class TRCommonSpatialPatterns(CommonSpatialPatterns):
     (12,)
     """
 
+    _tags = {
+        "X_inner_type": "numpy3D",
+        "capability:univariate": False,
+        "capability:multivariate": True,
+        "requires_y": True,
+    }
+
     def __init__(self, n_components: int = 4, alpha: float = 1.0):
+        self.n_components = n_components
         self.alpha = alpha
-        super().__init__(n_components=n_components)
+        super().__init__()
 
     def _fit(self, X: np.ndarray, y: np.ndarray):
         """Learn the TRCSP spatial filters from a labelled 3D collection.
@@ -109,7 +120,14 @@ class TRCommonSpatialPatterns(CommonSpatialPatterns):
         one per class, and the top ``n_components // 2`` filters of each are
         kept.
         """
-        self._validate_params()  # inherited: n_components is a positive int
+        if (
+            isinstance(self.n_components, bool)
+            or not isinstance(self.n_components, (int, np.integer))
+            or self.n_components < 1
+        ):
+            raise ValueError(
+                f"n_components must be a positive int, got {self.n_components!r}."
+            )
         if self.n_components % 2:
             raise ValueError(
                 f"n_components must be even, got {self.n_components}: half the "
@@ -119,10 +137,12 @@ class TRCommonSpatialPatterns(CommonSpatialPatterns):
             isinstance(self.alpha, bool)
             or not isinstance(self.alpha, numbers.Real)
             or not np.isfinite(self.alpha)
-            or self.alpha < 0
         ):
+            raise ValueError(f"alpha must be a finite number, got {self.alpha!r}.")
+        if self.alpha <= 0:
             raise ValueError(
-                f"alpha must be a non-negative number, got {self.alpha!r}."
+                f"alpha must be strictly positive, got {self.alpha!r}. "
+                "alpha > 0 keeps the regularised covariance positive definite."
             )
 
         y = np.asarray(y)
@@ -131,6 +151,21 @@ class TRCommonSpatialPatterns(CommonSpatialPatterns):
             raise ValueError(
                 "TRCommonSpatialPatterns only supports binary classification, "
                 f"but y contains {len(self.classes_)} classes."
+            )
+
+        n_timepoints = X.shape[2]
+        if n_timepoints < 2:
+            raise ValueError(
+                "TRCommonSpatialPatterns requires at least 2 timepoints to estimate "
+                f"covariance, but X has n_timepoints={n_timepoints}."
+            )
+
+        flat = np.all(np.ptp(X, axis=2) == 0, axis=1)  # shape (n_cases,)
+        if flat.any():
+            idx = np.flatnonzero(flat)
+            raise ValueError(
+                "TRCommonSpatialPatterns requires signal that varies over time, "
+                f"but trials {idx.tolist()} are constant on every channel."
             )
 
         n_channels = X.shape[1]
@@ -153,17 +188,23 @@ class TRCommonSpatialPatterns(CommonSpatialPatterns):
         reg_term_a = Cov_a + eye * self.alpha
         reg_term_b = Cov_b + eye * self.alpha
 
-        eigvals_a, eigvecs_a = linalg.eigh(Cov_a, reg_term_b)
-        eigvals_b, eigvecs_b = linalg.eigh(Cov_b, reg_term_a)
-
-        # sort eigenvectors in descending order of eigenvalues
-        W_a = eigvecs_a[:, np.argsort(eigvals_a)[::-1]]
-        W_b = eigvecs_b[:, np.argsort(eigvals_b)[::-1]]
-
-        # top m filters from each class as rows, class b first as in MOABB
+        # eigh returns eigenvalues in ascending order, so the top m are the last
+        # m; compute only those and reverse to put the largest first
         m = self.n_components // 2
-        self.filters_ = np.vstack([W_b[:, :m].T, W_a[:, :m].T])
+        top_m = [n_channels - m, n_channels - 1]
+        _, W_a = linalg.eigh(Cov_a, reg_term_b, subset_by_index=top_m)
+        _, W_b = linalg.eigh(Cov_b, reg_term_a, subset_by_index=top_m)
+        W_a, W_b = W_a[:, ::-1], W_b[:, ::-1]
+
+        # filters as rows, class b first as in MOABB
+        self.filters_ = np.vstack([W_b.T, W_a.T])
+        self.patterns_ = np.vstack([(reg_term_a @ W_b).T, (reg_term_b @ W_a).T])
         return self
+
+    def _transform(self, X: np.ndarray, y: np.ndarray | None = None) -> np.ndarray:
+        """Project X onto the learned TRCSP filters."""
+        # (n_components, n_channels) @ (n_cases, n_channels, n_timepoints)
+        return self.filters_ @ X
 
     @classmethod
     def _get_test_params(cls, parameter_set: str = "default"):

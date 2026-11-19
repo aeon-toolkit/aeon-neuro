@@ -98,7 +98,7 @@ def test_trcsp_finds_discriminative_channels():
     assert np.argmax(np.abs(trcsp.filters_[2])) == 0
 
 
-@pytest.mark.parametrize("alpha", [0.0, 0.1, 1.0])
+@pytest.mark.parametrize("alpha", [0.1, 1.0])
 def test_trcsp_maximises_regularised_ratio(alpha):
     """No random direction beats the first filter of each class."""
     X, y = _data()
@@ -171,10 +171,11 @@ def test_trcsp_binary_only(labels, match):
         ({"n_components": 3}, "n_components must be even"),
         ({"n_components": 0}, "n_components must be a positive int"),
         ({"n_components": 14}, "needs 7 filters per class"),
-        ({"alpha": -0.1}, "alpha must be a non-negative number"),
-        ({"alpha": np.inf}, "alpha must be a non-negative number"),
-        ({"alpha": True}, "alpha must be a non-negative number"),
-        ({"alpha": "1"}, "alpha must be a non-negative number"),
+        ({"alpha": 0.0}, "alpha must be strictly positive"),
+        ({"alpha": -0.1}, "alpha must be strictly positive"),
+        ({"alpha": np.inf}, "alpha must be a finite number"),
+        ({"alpha": True}, "alpha must be a finite number"),
+        ({"alpha": "1"}, "alpha must be a finite number"),
     ],
 )
 def test_trcsp_invalid_params(params, match):
@@ -182,3 +183,43 @@ def test_trcsp_invalid_params(params, match):
     X, y = _data()
     with pytest.raises(ValueError, match=match):
         TRCommonSpatialPatterns(**params).fit(X, y)
+
+
+def test_trcsp_patterns():
+    """patterns_ has one row per filter and matches MOABB's formula."""
+    X, y = _data()
+    alpha = 0.1
+    trcsp = TRCommonSpatialPatterns(n_components=4, alpha=alpha).fit(X, y)
+    assert trcsp.patterns_.shape == trcsp.filters_.shape
+    covs = [
+        np.mean([(c := np.cov(trial)) / np.trace(c) for trial in X[y == k]], 0)
+        + alpha * np.eye(X.shape[1])
+        for k in (0, 1)
+    ]
+    # rows 0-1 are class b (y == 1) filters, rows 2-3 class a (y == 0) filters
+    np.testing.assert_allclose(trcsp.patterns_[:2], trcsp.filters_[:2] @ covs[0])
+    np.testing.assert_allclose(trcsp.patterns_[2:], trcsp.filters_[2:] @ covs[1])
+
+
+def test_trcsp_average_referenced_data():
+    """Rank-deficient, average-referenced data fits without error."""
+    X, y = _data()
+    X = X - X.mean(axis=1, keepdims=True)  # common average reference
+    assert np.linalg.matrix_rank(np.cov(X[0])) < X.shape[1]
+    Xt = TRCommonSpatialPatterns(n_components=4, alpha=0.1).fit_transform(X, y)
+    assert np.all(np.isfinite(Xt))
+
+
+def test_trcsp_too_few_timepoints():
+    """Fewer than 2 timepoints raises a ValueError."""
+    X, y = _data()
+    with pytest.raises(ValueError, match="at least 2 timepoints"):
+        TRCommonSpatialPatterns(n_components=2).fit(X[:, :, :1], y)
+
+
+def test_trcsp_flat_trial():
+    """A trial that is constant on every channel raises a ValueError."""
+    X, y = _data()
+    X[3] = 5.0
+    with pytest.raises(ValueError, match=r"trials \[3\] are constant"):
+        TRCommonSpatialPatterns(n_components=2).fit(X, y)
