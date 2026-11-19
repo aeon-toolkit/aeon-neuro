@@ -11,3 +11,17 @@ remains an explicit change.
 
 See the [retirement notice](https://github.com/actions/runner-images/issues/13518)
 and [current runner labels](https://github.com/actions/runner-images#available-images).
+
+## Optional Zenodo download tests
+
+The default suite checks EEG dataset loading with local files and a mocked
+download. To run the live Sleep download smoke test, enable the download tests
+and select that test:
+
+```bash
+AEON_NEURO_DOWNLOAD_TESTS=1 python -m pytest \
+  aeon_neuro/datasets/tests/test_data_loaders.py::test_load_eeg_from_zenodo
+```
+
+Run the whole test module with the same flag to check downloads for all
+available EEG datasets.
