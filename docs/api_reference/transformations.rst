@@ -64,6 +64,7 @@ Collection
     DownsampleCollectionTransformer
     ERPCovariances
     LogVariance
+    TangentSpace
     TimeCrop
 
 Channel creation
