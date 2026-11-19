@@ -136,6 +136,7 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         from torch import nn
         from torch.utils.data import DataLoader, TensorDataset
 
+        self.n_timepoints_ = X.shape[2]
         X = self._pad(X)
         y_int = np.asarray(
             [self._class_dictionary[label] for label in y], dtype=np.int64
@@ -204,6 +205,15 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         """Predict class probabilities for X."""
         import torch
         from torch.utils.data import DataLoader, TensorDataset
+
+        # aeon checks this in predict, but skips the check when metadata_ is
+        # empty, e.g. for a loaded model
+        if X.shape[2] != self.n_timepoints_:
+            raise ValueError(
+                f"{type(self).__name__} was fitted on series of length "
+                f"{self.n_timepoints_}, got {X.shape[2]}. The network is built for "
+                "the series length seen in fit."
+            )
 
         X = self._pad(X)
         dataset = TensorDataset(torch.from_numpy(X))
