@@ -22,6 +22,8 @@ Deep learning
     DeepConvNetClassifier
     EEGConformerClassifier
     EEGNetClassifier
+    EEGPTClassifier
+    LabramClassifier
 
 
 Feature based
