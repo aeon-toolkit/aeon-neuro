@@ -108,6 +108,8 @@ Unknown fitting facts remain unknown. Pretrained CBraMod and LaBraM require
 200 Hz whenever a rate is supplied, including prediction after plain-array
 fitting. This fitted model requirement is independent of the unknown training
 rate and does not change when constructor parameters are later edited.
+This applies to the frozen estimator and fine-tuning paths. LaBraM can use
+ordered channel names from fitting information when `ch_names` is omitted.
 
 ```python
 from aeon_neuro.classification.deep_learning import EEGNetClassifier

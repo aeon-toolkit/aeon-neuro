@@ -13,7 +13,9 @@ def test_labram_classifier_named_channels():
         n_cases=10, n_channels=3, n_timepoints=900, random_state=0
     )
 
-    clf = LabramClassifier(ch_names=["C3", "Cz", "C4"], pretrained=False)
+    clf = LabramClassifier(
+        ch_names=["C3", "Cz", "C4"], pretrained=False, n_epochs=1, random_state=0
+    )
     clf.fit(X, y)
 
     probs = clf.predict_proba(X)
@@ -52,5 +54,5 @@ def test_labram_classifier_seed_is_local():
     clf2 = LabramClassifier(ch_names=["C3", "CZ", "C4"], pretrained=False)
     clf2.set_params(random_state=0).fit(X, y)
     np.testing.assert_array_equal(
-        clf1._extract_features(clf1._pad(X)), clf2._extract_features(clf2._pad(X))
+        clf1._features(clf1._pad(X)), clf2._features(clf2._pad(X))
     )
