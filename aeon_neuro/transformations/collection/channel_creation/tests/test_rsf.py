@@ -1,5 +1,7 @@
 """Tests for the RiemannianSpatialFilter transformer."""
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 from aeon.testing.data_generation import make_example_3d_numpy
@@ -8,6 +10,7 @@ from scipy.optimize import minimize
 
 from aeon_neuro.transformations.collection.channel_creation import (
     RiemannianSpatialFilter,
+    _rsf,
 )
 
 N_CHANNELS = 6
@@ -400,3 +403,34 @@ def test_rsf_matches_authors_implementation(n_components, params):
     # floating point. 0.1 degrees still rules out a different filter subspace.
     angles = subspace_angles(W, AUTHORS_FILTERS[n_components])
     assert np.degrees(angles.max()) < 0.1
+
+
+@pytest.mark.parametrize("bad_evals", [[-1e-15, 2.0], [0.0, 2.0]])
+def test_rsf_optimiser_rejects_non_positive_eigenvalues(bad_evals, monkeypatch):
+    """Test a near-singular W scores 0.0, the worst score, not a huge distance.
+
+    Rounding on a nearly rank-deficient W can give eigenvalues <= 0 without
+    raising LinAlgError. These must be rejected like the LinAlgError case,
+    rather than clipped to a tiny value whose log rewards rank collapse.
+    """
+    X, y = _data()
+    captured = {}
+
+    def capture_minimize(fun, x0, **kwargs):
+        captured["objective"], captured["x0"] = fun, x0
+        return SimpleNamespace(x=x0, fun=fun(x0))
+
+    monkeypatch.setattr("scipy.optimize.minimize", capture_minimize)
+    RiemannianSpatialFilter(n_components=2, solver="trust-constr", random_state=0).fit(
+        X, y
+    )
+    objective, x0 = captured["objective"], captured["x0"]
+
+    # a valid W gives a negative objective, i.e. a positive squared distance
+    assert objective(x0) < 0
+
+    # an impossible eigenvalue from a near-singular W scores 0.0
+    monkeypatch.setattr(
+        _rsf.linalg, "eigh", lambda *args, **kwargs: np.array(bad_evals)
+    )
+    assert objective(x0) == 0.0

@@ -243,10 +243,8 @@ class RiemannianSpatialFilter(BaseCollectionTransformer):
 
         # Plain spatial covariances only: ERP covariances are larger than
         # (n_channels, n_channels), so their filters could not be applied to X.
-        self.transformer_ = build_covariance_transformer(
-            "cov", self.covariance_estimator
-        )
-        X_cov = compute_covariance_matrices(X, self.transformer_, fit=True, y=y)
+        transformer = build_covariance_transformer("cov", self.covariance_estimator)
+        X_cov = compute_covariance_matrices(X, transformer, fit=True, y=y)
 
         # The Riemannian mean and distance are only defined for symmetric
         # positive definite matrices, e.g. not when n_timepoints < n_channels.
@@ -324,7 +322,9 @@ class RiemannianSpatialFilter(BaseCollectionTransformer):
             except linalg.LinAlgError:
                 # W has lost rank, so the filtered means are not comparable
                 return 0.0
-            evals = np.clip(evals, 1e-10, None)
+
+            if np.any(evals <= 0):
+                return 0.0
             return -np.sum(np.log(evals) ** 2)
 
         result = minimize(

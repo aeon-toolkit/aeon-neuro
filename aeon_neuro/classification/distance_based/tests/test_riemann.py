@@ -177,3 +177,10 @@ def test_cuda_matches_cpu(clf, monkeypatch):
     cpu_clf = clone(clf).fit(X, y)
 
     np.testing.assert_allclose(gpu_probs, cpu_clf.predict_proba(X), atol=1e-8)
+
+
+def test_erp_covariances_stay_on_cpu(fake_cuda):
+    """With CUDA available, the ERP path still runs on numpy."""
+    X, y = _make_data()
+    clf = RiemannianMDMClassifier(covariance_type="erp").fit(X, y)
+    assert clf.predict(X).shape == (len(y),)

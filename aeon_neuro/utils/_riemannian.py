@@ -26,7 +26,7 @@ def build_covariance_transformer(
     Returns
     -------
     transformer
-        A fitted covariance estimation transformer.
+        An unfitted covariance estimation transformer.
     """
     kwargs = {} if covariance_params is None else dict(covariance_params)
 
@@ -74,10 +74,11 @@ def compute_covariance_matrices(
         Estimated covariance matrices of shape (n_samples, n_channels, n_channels).
     """
     import torch
+    from pyriemann.estimation import Covariances
 
     # The ERP transformer is a numpy/aeon estimator, so only the plain
     # covariance path is moved onto the GPU.
-    if torch.cuda.is_available():
+    if isinstance(covariance_transformer, Covariances) and torch.cuda.is_available():
         X = torch.as_tensor(X, dtype=torch.float64, device="cuda")
 
     if fit:
