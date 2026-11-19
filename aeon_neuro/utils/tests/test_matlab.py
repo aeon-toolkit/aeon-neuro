@@ -312,7 +312,9 @@ def test_matlab_missing_values_in_auxiliary_column(tmp_path, axis):
     """Allow missing auxiliary data unless the schema uses it for timing."""
     eeg = np.arange(20)
     values = np.column_stack([eeg, np.full(eeg.size, np.nan)])
-    path = _save(tmp_path / "aux.mat", {"signals": values if axis == 0 else values.T})
+    path = _save(
+        tmp_path / "signals.mat", {"signals": values if axis == 0 else values.T}
+    )
     schema = _schema(
         sample_axis=axis,
         signal_columns=[0],
