@@ -4,6 +4,8 @@ from __future__ import annotations
 
 __all__ = ["XDAWNCovariances"]
 
+from numbers import Integral
+
 from aeon.transformations.collection import BaseCollectionTransformer
 
 from aeon_neuro.transformations.collection._erpcovariance import _check_classes
@@ -62,6 +64,7 @@ class XDAWNCovariances(BaseCollectionTransformer):
 
     _tags = {
         "capability:multivariate": True,
+        "capability:univariate": False,
         "requires_y": True,
         "fit_is_empty": False,
     }
@@ -88,7 +91,7 @@ class XDAWNCovariances(BaseCollectionTransformer):
 
         _check_classes(self.classes, y)
         if (
-            not isinstance(self.nfilter, int)
+            not isinstance(self.nfilter, Integral)
             or isinstance(self.nfilter, bool)
             or self.nfilter < 1
         ):

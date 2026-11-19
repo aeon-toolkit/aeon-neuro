@@ -62,6 +62,20 @@ def test_matches_pyriemann(params):
     np.testing.assert_allclose(Xt, expected.transform(X_test))
 
 
+def test_numpy_integer_nfilter():
+    """Nfilter accepts numpy integers, e.g. from a parameter grid."""
+    X, y = _make_erp_data()
+    Xt = XDAWNCovariances(nfilter=np.int64(2)).fit_transform(X, y)
+    np.testing.assert_allclose(Xt, XDAWNCovariances(nfilter=2).fit_transform(X, y))
+
+
+def test_univariate_raises():
+    """XDAWN needs more than one channel."""
+    X, y = _make_erp_data()
+    with pytest.raises(ValueError, match="univariate"):
+        XDAWNCovariances().fit(X[:, :1], y)
+
+
 def test_requires_y():
     """Fitting without labels raises an error."""
     X, _ = _make_erp_data()
