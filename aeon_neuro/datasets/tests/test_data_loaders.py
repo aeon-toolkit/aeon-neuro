@@ -53,7 +53,7 @@ def test_load_eeg_invalid_name(tmp_path):
 
 
 def test_load_eeg_uses_cached_files(tmp_path, monkeypatch):
-    """Load the requested split of a cached dataset without a download."""
+    """Load both cached splits by default and support selecting just TEST."""
     cache = tmp_path / "Sleep"
     cache.mkdir()
     header = (
@@ -65,6 +65,11 @@ def test_load_eeg_uses_cached_files(tmp_path, monkeypatch):
     (cache / "Sleep_TEST.ts").write_text(header + "4,5,6:asleep\n", encoding="utf-8")
     download = Mock(side_effect=AssertionError("Cache hit attempted a download"))
     monkeypatch.setattr(_data_loaders, "load_classification", download)
+
+    X, y = load_eeg_classification("Sleep", extract_path=str(tmp_path))
+
+    np.testing.assert_array_equal(X, [[[1, 2, 3]], [[4, 5, 6]]])
+    np.testing.assert_array_equal(y, ["awake", "asleep"])
 
     X, y, meta = load_eeg_classification(
         "Sleep", split="test", extract_path=str(tmp_path), return_metadata=True
