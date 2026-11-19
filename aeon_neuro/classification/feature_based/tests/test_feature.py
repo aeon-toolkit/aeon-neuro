@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 from aeon.testing.data_generation import make_example_3d_numpy
+from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.linear_model import RidgeClassifier
 from sklearn.preprocessing import StandardScaler
@@ -10,7 +11,7 @@ from sklearn.preprocessing import StandardScaler
 from aeon_neuro.classification.feature_based import FeatureClassifier
 
 
-class _MeanOverTime:
+class _MeanOverTime(TransformerMixin, BaseEstimator):
     """Toy transformer: (n_cases, n_channels, n_timepoints) -> (n_cases, n_channels)."""
 
     def __init__(self):
@@ -27,7 +28,7 @@ class _MeanOverTime:
         return self.fit(X, y).transform(X)
 
 
-class _StdOverTime:
+class _StdOverTime(TransformerMixin, BaseEstimator):
     """Toy transformer returning a single std feature per case: (n_cases, 1)."""
 
     def fit(self, X, y=None):
@@ -40,7 +41,7 @@ class _StdOverTime:
         return self.fit(X, y).transform(X)
 
 
-class _Identity3D:
+class _Identity3D(TransformerMixin, BaseEstimator):
     """Toy transformer that returns the 3D input unchanged."""
 
     def fit(self, X, y=None):
@@ -113,14 +114,78 @@ def test_single_transformer_not_in_list():
 
 
 def test_transformers_fitted_once_reused_on_predict():
-    """Transformers are fitted during fit and only transformed on predict."""
+    """Clones of the transformers are fitted once in fit and reused on predict."""
     X, y = _data()
     t = _MeanOverTime()
     clf = FeatureClassifier(transformers=[t]).fit(X, y)
     clf.predict(X)
     clf.predict(X)
 
-    assert t.n_fit == 1  # fit once in fit(), never in predict()
+    assert t.n_fit == 0  # the transformer passed in is never fitted
+    assert clf.transformers_[0] is not t
+    assert clf.transformers_[0].n_fit == 1  # fit once in fit(), never in predict()
+
+
+def test_transformers_not_shared_between_fits():
+    """Two classifiers built from one list keep their own fitted transformers."""
+    X, y = _data()
+    transformers = [_MeanOverTime()]
+    clf_a = FeatureClassifier(transformers=transformers).fit(X, y)
+    clf_b = FeatureClassifier(transformers=transformers).fit(X, y)
+
+    assert clf_a.transformers_[0] is not clf_b.transformers_[0]
+    assert transformers[0].n_fit == 0
+
+
+def test_same_transformer_listed_twice_is_fitted_separately():
+    """Listing one object twice side-by-side gives two independent clones."""
+    X, y = _data()
+    t = _MeanOverTime()
+    clf = FeatureClassifier(transformers=[t, t]).fit(X, y)
+
+    assert clf.transformers_[0] is not clf.transformers_[1]
+    assert [c.n_fit for c in clf.transformers_] == [1, 1]
+    assert clf._extract(X, fit=False).shape == (12, 2 * 4)
+
+
+def test_random_state_reaches_transformers():
+    """random_state is passed to the cloned transformers."""
+    from sklearn.decomposition import PCA
+
+    X, y = _data()
+    clf = FeatureClassifier(
+        transformers=[_MeanOverTime(), PCA(n_components=2)],
+        extraction="chained",
+        random_state=7,
+    ).fit(X, y)
+
+    assert clf.transformers_[1].random_state is not None
+
+
+def test_default_transformers_flatten_cases():
+    """transformers=None flattens each case with Tabularizer."""
+    from aeon.transformations.collection import Tabularizer
+
+    X, y = _data()
+    clf = FeatureClassifier(random_state=0).fit(X, y)
+
+    assert isinstance(clf.transformers_[0], Tabularizer)
+    assert clf._extract(X, fit=False).shape == (12, 4 * 64)
+    assert clf.predict(X).shape == (12,)
+
+
+def test_empty_transformers_raises():
+    """An empty list of transformers raises a clear ValueError."""
+    X, y = _data()
+    with pytest.raises(ValueError, match="at least one transformer"):
+        FeatureClassifier(transformers=[]).fit(X, y)
+
+
+def test_univariate_input():
+    """Single-channel input is supported."""
+    X, y = _data(n_channels=1)
+    clf = FeatureClassifier(transformers=[_MeanOverTime()]).fit(X, y)
+    assert clf.predict(X).shape == (12,)
 
 
 def test_invalid_extraction_raises():

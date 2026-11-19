@@ -28,7 +28,10 @@ class FeatureClassifier(BaseClassifier):
     transformers : transformer or list of transformers, default=None
         Feature extractor(s) with a scikit-learn ``fit``/``transform`` interface
         (for example aeon collection transformers, scikit-learn transformers or
-        pyriemann estimators). Combined according to ``extraction``.
+        pyriemann estimators). Combined according to ``extraction``. They are
+        cloned before fitting, so the objects passed in are not modified. If
+        None, ``aeon.transformations.collection.Tabularizer()`` is used, which
+        flattens each case into a single feature vector.
     classifier : sklearn classifier or None, default=None
         Unfitted scikit-learn classifier fitted on the extracted features. It is
         cloned before fitting, so the object passed in is not modified. If None,
@@ -38,13 +41,14 @@ class FeatureClassifier(BaseClassifier):
         extractor to the input and concatenates the resulting features;
         ``"chained"`` feeds the output of each extractor into the next.
     random_state : int or None, default=None
-        Seed used to set the cloned classifier's ``random_state`` parameters, if
-        it has any. If None, the classifier's own setting is kept.
+        Seed used to set the ``random_state`` parameters of the cloned
+        transformers and classifier, if they have any. If None, their own
+        settings are kept.
 
     Attributes
     ----------
     transformers_ : list of transformers
-        The fitted feature-extraction transformers, in the order applied.
+        The fitted clones of ``transformers``, in the order applied.
     classifier_ : sklearn classifier
         The fitted clone of ``classifier``.
 
@@ -79,7 +83,7 @@ class FeatureClassifier(BaseClassifier):
 
     _tags = {
         "X_inner_type": "numpy3D",
-        "capability:univariate": False,
+        "capability:univariate": True,
         "capability:multivariate": True,
         "capability:unequal_length": False,
         "algorithm_type": "feature",
@@ -188,44 +192,22 @@ class FeatureClassifier(BaseClassifier):
         self, X: np.ndarray, y: np.ndarray | None = None, fit: bool = False
     ) -> np.ndarray:
         """Side-by-side feature extraction (features concatenated)."""
-        if self.transformers is None:
-            return np.empty((len(X), 0))
-        transformers = (
-            self.transformers
-            if isinstance(self.transformers, (list, tuple))
-            else [self.transformers]
-        )
-
         if fit:
-            for t in transformers:
-                if not (hasattr(t, "fit") and hasattr(t, "transform")):
-                    raise TypeError(f"{t!r} is not a fit/transform transformer.")
-            self.transformers_ = transformers
+            self.transformers_ = self._build_transformers()
 
         feats = []
         for t in self.transformers_:
             Xt = t.fit_transform(X, y) if fit else t.transform(X)
             feats.append(Xt.reshape(len(Xt), -1) if Xt.ndim > 2 else Xt)
 
-        return np.concatenate(feats, axis=1) if feats else np.empty((len(X), 0))
+        return np.concatenate(feats, axis=1)
 
     def _extract_chained(
         self, X: np.ndarray, y: np.ndarray | None = None, fit: bool = False
     ) -> np.ndarray:
         """Chained feature extraction (extractors applied sequentially)."""
-        if self.transformers is None:
-            return np.empty((len(X), 0))
-        transformers = (
-            self.transformers
-            if isinstance(self.transformers, (list, tuple))
-            else [self.transformers]
-        )
-
         if fit:
-            for t in transformers:
-                if not (hasattr(t, "fit") and hasattr(t, "transform")):
-                    raise TypeError(f"{t!r} is not a fit/transform transformer.")
-            self.transformers_ = transformers
+            self.transformers_ = self._build_transformers()
 
         feat = X
         for i, t in enumerate(self.transformers_):
@@ -239,6 +221,27 @@ class FeatureClassifier(BaseClassifier):
                 ) from e
 
         return feat.reshape(len(feat), -1) if feat.ndim > 2 else feat
+
+    def _build_transformers(self):
+        """Return unfitted clones of ``self.transformers``, or a Tabularizer."""
+        if self.transformers is None:
+            from aeon.transformations.collection import Tabularizer
+
+            transformers = [Tabularizer()]
+        elif isinstance(self.transformers, (list, tuple)):
+            transformers = list(self.transformers)
+        else:
+            transformers = [self.transformers]
+
+        if not transformers:
+            raise ValueError(
+                "transformers must contain at least one transformer, or be None "
+                "to flatten each case with Tabularizer."
+            )
+        for t in transformers:
+            if not (hasattr(t, "fit") and hasattr(t, "transform")):
+                raise TypeError(f"{t!r} is not a fit/transform transformer.")
+        return [_clone_estimator(t, self.random_state) for t in transformers]
 
     def _build_classifier(self):
         """Return an unfitted clone of ``self.classifier`` or the default LDA."""
