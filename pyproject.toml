@@ -47,6 +47,8 @@ dependencies = [
     "umap-learn",
     "torch",
     "braindecode>=2.0,<3",
+    "huggingface_hub",
+    "safetensors",
 ]
 
 [project.optional-dependencies]
