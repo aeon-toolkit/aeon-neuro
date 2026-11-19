@@ -17,6 +17,7 @@ from aeon_neuro.utils._bids_metadata import (
 from aeon_neuro.utils.matlab import (
     _cell,
     _raw_signature,
+    _set_event_coverage,
     _validate_event_fields,
     _validate_metadata,
 )
@@ -50,7 +51,13 @@ def _convert_matlab_recording(recording, destination, format, allow_preload, ove
         )
     _validate_recording(recording)
     raw = recording.raw
-    rows = recording.events
+    rows = [row.copy() for row in recording.events]
+    diagnostics = _set_event_coverage(rows, raw.n_times / raw.info["sfreq"])
+    diagnostics.extend(
+        d
+        for d in recording.diagnostics
+        if not (isinstance(d, dict) and d.get("code") == "incomplete_event_windows")
+    )
     # Native markers aid non-BIDS readers; the BIDS table remains authoritative.
     # Its source values and durations are not restricted to MNE integer codes.
     event_id = {
@@ -78,7 +85,7 @@ def _convert_matlab_recording(recording, destination, format, allow_preload, ove
         # the original acquisition hardware (Tremmel combines two devices).
         acquisition["Manufacturer"] = recording.metadata.get("Manufacturer", "n/a")
         acquisition["MatlabSource"] = recording.provenance
-        acquisition["ConversionDiagnostics"] = recording.diagnostics
+        acquisition["ConversionDiagnostics"] = diagnostics
         eeg_json.write_bytes(_json_bytes(acquisition))
         channel_path = written.copy().update(suffix="channels", extension=".tsv").fpath
         channel_fields, channels = _read_table(channel_path)

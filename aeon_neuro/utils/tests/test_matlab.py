@@ -307,6 +307,27 @@ def test_matlab_invalid_signals(tmp_path, bad):
         _load_signals(tmp_path, values)
 
 
+@pytest.mark.parametrize("axis", [0, 1])
+def test_matlab_missing_values_in_auxiliary_column(tmp_path, axis):
+    """Allow missing auxiliary data unless the schema uses it for timing."""
+    eeg = np.arange(20)
+    values = np.column_stack([eeg, np.full(eeg.size, np.nan)])
+    path = _save(tmp_path / "aux.mat", {"signals": values if axis == 0 else values.T})
+    schema = _schema(
+        sample_axis=axis,
+        signal_columns=[0],
+        channel_names=["Cz"],
+        channel_types="eeg",
+        units="uV",
+    )
+    recording = load_matlab_recording(path, schema=schema)
+    assert_allclose(recording.raw.get_data(), eeg[None, :] * 1e-6)
+    assert recording.provenance["UnselectedColumnsZeroBased"] == [1]
+
+    with pytest.raises(ValueError, match="Timestamps must be a finite vector"):
+        load_matlab_recording(path, schema=replace(schema, timestamp_column=1))
+
+
 @pytest.mark.parametrize(
     "kind", ["gap", "reset", "drift", "jitter", "wrong_length", "nan"]
 )
@@ -507,6 +528,36 @@ def test_matlab_unknown_duration_and_simultaneous_events(tmp_path):
     assert [r["trial_type"] for r in rows] == ["first", "second"]
     assert [r["duration"] for r in rows] == ["n/a", "0.25"]
     assert [r["sample"] for r in rows] == ["10", "10"]
+
+
+@pytest.mark.parametrize(
+    "original,edited,coverage",
+    [(0.1, 0.5, "False"), (0.5, 0.2, "True"), (0.5, "n/a", "n/a")],
+)
+def test_matlab_export_recomputes_event_coverage(tmp_path, original, edited, coverage):
+    """Derive both exported coverage fields from the edited event duration."""
+    recording = _load_signals(
+        tmp_path,
+        event_parser=lambda _: [
+            {"onset": 0.1, "duration": 0, "trial_type": "start"},
+            {"onset": 0.8, "duration": original, "trial_type": "cue"},
+        ],
+    )
+    recording.events[1]["duration"] = edited
+    written = _write(recording, tmp_path / "bids")
+
+    rows = _table(written)
+    assert rows[1]["duration"] == str(edited)
+    assert [r["recording_covers_event"] for r in rows] == ["True", coverage]
+    sidecar = json.loads(written.copy().update(extension=".json").fpath.read_text())
+    diagnostics = sidecar["ConversionDiagnostics"]
+    incomplete = [d for d in diagnostics if d["code"] == "incomplete_event_windows"]
+    if coverage == "False":
+        assert len(incomplete) == 1
+        assert incomplete[0]["rows_zero_based"] == [1]
+    else:
+        assert incomplete == []
+    assert any(d["code"] == "unknown_reference" for d in diagnostics)
 
 
 def test_matlab_no_events_and_unknown_line_frequency(tmp_path):

@@ -33,7 +33,8 @@ class MatlabSchema:
         Axis containing samples in the original MATLAB matrix, 0 or 1.
     signal_columns : sequence of int or None, default=None
         Zero-based indices on the channel axis. None selects every column.
-        Unselected columns are recorded in provenance, never inferred as EEG.
+        Selected signals and any timestamps must be finite. Other columns may
+        contain missing values. Unselected column indices are recorded in provenance.
     scale : float or sequence of float, default=1.0
         Positive calibration multiplier before converting the specified units
         to volts; for example, IVa integer counts require 0.1 uV per count.
@@ -112,7 +113,8 @@ class MatlabRecording:
         Events in source order. Onsets are aligned to the sample grid, with
         original coordinates retained in source_onset/source_sample/
         source_timestamp. Durations remain unchanged, including terminal trials
-        that extend beyond the recorded interval.
+        that extend beyond the recorded interval. Export recalculates event
+        coverage and incomplete-window diagnostics from the current table.
     event_descriptions : dict
         BIDS JSON definitions of event columns.
     metadata : dict
@@ -349,8 +351,6 @@ def _signals(matrix, decoded, schema, verbose):
         or schema.sfreq <= 0
     ):
         raise ValueError("sfreq must be finite and positive.")
-    if matrix.dtype.kind not in "fiu" or not np.isfinite(matrix).all():
-        raise ValueError("Signals and timestamps must be finite real numeric values.")
     matrix = matrix if schema.sample_axis == 0 else matrix.T
     if matrix.shape[0] < 2:
         raise ValueError("A continuous recording needs at least two samples.")
@@ -370,6 +370,9 @@ def _signals(matrix, decoded, schema, verbose):
         )
     ):
         raise ValueError("signal_columns must be unique, valid zero-based indices.")
+    signal = matrix[:, columns].T
+    if signal.dtype.kind not in "fiu" or not np.isfinite(signal).all():
+        raise ValueError("Selected signals must be finite real numeric values.")
     if isinstance(schema.channel_names, str):
         raise ValueError("channel_names must be a sequence of complete channel names.")
     names = list(schema.channel_names)
@@ -429,7 +432,7 @@ def _signals(matrix, decoded, schema, verbose):
         timestamps = np.asarray(decoded[schema.timestamps_key])
     sfreq, timing = _timing(timestamps, schema, len(matrix))
     volts_per_value = gains * [factors[u] for u in normalized]
-    signal = matrix[:, columns].T * volts_per_value[:, None]
+    signal = signal * volts_per_value[:, None]
     if not np.isfinite(signal).all():
         raise ValueError("Calibration produced nonfinite signals.")
     for cutoff in (schema.highpass, schema.lowpass):
@@ -543,7 +546,7 @@ def _events(rows, schema, raw, provenance):
         raise ValueError(
             "Timestamp events require signal timestamps on the same clock."
         )
-    events, incomplete = [], []
+    events = []
     rate = raw.info["sfreq"]
     timing = provenance["Timing"]
     source_column = {
@@ -602,37 +605,45 @@ def _events(rows, schema, raw, provenance):
                 f"Event {number} onset is outside the recorded sample span."
             )
         _validate_event_fields(row, descriptions)
-        duration = row["duration"]
-        covers = (
-            "n/a"
-            if duration == "n/a"
-            else bool(sample / rate + duration <= raw.n_times / rate + 1e-9)
-        )
-        if covers is False:
-            incomplete.append(number)
         row.update(
             onset=sample / rate,
             sample=sample,
             timing_error=sample / rate - relative,
-            recording_covers_event=covers,
         )
         row[source_column] = coordinate
         events.append({key: _cell(value) for key, value in row.items()})
+    diagnostics = _set_event_coverage(events, raw.n_times / rate)
+    if diagnostics:
+        warnings.warn(diagnostics[0]["message"], UserWarning, stacklevel=3)
     fields = set().union(*(row.keys() for row in events)) if events else set()
-    diagnostics = []
-    if incomplete:
-        diagnostics.append(
-            {
-                "code": "incomplete_event_windows",
-                "rows_zero_based": incomplete,
-                "message": (
-                    "Event durations extend beyond the recording; retained without "
-                    "clipping."
-                ),
-            }
-        )
-        warnings.warn(diagnostics[-1]["message"], UserWarning, stacklevel=3)
     return events, {k: v for k, v in descriptions.items() if k in fields}, diagnostics
+
+
+def _set_event_coverage(events, recording_duration):
+    """Set coverage on aligned event rows and report the incomplete windows."""
+    incomplete = []
+    for number, row in enumerate(events):
+        duration = row["duration"]
+        covers = (
+            "n/a"
+            if duration == "n/a"
+            else bool(row["onset"] + duration <= recording_duration + 1e-9)
+        )
+        row["recording_covers_event"] = covers
+        if covers is False:
+            incomplete.append(number)
+    if not incomplete:
+        return []
+    return [
+        {
+            "code": "incomplete_event_windows",
+            "rows_zero_based": incomplete,
+            "message": (
+                "Event durations extend beyond the recording; retained without "
+                "clipping."
+            ),
+        }
+    ]
 
 
 def _validate_event_fields(row, descriptions):
