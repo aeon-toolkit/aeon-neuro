@@ -184,6 +184,7 @@ class CBraModClassifier(_BaseFoundationClassifier):
         return np.pad(X, ((0, 0), (0, 0), (0, n_pad))) if n_pad else X
 
     _checkpoint = "braindecode/cbramod-pretrained"
+    _pretrained_sfreq = 200
 
     def _build_network(self, n_channels: int, n_timepoints: int):
         """Construct the Braindecode CBraMod model, without pretrained weights."""
