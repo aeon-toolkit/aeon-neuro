@@ -78,5 +78,6 @@ Channel creation
     :template: class.rst
 
     CommonSpatialPatterns
+    TRCommonSpatialPatterns
     UMAPChannelCreator
     XDAWN
