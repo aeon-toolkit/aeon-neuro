@@ -19,6 +19,9 @@ class ERPCovariances(BaseCollectionTransformer):
     and the covariance of the combined series is computed. Uses
     `pyriemann.estimation.ERPCovariances`.
 
+    ``RiemannianMDMClassifier`` and ``RiemannianKNNClassifier`` run this step
+    themselves with ``covariance_type="erp"``.
+
     Parameters
     ----------
     classes : list of int or None, optional
@@ -52,16 +55,7 @@ class ERPCovariances(BaseCollectionTransformer):
     def _fit(self, X, y=None):
         from pyriemann.estimation import ERPCovariances as PyRiemannERPCovariances
 
-        if self.classes is not None:
-            if len(self.classes) == 0:
-                raise ValueError("classes must contain at least one class.")
-            if len(set(self.classes)) != len(self.classes):
-                raise ValueError("classes must not contain duplicates.")
-            labels = set(np.unique(y))
-            missing = [c for c in self.classes if c not in labels]
-            if missing:
-                raise ValueError(f"classes {missing} are not present in y.")
-
+        _check_classes(self.classes, y)
         if self.svd is not None and (
             not isinstance(self.svd, int) or isinstance(self.svd, bool) or self.svd < 1
         ):
@@ -111,3 +105,17 @@ class ERPCovariances(BaseCollectionTransformer):
             Parameters to create testing instances of the class.
         """
         return [{}, {"estimator": "lwf", "svd": 1}]
+
+
+def _check_classes(classes, y):
+    """Check that classes is None or a non-empty list of distinct labels in y."""
+    if classes is None:
+        return
+    if len(classes) == 0:
+        raise ValueError("classes must contain at least one class.")
+    if len(set(classes)) != len(classes):
+        raise ValueError("classes must not contain duplicates.")
+    labels = set(np.unique(y))
+    missing = [c for c in classes if c not in labels]
+    if missing:
+        raise ValueError(f"classes {missing} are not present in y.")

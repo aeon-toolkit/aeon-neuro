@@ -9,7 +9,12 @@ from aeon.testing.estimator_checking import check_estimator
 from sklearn.base import clone
 from torch import nn
 
-from aeon_neuro.classification.deep_learning import BraindecodeClassifier
+from aeon_neuro.classification.deep_learning import (
+    BraindecodeClassifier,
+    DeepConvNetClassifier,
+    EEGConformerClassifier,
+    EEGNetClassifier,
+)
 from aeon_neuro.classification.deep_learning._braindecode import (
     _NEEDS_CHANNEL_NAMES,
     SUPPORTED_MODELS,
@@ -209,6 +214,35 @@ def test_predict_different_length_raises():
     )
     with pytest.raises(ValueError, match="different length"):
         clf.predict(X_long)
+
+
+@pytest.mark.parametrize(
+    "classifier",
+    [
+        BraindecodeClassifier,
+        DeepConvNetClassifier,
+        EEGConformerClassifier,
+        EEGNetClassifier,
+    ],
+)
+def test_shared_length_check_in_predict_proba(classifier):
+    """Check every braindecode classifier shares the base class length check.
+
+    aeon's own check is skipped when ``metadata_`` is empty, e.g. for a loaded
+    model, so ``_predict_proba`` is called directly to test the fallback.
+    """
+    X, y = make_example_3d_numpy(
+        n_cases=6, n_channels=2, n_timepoints=128, random_state=0
+    )
+    params = classifier._get_test_params()
+    params = params[0] if isinstance(params, list) else params
+    clf = classifier(**{**params, "n_epochs": 1, "random_state": 0}).fit(X, y)
+
+    X_long, _ = make_example_3d_numpy(
+        n_cases=6, n_channels=2, n_timepoints=200, random_state=0
+    )
+    with pytest.raises(ValueError, match="was fitted on series of length 128"):
+        clf._predict_proba(X_long)
 
 
 def test_reproducible():

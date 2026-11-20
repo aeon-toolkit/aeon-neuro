@@ -5,6 +5,11 @@ BIDS recordings identified by `mne_bids.BIDSPath`. It returns the written
 `BIDSPath`. Conversion retains all channels and performs no filtering,
 resampling, re-referencing, epoching or classification-label selection.
 
+Continuous MATLAB matrices use the explicit schema/adapter interface in
+[`load_matlab_recording`](matlab.md). Pass its complete result to the converter
+to retain behavioural event columns, calibration and source provenance. The
+initial adapters cover Tremmel's workload data and BCI Competition III IVa.
+
 ## Continuous XDF input
 
 Install the optional readers with `pip install 'aeon-neuro[eeg_io]'`. XDF and

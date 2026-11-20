@@ -128,6 +128,7 @@ class _BaseFoundationClassifier(_BaseBraindecodeClassifier):
 
     _checkpoint = None  # Hugging Face Hub repository of the pretrained weights
     _checkpoint_prefix = ""  # load only the checkpoint keys with this prefix
+    _pretrained_sfreq = None
 
     def __init__(
         self,
@@ -176,6 +177,18 @@ class _BaseFoundationClassifier(_BaseBraindecodeClassifier):
         """Fit, seeding torch without changing its global random state."""
         import torch
 
+        # Retain the model's requirement even when plain arrays supply no rate.
+        self._required_sfreq_ = self._pretrained_sfreq if self.pretrained else None
+        if (
+            self._required_sfreq_ is not None
+            and self.sfreq_ is not None
+            and self.sfreq_ != self._required_sfreq_
+        ):
+            raise ValueError(
+                f"Pretrained {type(self).__name__} requires "
+                f"{self._required_sfreq_} Hz; resample the supplied data"
+            )
+
         if self.finetune and self.estimator is not None:
             raise ValueError(
                 "estimator is only used with finetune=False; set estimator=None to "
@@ -194,6 +207,7 @@ class _BaseFoundationClassifier(_BaseBraindecodeClassifier):
         from torch import nn
         from torch.utils.data import TensorDataset
 
+        self.n_timepoints_ = X.shape[2]
         X = self._pad(X)
         y_int = torch.from_numpy(
             np.asarray([self._class_dictionary[label] for label in y], dtype=np.int64)

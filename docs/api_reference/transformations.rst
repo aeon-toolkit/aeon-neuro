@@ -65,6 +65,7 @@ Collection
     ERPCovariances
     LogVariance
     TimeCrop
+    XDAWNCovariances
 
 Channel creation
 ----------------

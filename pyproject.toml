@@ -61,7 +61,8 @@ openneuro = [
 eeg_io = [
     "antio>=0.5",
     "mffpy>=0.11",
-    "pymatreader",
+    "pymatreader>=1.3.2",
+    "pybv>=0.7.5",
     "pyxdf",
     "pybvrf[mne]>=0.1.3,<0.1.4",
 ]
@@ -79,6 +80,8 @@ dev = [
     "edfio",
     "eeglabio",
     "pybv>=0.7.5",
+    "pymatreader>=1.3.2",
+    "hdf5storage>=0.2",
 ]
 binder = [
     "aeon[binder]",

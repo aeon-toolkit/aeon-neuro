@@ -47,9 +47,10 @@ class LabramClassifier(_BaseFoundationClassifier):
     Parameters
     ----------
     ch_names : list of str or None, default=None
-        Electrode name of each channel, in order. Required when
-        ``pretrained=True``. If None and ``pretrained=False``, the first
-        ``n_channels`` names of LaBraM's electrode list are used.
+        Electrode name of each channel, in order. With ``pretrained=True``,
+        supply names here or through fitting information. With
+        ``pretrained=False`` and no supplied names, the first ``n_channels``
+        names of LaBraM's electrode list are used.
     pretrained : bool, default=True
         If True, load the encoder weights from ``"braindecode/labram-pretrained"``
         on the Hugging Face Hub. Requires network access the first time; set
@@ -118,6 +119,7 @@ class LabramClassifier(_BaseFoundationClassifier):
     """
 
     _checkpoint = "braindecode/labram-pretrained"
+    _pretrained_sfreq = 200
 
     def __init__(
         self,
@@ -186,10 +188,15 @@ class LabramClassifier(_BaseFoundationClassifier):
                 "padding)."
             )
 
-        if self.ch_names is not None:
-            self.ch_names_ = list(self.ch_names)
+        # Restoration must use the same channel order as the fitted network.
+        channel_names = getattr(self, "channel_names_", self.ch_names)
+        if channel_names is not None:
+            self.ch_names_ = list(channel_names)
         elif self.pretrained:
-            raise ValueError("ch_names is required when pretrained=True.")
+            raise ValueError(
+                "ch_names is required when pretrained=True unless provided in "
+                "fitting info."
+            )
         else:
             self.ch_names_ = LABRAM_CHANNEL_ORDER[:n_channels]
 
