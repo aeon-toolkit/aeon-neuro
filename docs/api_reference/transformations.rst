@@ -63,6 +63,7 @@ Collection
 
     DownsampleCollectionTransformer
     ERPCovariances
+    FBCommonSpatialPatterns
     LogVariance
     TimeCrop
 
