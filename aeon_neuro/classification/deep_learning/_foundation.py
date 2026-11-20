@@ -207,6 +207,7 @@ class _BaseFoundationClassifier(_BaseBraindecodeClassifier):
         from torch import nn
         from torch.utils.data import TensorDataset
 
+        self.n_timepoints_ = X.shape[2]
         X = self._pad(X)
         y_int = torch.from_numpy(
             np.asarray([self._class_dictionary[label] for label in y], dtype=np.int64)
