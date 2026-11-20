@@ -1,5 +1,80 @@
 # EEG Datasets
 
+## NEMAR BIDS recordings
+
+Install `pip install 'aeon-neuro[nemar]'` for acquisition through
+[nemar-py](https://github.com/nemarOrg/nemar-py). Select an exact NEMAR dataset
+and release, then either explicit subjects with an optional task, or exact
+primary recording filenames:
+
+```python
+from aeon_neuro.datasets import fetch_nemar_dataset
+
+root, report = fetch_nemar_dataset(
+    "nm000132", version="v1.1.1", subjects="021", task="P3",
+    cache_dir="./nemar-cache", return_report=True,
+)
+print(root, report["selected_recordings"])
+```
+
+Subject and task labels are case-sensitive strings; `"021"` differs from `"21"`.
+The optional `sub-` and `task-` prefixes are removed. Subject selections retain
+every matching supported raw EEG recording across sessions and runs. Each
+requested subject must have a matching recording. For a narrower selection:
+
+```python
+root = fetch_nemar_dataset(
+    "nm000132", version="v1.1.1",
+    recordings="sub-021/eeg/sub-021_task-P3_eeg.set",
+    cache_dir="./nemar-cache",
+)
+```
+
+The release is mandatory; `latest` is rejected. Releases with or without the
+leading `v` identify the same cache. Supported primary formats are BIDS EEGLAB
+`.set`, BrainVision `.vhdr` and EDF/BDF. Manifest-advertised same-stem EEGLAB
+`.fdt` files and header-declared relative BrainVision companions are retained.
+Applicable ancestor JSON/TSV metadata, participant tables, geometry and root
+documentation are kept without modification. Geometry may declare coordinate
+spaces absent from signal filenames. Participant tables retain unselected rows;
+this is a selected local copy. Other modalities, derivatives, stimuli and
+phenotype folders are outside this EEG selection.
+
+The returned folder can be passed to `mne_bids.read_raw_bids`. For EEGLAB
+`.set` recordings, include `.set` in the `formatts` argument when using
+`aeon_neuro.datasets.load_bids.load_bids_data`; its default formats are
+`(".vhdr", ".bdf", ".edf")`. Acquisition does not decode recordings,
+validate complete BIDS compliance, correct metadata,
+infer labels, construct epochs or choose preparation/evaluation. Catalogue
+search and download previews belong in applications. EEGLAB files with unusual
+external companion naming may need a separately acquired complete source copy.
+
+Every downloaded file requires a declared size and SHA-256, MD5 or Git blob
+SHA-1 checksum. nemar-py verifies transfers against the source manifest. The
+report retains the manifest URL, requested and realized selection, downloader
+version, source checksums and local size/SHA-256 for every file. MD5 and Git
+hashes reflect the source's published evidence, not stronger authentication.
+No independent authenticity claim follows from these checksums.
+
+Completed entries live under `$AEON_DATA/nemar` or `~/aeon_data/nemar`, unless
+`cache_dir` is supplied. Each release and canonical request has a separate
+entry; overlapping requests can duplicate files. Failed transfers remain
+unpublished and their temporary files are removed. Each reuse checks the whole
+inventory, sizes and SHA-256 hashes without contacting NEMAR or importing the
+optional client:
+
+```python
+root = fetch_nemar_dataset(
+    "nm000132", version="v1.1.1", subjects="021", task="P3",
+    cache_dir="./nemar-cache", download=False,
+)
+```
+
+A missing offline selection raises `FileNotFoundError`. Changed or incomplete
+entries raise `ValueError` and are not silently redownloaded or repaired. Use a
+fresh cache directory or remove that entry explicitly before retrying. Treat the
+returned folder as read-only and prepare/convert in another destination.
+
 ## OpenNeuro BIDS recordings
 
 Install the optional download client with `pip install 'aeon-neuro[openneuro]'`.

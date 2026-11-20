@@ -158,6 +158,11 @@ def load_eeg_to_mne(path, *, preload=False, **reader_kwargs):
         )
 
     if extension not in readers:
+        if extension == ".mat":
+            raise ValueError(
+                "MATLAB files need an explicit schema or adapter; use "
+                "aeon_neuro.utils.matlab.load_matlab_recording."
+            )
         raise ValueError(
             f"Unsupported EEG extension {extension!r}; supply the recording entry file "
             "(for example .vhdr, .set or .lay) with its companions."

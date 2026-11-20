@@ -7,8 +7,9 @@ __all__ = ["BraindecodeClassifier", "SUPPORTED_MODELS"]
 import inspect
 
 import numpy as np
-from aeon.classification import BaseClassifier
 from sklearn.utils import check_random_state
+
+from aeon_neuro.classification.base import BaseEEGClassifier
 
 # braindecode models tested with BraindecodeClassifier: each builds, fits and
 # predicts one label per case with the default settings, given ``sfreq`` and,
@@ -65,7 +66,7 @@ _NEEDS_CHANNEL_NAMES = ("DGCNN", "EEGSym")
 _RESERVED_PARAMS = ("n_chans", "n_outputs", "n_times", "sfreq", "chs_info")
 
 
-class _BaseBraindecodeClassifier(BaseClassifier):
+class _BaseBraindecodeClassifier(BaseEEGClassifier):
     """Shared training and prediction code for braindecode based classifiers.
 
     Subclasses implement ``_build_network``, which also checks any parameters
@@ -79,7 +80,7 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         Number of training epochs.
     lr : float, default=1e-3
         Learning rate.
-    optimizer : {"adam", "sgd"}, default="adam"
+    optimizer : {"adam", "adamw", "sgd"}, default="adam"
         Optimiser used for training.
     weight_decay : float, default=0.0
         L2 penalty passed to the optimiser.
@@ -126,13 +127,18 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         """Construct the torch network for data of the given shape."""
         raise NotImplementedError("Subclasses must implement _build_network.")
 
+    def _pad(self, X: np.ndarray) -> np.ndarray:
+        """Cast X to float32. Override to pad to the input size a network needs."""
+        return np.asarray(X, dtype=np.float32, order="C")
+
     def _fit(self, X: np.ndarray, y: np.ndarray):
         """Build the network and train it on X and y."""
         import torch
         from torch import nn
         from torch.utils.data import DataLoader, TensorDataset
 
-        X = np.asarray(X, dtype=np.float32, order="C")
+        self.n_timepoints_ = X.shape[2]
+        X = self._pad(X)
         y_int = np.asarray(
             [self._class_dictionary[label] for label in y], dtype=np.int64
         )
@@ -201,7 +207,16 @@ class _BaseBraindecodeClassifier(BaseClassifier):
         import torch
         from torch.utils.data import DataLoader, TensorDataset
 
-        X = np.asarray(X, dtype=np.float32, order="C")
+        # aeon checks this in predict, but skips the check when metadata_ is
+        # empty, e.g. for a loaded model
+        if X.shape[2] != self.n_timepoints_:
+            raise ValueError(
+                f"{type(self).__name__} was fitted on series of length "
+                f"{self.n_timepoints_}, got {X.shape[2]}. The network is built for "
+                "the series length seen in fit."
+            )
+
+        X = self._pad(X)
         dataset = TensorDataset(torch.from_numpy(X))
         loader = DataLoader(
             dataset,
@@ -279,9 +294,14 @@ class _BaseBraindecodeClassifier(BaseClassifier):
 
             if self.device_.type == "cuda" and not torch.cuda.is_available():
                 self.device_ = torch.device("cpu")
+            # the network was built for the padded shape
+            _, n_channels, n_timepoints = self._pad(
+                np.zeros(
+                    (1, self.metadata_["n_channels"], self.metadata_["n_timepoints"])
+                )
+            ).shape
             self.network_ = self._build_network(
-                n_channels=self.metadata_["n_channels"],
-                n_timepoints=self.metadata_["n_timepoints"],
+                n_channels=n_channels, n_timepoints=n_timepoints
             )
             self.network_.load_state_dict(network_state)
             self.network_.to(self.device_).eval()
@@ -295,6 +315,10 @@ class _BaseBraindecodeClassifier(BaseClassifier):
             return torch.optim.Adam(
                 parameters, lr=self.lr, weight_decay=self.weight_decay
             )
+        if optimizer == "adamw":
+            return torch.optim.AdamW(
+                parameters, lr=self.lr, weight_decay=self.weight_decay
+            )
         if optimizer == "sgd":
             return torch.optim.SGD(
                 parameters, lr=self.lr, weight_decay=self.weight_decay
@@ -302,7 +326,7 @@ class _BaseBraindecodeClassifier(BaseClassifier):
 
         raise ValueError(
             f"Unknown optimizer='{self.optimizer}'. "
-            "Supported values are {'adam', 'sgd'}."
+            "Supported values are {'adam', 'adamw', 'sgd'}."
         )
 
     def _resolve_device(self):
@@ -398,8 +422,8 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
     ``n_chans``            number of channels, ``n_channels`` (``X.shape[1]``)
     ``n_times``            series length, ``n_timepoints`` (``X.shape[2]``)
     ``n_outputs``          number of classes in ``y`` (``n_classes_``)
-    ``sfreq``              the ``sfreq`` argument
-    ``chs_info``           the ``channel_names`` argument, with montage positions
+    ``sfreq``              aligned information or the ``sfreq`` argument
+    ``chs_info``           aligned channel names, with explicit template positions
     =====================  ========================================================
 
     Other braindecode model names, or a braindecode model class, are accepted
@@ -430,13 +454,12 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
     batch_size : int, default=64
         Mini-batch size used for training and inference.
     n_epochs : int, default=200
-        Number of training epochs. There is no early stopping or learning rate
-        schedule, so every epoch is run. 200 is a compromise between the
+        Number of training epochs. Every epoch is run. 200 is a compromise between the
         several hundred epochs typical in EEG deep learning papers and the
         training time on small EEG datasets; tune it for each problem.
     lr : float, default=1e-3
         Learning rate.
-    optimizer : {"adam", "sgd"}, default="adam"
+    optimizer : {"adam", "adamw", "sgd"}, default="adam"
         Optimiser used for training.
     weight_decay : float, default=0.0
         L2 penalty passed to the optimiser.
@@ -456,9 +479,14 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
 
     Notes
     -----
-    ``sfreq`` and ``channel_names`` describe the recordings rather than the
-    model. They are plain parameters for now. Once the sidecar information
-    class from issue #283 is available, they will be taken from it instead.
+    Optional ``info`` in fit/predict supplies current rate and ordered channel
+    names without changing constructor parameters. Explicit conflicting
+    parameters raise. Information-derived names alone do not assert measured
+    positions. For spatial models requiring coordinates, or when channel_names
+    is explicitly set, positions use the standard_1005 template, never measured
+    source electrodes. ``channel_geometry_`` records names_only or standard_1005
+    when the model accepts chs_info. Unknown template names raise.
+
 
     Examples
     --------
@@ -536,8 +564,16 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
         import mne
 
         info = mne.create_info(
-            list(self.channel_names), sfreq=self.sfreq or 1.0, ch_types="eeg"
+            list(self.channel_names_), sfreq=self.sfreq_ or 1.0, ch_types="eeg"
         )
+        model_name = self.model if isinstance(self.model, str) else self.model.__name__
+        # Names carried by data do not establish measured positions. Preserve
+        # the existing template policy only when explicitly requested through
+        # channel_names or required by a spatial model.
+        if self.channel_names is None and model_name not in _NEEDS_CHANNEL_NAMES:
+            self.channel_geometry_ = "names_only"
+            return info["chs"]
+        self.channel_geometry_ = "standard_1005"
         try:
             info.set_montage(mne.channels.make_standard_montage("standard_1005"))
         except ValueError as exc:
@@ -563,18 +599,19 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
                     "sfreq and chs_info from the sfreq and channel_names "
                     "arguments."
                 )
-        if self.channel_names is None and self.model in _NEEDS_CHANNEL_NAMES:
+        model_class = self._resolve_model()
+        model_name = model_class.__name__
+        if self.channel_names_ is None and model_name in _NEEDS_CHANNEL_NAMES:
             raise ValueError(
                 f"{self.model} needs electrode positions; pass channel_names with "
                 "the standard 10-05 name of each channel in X."
             )
-        if self.channel_names is not None and len(self.channel_names) != n_channels:
+        if self.channel_names_ is not None and len(self.channel_names_) != n_channels:
             raise ValueError(
-                f"channel_names has {len(self.channel_names)} names but X has "
+                f"channel_names has {len(self.channel_names_)} names but X has "
                 f"{n_channels} channels."
             )
 
-        model_class = self._resolve_model()
         accepted = inspect.signature(model_class.__init__).parameters
 
         kwargs = {
@@ -582,9 +619,10 @@ class BraindecodeClassifier(_BaseBraindecodeClassifier):
             "n_outputs": self.n_classes_,
             "n_times": n_timepoints,
         }
-        if self.sfreq is not None and "sfreq" in accepted:
-            kwargs["sfreq"] = self.sfreq
-        if self.channel_names is not None and "chs_info" in accepted:
+        if self.sfreq_ is not None and "sfreq" in accepted:
+            kwargs["sfreq"] = self.sfreq_
+        self.channel_geometry_ = None
+        if self.channel_names_ is not None and "chs_info" in accepted:
             kwargs["chs_info"] = self._channel_info()
         kwargs.update(self.model_params or {})
 

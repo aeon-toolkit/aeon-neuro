@@ -147,6 +147,7 @@ class EEGNetClassifier(_BaseBraindecodeClassifier):
             n_chans=n_channels,
             n_outputs=self.n_classes_,
             n_times=n_timepoints,
+            sfreq=self.sfreq_,
             final_conv_length=self.final_conv_length,
             pool_mode=self.pool_mode,
             F1=self.F1,

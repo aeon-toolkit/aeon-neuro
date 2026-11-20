@@ -97,6 +97,19 @@ This also makes `aeon-neuro` useful beyond software alone. It is a research scaf
 building stronger baselines, reproducing studies, and understanding where different classes
 of method work well or fail.
 
+## EEG side information
+
+Describe EEG arrays with optional source metadata, retain aligned row identities
+through selection, save detached metadata, and pass optional information to EEG
+classifiers at fitting and prediction. See the
+experimental [EEG information guide](docs/eeg-information.md). Supplied prediction
+information must match retained fitting facts, including known constructor rate
+and channel settings when fitting received plain arrays. Later constructor edits
+configure the next fit; valid prediction information continues to describe the
+existing fitted model. Fit still rejects conflicting constructor settings.
+Pretrained CBraMod and LaBraM also enforce their 200 Hz requirement on supplied
+prediction information, even when the training sampling rate was unknown.
+
 ## Installation
 
 `aeon-neuro` requires Python 3.9 or later. Full installation instructions are available in the
@@ -116,6 +129,11 @@ pip install aeon-neuro[all_extras]
 
 To install the latest development version from GitHub, see the
 installation guide.
+
+For exact, versioned NEMAR EEG acquisition, install `aeon-neuro[nemar]` and use
+`fetch_nemar_dataset` with explicit subjects or recording paths. The
+[dataset guide](docs/datasets.md#nemar-bids-recordings) describes verified caches,
+offline reuse and the acquisition report.
 
 ## Documentation
 

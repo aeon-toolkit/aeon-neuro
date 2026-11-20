@@ -184,3 +184,22 @@ def test_erp_covariances_stay_on_cpu(fake_cuda):
     X, y = _make_data()
     clf = RiemannianMDMClassifier(covariance_type="erp").fit(X, y)
     assert clf.predict(X).shape == (len(y),)
+@pytest.mark.parametrize("clf", CLASSIFIERS)
+def test_precomputed_covariances(clf):
+    """covariance_type="precomputed" uses X as the covariance matrices."""
+    X, y = _make_data()
+
+    precomputed = clone(clf).set_params(covariance_type="precomputed")
+    precomputed.fit(covariances(X), y)
+    np.testing.assert_allclose(
+        precomputed.predict_proba(covariances(X)),
+        clone(clf).fit(X, y).predict_proba(X),
+    )
+
+
+def test_precomputed_covariances_not_square_raises():
+    """With covariance_type="precomputed", non-square input raises a ValueError."""
+    X, y = _make_data()
+    clf = RiemannianMDMClassifier(covariance_type="precomputed")
+    with pytest.raises(ValueError, match="must be covariance matrices"):
+        clf.fit(X, y)
