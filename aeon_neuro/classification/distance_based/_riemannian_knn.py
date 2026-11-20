@@ -8,6 +8,11 @@ __all__ = ["RiemannianMDMClassifier", "RiemannianKNNClassifier"]
 
 import numpy as np
 
+from aeon_neuro.utils._riemannian import (
+    build_covariance_transformer,
+    compute_covariance_matrices,
+)
+
 from aeon_neuro.classification.base import BaseEEGClassifier
 
 
@@ -149,13 +154,14 @@ class _BaseRiemannianCovarianceClassifier(BaseEEGClassifier):
             X = torch.as_tensor(X, dtype=torch.float64, device="cuda")
 
         if fit:
-            X_cov = self.covariance_transformer_.fit_transform(X, y)
-        else:
-            X_cov = self.covariance_transformer_.transform(X)
-
-        if torch.is_tensor(X_cov):
-            X_cov = X_cov.cpu().numpy()
-        return X_cov
+            self.covariance_transformer_ = build_covariance_transformer(
+                self.covariance_type,
+                self.covariance_estimator,
+                self.covariance_params,
+            )
+        return compute_covariance_matrices(
+            X, self.covariance_transformer_, fit=fit, y=y
+        )
 
     def _build_classifier(self):
         """Construct the underlying pyRiemann classifier."""
