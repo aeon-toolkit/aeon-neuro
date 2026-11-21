@@ -11,6 +11,7 @@ from mne.io import BaseRaw
 from mne_bids import BIDSPath, write_raw_bids
 
 from aeon_neuro.utils.data_io import load_eeg_to_mne
+from aeon_neuro.utils.matlab import MatlabRecording
 
 
 def _prepare_events(raw, events, event_id):
@@ -80,7 +81,7 @@ def convert_eeg_to_bids(
 
     Parameters
     ----------
-    source : str, os.PathLike, mne_bids.BIDSPath or mne.io.BaseRaw
+    source : str, os.PathLike, mne_bids.BIDSPath, mne.io.BaseRaw or MatlabRecording
         BrainVision .vhdr, EDF/EDF+ .edf, BioSemi BDF/BDF+ .bdf or continuous
         EEGLAB .set path with required companions, or an existing MNE Raw.
         For reader-specific settings, first use ``load_eeg_to_mne`` and pass Raw.
@@ -89,6 +90,11 @@ def convert_eeg_to_bids(
         requires unchanged identifiers, native encoding, deferred reading and
         overwrite=False, with a separate destination dataset. Explicit events
         and event_id overrides are rejected because source tables are retained.
+        A MatlabRecording from ``load_matlab_recording`` retains its complete
+        event table, acquisition metadata and conversion provenance. It requires
+        format="BrainVision", allow_preload=True and overwrite=False. Signals
+        and filter settings must remain unchanged after loading. Supplied
+        events/event_id overrides are rejected; edit the source mapping instead.
     bids_path : mne_bids.BIDSPath
         Destination with root, subject and task set. Supply session, run and
         datatype where needed; identifiers are not inferred from the source path.
@@ -159,6 +165,16 @@ def convert_eeg_to_bids(
     MNE and MNE-BIDS file, metadata and export errors propagate unchanged.
     Successful writing alone does not establish full BIDS validation.
     """
+    if isinstance(source, MatlabRecording):
+        if events is not None or event_id is not None:
+            raise ValueError(
+                "events and event_id cannot override MATLAB source tables."
+            )
+        from aeon_neuro.utils._matlab_bids import _convert_matlab_recording
+
+        return _convert_matlab_recording(
+            source, bids_path, format, allow_preload, overwrite
+        )
     # BIDSPath implements PathLike, so it must be dispatched before bare filenames.
     if isinstance(source, BIDSPath):
         # Original event tables are retained verbatim; overrides must not be ignored.

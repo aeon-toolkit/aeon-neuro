@@ -18,6 +18,7 @@ Transformers applied to a single series of shape ``(n_channels, n_timepoints)``.
     BandPassSeriesTransformer
     BandPowerSeriesTransformer
     EpochSeriesTransformer
+    NuttallStrandSeriesTransformer
 
 Collection transformers
 -----------------------
@@ -64,6 +65,7 @@ Collection
     ERPCovariances
     LogVariance
     TimeCrop
+    XDAWNCovariances
 
 Channel creation
 ----------------
@@ -76,5 +78,6 @@ Channel creation
     :template: class.rst
 
     CommonSpatialPatterns
+    TRCommonSpatialPatterns
     UMAPChannelCreator
     XDAWN

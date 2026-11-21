@@ -16,7 +16,8 @@ class BaseEEGClassifier(BaseClassifier):
     ``sfreq_``, ``channel_names_`` and ``subject_ids_``. Predict methods can read
     ``_prediction_info`` for the current call. Omitting info preserves aeon's
     ordinary collection validation and constructor settings. Supplying info
-    never silently overwrites an explicit rate or channel-name parameter.
+    never silently overwrites an explicit rate or channel-name parameter at fit.
+    Prediction checks retained fitting facts, even after constructor edits.
     """
 
     def __init__(self):
@@ -40,7 +41,7 @@ class BaseEEGClassifier(BaseClassifier):
         BaseEEGClassifier
             Fitted estimator with detached training information.
         """
-        checked = self._validate_info(X, info)
+        checked = self._validate_info(X, info, fitting=True)
         self._pending_info = checked
         try:
             return super().fit(X, y)
@@ -65,7 +66,7 @@ class BaseEEGClassifier(BaseClassifier):
         )
         return X, y
 
-    def _validate_info(self, X, info):
+    def _validate_info(self, X, info, *, fitting):
         if info is None:
             return None
         if not isinstance(info, EEGDatasetInfo):
@@ -74,18 +75,21 @@ class BaseEEGClassifier(BaseClassifier):
         # Accessors also reject heterogeneous case layouts at the estimator
         # boundary instead of choosing an arbitrary recording's header.
         rate, names = info.sfreq, info.channel_names
-        _ = info.units  # reject physically inconsistent case layouts before fitting
-        params = self.get_params(deep=False)
-        for key in ("sfreq", "sampling_frequency"):
-            if params.get(key) is not None and params[key] != rate:
-                raise ValueError(f"info sampling frequency disagrees with {key}")
-        for key in ("channel_names", "ch_names"):
-            if params.get(key) is not None and tuple(params[key]) != names:
-                raise ValueError(f"info channel order disagrees with {key}")
+        _ = info.units  # reject physically inconsistent case layouts at either boundary
+        if fitting:
+            # Constructor edits configure the next fit. Prediction instead uses
+            # the retained facts checked by _prediction_context below.
+            params = self.get_params(deep=False)
+            for key in ("sfreq", "sampling_frequency"):
+                if params.get(key) is not None and params[key] != rate:
+                    raise ValueError(f"info sampling frequency disagrees with {key}")
+            for key in ("channel_names", "ch_names"):
+                if params.get(key) is not None and tuple(params[key]) != names:
+                    raise ValueError(f"info channel order disagrees with {key}")
         return EEGDatasetInfo(info.to_dict())
 
     def _prediction_context(self, X, info):
-        checked = self._validate_info(X, info)
+        checked = self._validate_info(X, info, fitting=False)
         if checked is not None:
             # Model requirements remain known even when array-only training
             # supplied no sampling-rate facts. Retain the fitted requirement.
@@ -148,7 +152,7 @@ class BaseEEGClassifier(BaseClassifier):
         Returns
         -------
         np.ndarray
-            Probabilities in fitted classes_ order, one row per prediction case.
+            Probabilities in fitted ``classes_`` order, one row per prediction case.
         """
         self._check_is_fitted()
         self._prediction_context(X, info)

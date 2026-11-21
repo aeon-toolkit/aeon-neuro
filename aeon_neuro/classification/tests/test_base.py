@@ -183,3 +183,50 @@ def test_prediction_info_after_array_fitting_retains_known_and_unknown_facts(
     assert len(result) == len(X)
     assert clf.info_ is None
     assert not hasattr(clf, "_prediction_info")
+
+
+@pytest.mark.parametrize("method", ["predict", "predict_proba"])
+@pytest.mark.parametrize("change", ["rate", "channels"])
+@pytest.mark.parametrize("fit_mode", ["arrays", "explicit_info", "inferred_info"])
+def test_valid_prediction_info_survives_constructor_changes(method, change, fit_mode):
+    """Constructor edits describe a future fit, not the existing fitted model."""
+    X, y, info = data()
+    options = (
+        {}
+        if fit_mode == "inferred_info"
+        else dict(sfreq=32, channel_names=["C3", "C4"])
+    )
+    clf = _InfoClassifier(**options).fit(
+        X, y, info=None if fit_mode == "arrays" else info
+    )
+    expected = getattr(clf, method)(X, info=info)
+    saved_info = clf.info_.to_dict() if clf.info_ is not None else None
+    options = dict(sfreq=64) if change == "rate" else dict(channel_names=["C4", "C3"])
+    clf.set_params(**options)
+
+    np.testing.assert_array_equal(getattr(clf, method)(X, info=info), expected)
+    np.testing.assert_array_equal(getattr(clf, method)(X), expected)
+    assert clf.sfreq_ == 32
+    assert tuple(clf.channel_names_) == ("C3", "C4")
+    assert (clf.info_.to_dict() if clf.info_ is not None else None) == saved_info
+    assert not hasattr(clf, "_prediction_info")
+
+
+@pytest.mark.parametrize("method", ["predict", "predict_proba"])
+def test_refit_applies_changed_constructor_layout(method):
+    """Fit validates the new settings and replaces the retained fitting facts."""
+    X, y, info = data()
+    clf = _InfoClassifier(sfreq=32, channel_names=["C3", "C4"]).fit(X, y, info=info)
+    clf.set_params(sfreq=64, channel_names=["C4", "C3"])
+    with pytest.raises(ValueError, match="disagrees"):
+        clf.fit(X, y, info=info)
+
+    changed = EEGDatasetInfo.from_arrays(
+        X, sfreq=64, channel_names=["C4", "C3"], units=["V", "V"]
+    )
+    clf.fit(X, y, info=changed)
+    assert clf.sfreq_ == 64 and tuple(clf.channel_names_) == ("C4", "C3")
+    assert len(getattr(clf, method)(X, info=changed)) == len(X)
+    with pytest.raises(ValueError):
+        getattr(clf, method)(X, info=info)
+    assert not hasattr(clf, "_prediction_info")

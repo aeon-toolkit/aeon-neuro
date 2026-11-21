@@ -15,7 +15,7 @@ def test_cbramod_classifier_multivariate_equal_length():
         random_state=0,
     )
 
-    clf = CBraModClassifier(**CBraModClassifier.get_test_params())
+    clf = CBraModClassifier(**CBraModClassifier._get_test_params()[0])
     clf.fit(X, y)
 
     probs = clf.predict_proba(X)

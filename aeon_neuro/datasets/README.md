@@ -1,5 +1,16 @@
 # Dataset utilities
 
+## NEMAR acquisition
+
+`fetch_nemar_dataset` downloads an exact release and explicit EEG selection,
+including compatible BIDS metadata and declared signal companions. Completed
+selections are verified locally on reuse. Entity labels must match complete
+alphanumeric tokens; malformed labels are excluded from subject/task selection.
+BrainVision companion references come from the header's Common Infos section.
+See [the dataset guide](../../docs/datasets.md#nemar-bids-recordings) for installation,
+offline caches and reading EEGLAB files. Development installs include nemar-py
+so the offline provider integration tests run alongside the ordinary suite.
+
 ## Aligned EEG information
 
 `EEGDatasetInfo.from_arrays` records explicit rate, ordered channels, optional
@@ -23,6 +34,12 @@ scope lists only known string/integer IDs, preserving their types through select
 Source-only selection preserves omitted optional diagnostics and filters supplied
 diagnostics to the selected recordings and dataset scope. Restored sample grids
 must lie inside their half-open source support `[start, stop)`, excluding `stop`.
+Declared case participants may differ from original recording subjects, such as
+event-level actors. Unknown identities and independent groups remain supported.
+NumPy integer identities and layout numbers normalize to Python values for
+portable state. Grid checks reject overflow, and malformed diagnostics fail during construction. Empty collections
+still validate dense channel/sample axes, numeric types and supplied units.
+
 
 ## Local BIDS sources
 
