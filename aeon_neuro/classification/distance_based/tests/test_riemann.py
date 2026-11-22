@@ -184,6 +184,8 @@ def test_erp_covariances_stay_on_cpu(fake_cuda):
     X, y = _make_data()
     clf = RiemannianMDMClassifier(covariance_type="erp").fit(X, y)
     assert clf.predict(X).shape == (len(y),)
+
+
 @pytest.mark.parametrize("clf", CLASSIFIERS)
 def test_precomputed_covariances(clf):
     """covariance_type="precomputed" uses X as the covariance matrices."""

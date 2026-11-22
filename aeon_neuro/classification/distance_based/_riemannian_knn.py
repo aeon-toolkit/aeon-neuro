@@ -8,12 +8,11 @@ __all__ = ["RiemannianMDMClassifier", "RiemannianKNNClassifier"]
 
 import numpy as np
 
+from aeon_neuro.classification.base import BaseEEGClassifier
 from aeon_neuro.utils._riemannian import (
     build_covariance_transformer,
     compute_covariance_matrices,
 )
-
-from aeon_neuro.classification.base import BaseEEGClassifier
 
 
 class _BaseRiemannianCovarianceClassifier(BaseEEGClassifier):
