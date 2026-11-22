@@ -1,4 +1,26 @@
-"""Tests for the BoVWTransformer."""
+"""Tests for the BoVWTransformer.
+
+Comparison with Wang et al. (2013)
+----------------------------------
+The comparison below was run by Claude (Anthropic) as an AI coding assistant.
+It is not part of the automated test suite, because it downloads data and
+takes about 20 minutes.
+
+Data: Bonn epilepsy EEG dataset (Andrzejak et al., 2001), sets A-E, 5 classes,
+500 single-channel series truncated to 4096 samples.
+
+Setup: BoVWTransformer(n_words=1000, window_size=128, stride=8,
+descriptor="dwt", wavelet="db3"), then 1-NN with Chi-squared distance,
+stratified 10-fold cross-validation.
+
+Fold accuracies: 76.0, 94.0, 94.0, 92.0, 92.0, 94.0, 84.0, 90.0, 88.0, 84.0
+Mean: 88.8% +/- 5.6%. Paper (Table II, 5-class EEG): 93.8%.
+
+The paper reports its best result over a parameter sweep (codebook size up to
+3500), while this run used a single untuned setting with the coarsest step the
+paper mentions (8). The folds also differ, since the paper's partition is not
+published.
+"""
 
 import sys
 
