@@ -103,28 +103,6 @@ class _BaseRiemannianCovarianceClassifier(BaseEEGClassifier):
             aligned[:, self._class_dictionary[label]] = probs[:, i]
         return aligned
 
-    def _build_covariance_transformer(self):
-        """Construct the covariance transformer for ``covariance_type``."""
-        kwargs = {} if self.covariance_params is None else dict(self.covariance_params)
-
-        if self.covariance_type == "cov":
-            from pyriemann.estimation import Covariances
-
-            return Covariances(estimator=self.covariance_estimator, **kwargs)
-        if self.covariance_type == "erp":
-            from aeon_neuro.transformations.collection import ERPCovariances
-
-            return ERPCovariances(estimator=self.covariance_estimator, **kwargs)
-        if self.covariance_type == "xdawn":
-            from aeon_neuro.transformations.collection import XDAWNCovariances
-
-            return XDAWNCovariances(estimator=self.covariance_estimator, **kwargs)
-        raise ValueError(
-            "covariance_type must be one of "
-            "{'cov', 'erp', 'xdawn', 'precomputed'}, "
-            f"got {self.covariance_type!r}."
-        )
-
     def _compute_covariances(self, X, fit=False, y=None):
         """Estimate covariance matrices, on GPU if available.
 
@@ -141,16 +119,6 @@ class _BaseRiemannianCovarianceClassifier(BaseEEGClassifier):
                     f"{X.shape}."
                 )
             return X
-
-        import torch
-
-        if fit:
-            self.covariance_transformer_ = self._build_covariance_transformer()
-
-        # The ERP transformer is a numpy/aeon estimator, so only the plain
-        # covariance path is moved onto the GPU.
-        if self.covariance_type == "cov" and torch.cuda.is_available():
-            X = torch.as_tensor(X, dtype=torch.float64, device="cuda")
 
         if fit:
             self.covariance_transformer_ = build_covariance_transformer(

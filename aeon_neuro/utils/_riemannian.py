@@ -14,10 +14,12 @@ def build_covariance_transformer(
 
     Parameters
     ----------
-    covariance_type : {"cov", "erp"}, default="cov"
+    covariance_type : {"cov", "erp", "xdawn"}, default="cov"
         Which covariance step to use. ``"cov"`` estimates a plain covariance
         matrix with ``pyriemann.estimation.Covariances``. ``"erp"`` uses the
         supervised ``aeon_neuro.transformations.collection.ERPCovariances``.
+        ``"xdawn"`` uses the supervised
+        ``aeon_neuro.transformations.collection.XDAWNCovariances``.
     covariance_estimator : str, default="scm"
         Covariance estimator passed to the covariance transformer.
     covariance_params : dict or None, default=None
@@ -38,8 +40,13 @@ def build_covariance_transformer(
         from aeon_neuro.transformations.collection import ERPCovariances
 
         return ERPCovariances(estimator=covariance_estimator, **kwargs)
+    if covariance_type == "xdawn":
+        from aeon_neuro.transformations.collection import XDAWNCovariances
+
+        return XDAWNCovariances(estimator=covariance_estimator, **kwargs)
     raise ValueError(
-        "covariance_type must be one of {'cov', 'erp'}, " f"got {covariance_type!r}."
+        "covariance_type must be one of {'cov', 'erp', 'xdawn'}, "
+        f"got {covariance_type!r}."
     )
 
 
