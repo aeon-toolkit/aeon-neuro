@@ -192,6 +192,11 @@ class LabramClassifier(_BaseFoundationClassifier):
         channel_names = getattr(self, "channel_names_", self.ch_names)
         if channel_names is not None:
             self.ch_names_ = list(channel_names)
+            # one embedding per electrode, so a repeated name would merge channels
+            upper = [n.upper() for n in self.ch_names_]
+            dupes = sorted({n for n in upper if upper.count(n) > 1})
+            if dupes:
+                raise ValueError(f"Duplicate channel names in ch_names: {dupes}.")
         elif self.pretrained:
             raise ValueError(
                 "ch_names is required when pretrained=True unless provided in "
