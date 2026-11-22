@@ -2,6 +2,7 @@
 
 __all__ = [
     "CommonSpatialPatterns",
+    "RiemannianSpatialFilter",
     "TRCommonSpatialPatterns",
     "UMAPChannelCreator",
     "XDAWN",
@@ -9,6 +10,9 @@ __all__ = [
 
 from aeon_neuro.transformations.collection.channel_creation._csp import (
     CommonSpatialPatterns,
+)
+from aeon_neuro.transformations.collection.channel_creation._rsf import (
+    RiemannianSpatialFilter,
 )
 from aeon_neuro.transformations.collection.channel_creation._trcsp import (
     TRCommonSpatialPatterns,

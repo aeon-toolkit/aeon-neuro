@@ -9,6 +9,10 @@ __all__ = ["RiemannianMDMClassifier", "RiemannianKNNClassifier"]
 import numpy as np
 
 from aeon_neuro.classification.base import BaseEEGClassifier
+from aeon_neuro.utils._riemannian import (
+    build_covariance_transformer,
+    compute_covariance_matrices,
+)
 
 
 class _BaseRiemannianCovarianceClassifier(BaseEEGClassifier):
@@ -99,28 +103,6 @@ class _BaseRiemannianCovarianceClassifier(BaseEEGClassifier):
             aligned[:, self._class_dictionary[label]] = probs[:, i]
         return aligned
 
-    def _build_covariance_transformer(self):
-        """Construct the covariance transformer for ``covariance_type``."""
-        kwargs = {} if self.covariance_params is None else dict(self.covariance_params)
-
-        if self.covariance_type == "cov":
-            from pyriemann.estimation import Covariances
-
-            return Covariances(estimator=self.covariance_estimator, **kwargs)
-        if self.covariance_type == "erp":
-            from aeon_neuro.transformations.collection import ERPCovariances
-
-            return ERPCovariances(estimator=self.covariance_estimator, **kwargs)
-        if self.covariance_type == "xdawn":
-            from aeon_neuro.transformations.collection import XDAWNCovariances
-
-            return XDAWNCovariances(estimator=self.covariance_estimator, **kwargs)
-        raise ValueError(
-            "covariance_type must be one of "
-            "{'cov', 'erp', 'xdawn', 'precomputed'}, "
-            f"got {self.covariance_type!r}."
-        )
-
     def _compute_covariances(self, X, fit=False, y=None):
         """Estimate covariance matrices, on GPU if available.
 
@@ -138,24 +120,15 @@ class _BaseRiemannianCovarianceClassifier(BaseEEGClassifier):
                 )
             return X
 
-        import torch
-
         if fit:
-            self.covariance_transformer_ = self._build_covariance_transformer()
-
-        # The ERP transformer is a numpy/aeon estimator, so only the plain
-        # covariance path is moved onto the GPU.
-        if self.covariance_type == "cov" and torch.cuda.is_available():
-            X = torch.as_tensor(X, dtype=torch.float64, device="cuda")
-
-        if fit:
-            X_cov = self.covariance_transformer_.fit_transform(X, y)
-        else:
-            X_cov = self.covariance_transformer_.transform(X)
-
-        if torch.is_tensor(X_cov):
-            X_cov = X_cov.cpu().numpy()
-        return X_cov
+            self.covariance_transformer_ = build_covariance_transformer(
+                self.covariance_type,
+                self.covariance_estimator,
+                self.covariance_params,
+            )
+        return compute_covariance_matrices(
+            X, self.covariance_transformer_, fit=fit, y=y
+        )
 
     def _build_classifier(self):
         """Construct the underlying pyRiemann classifier."""
