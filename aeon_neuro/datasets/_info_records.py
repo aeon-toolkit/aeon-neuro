@@ -66,9 +66,11 @@ class _RecordingDescriptor(_Record):
     channel_metadata: list[dict] | None = None
     channel_units_fiff: list[int] = field(default_factory=list)
     eeg_metadata: dict = field(default_factory=dict)
+    events_metadata: dict = field(default_factory=dict)
     electrodes: dict | None = None
     coordsystem: dict | None = None
     scan: dict | None = None
+    sidecar_paths: dict = field(default_factory=dict)
 
 
 @dataclass

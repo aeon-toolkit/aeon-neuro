@@ -13,7 +13,7 @@ from aeon_neuro.datasets._classification import (
     _required,
 )
 from aeon_neuro.datasets._info_records import _DatasetFacts, _RecordingDescriptor
-from aeon_neuro.datasets._info_view import _event_sample
+from aeon_neuro.datasets._info_view import _event_onset, _event_sample
 
 
 class RecordingInfo:
@@ -47,12 +47,18 @@ class RecordingInfo:
     events : list of dict
         Original event rows in source order, including normalized sample
         coordinates. Empty when no events were supplied.
+    events_json : dict
+        Effective source event column definitions, empty when unavailable.
     electrodes : dict or None
         Original electrode table with columns and rows, or None if unavailable.
     coordsystem : dict or None
         Original coordinate-system fields and units, or None if unavailable.
     scan : dict or None
         Matched original scans row and its zero-based index, or None if absent.
+    channels_frame : pandas.DataFrame or None
+        Detached original channel table, or None when channel rows are unavailable.
+    events_frame : pandas.DataFrame
+        Detached original event table, empty when no events were supplied.
 
     Notes
     -----
@@ -108,7 +114,12 @@ class RecordingInfo:
         Their units describe the source file, not necessarily decoded or
         current arrays.
         """
-        if self._source.channel_metadata is None:
+        # Only an explicit absent channel path records sidecar absence;
+        # unrelated sidecar keys do not hide supplied channel rows.
+        if (
+            "channels" in self._source.sidecar_paths
+            and self._source.sidecar_paths["channels"] is None
+        ) or self._source.channel_metadata is None:
             return None
         return deepcopy(self._source.channel_metadata)
 
@@ -121,6 +132,11 @@ class RecordingInfo:
     def events(self):
         """List of dict: Original event rows and normalized sample coordinates."""
         return deepcopy(self._events)
+
+    @property
+    def events_json(self):
+        """Detached source definitions of event columns and values."""
+        return deepcopy(self._source.events_metadata)
 
     @property
     def electrodes(self):
@@ -136,6 +152,59 @@ class RecordingInfo:
     def scan(self):
         """Dict or None: Matched scans row and its original zero-based row index."""
         return deepcopy(self._source.scan)
+
+    def bad_channels(self):
+        """Return source-declared bad channels; raise if status is unavailable.
+
+        Returns
+        -------
+        tuple of str
+            Channel names with published status ``bad``, in source order.
+        """
+        rows = self.channels
+        if rows is None or any(
+            row.get("status") not in ("good", "bad") for row in rows
+        ):
+            raise ValueError("Channel status is unavailable or unrecognized")
+        return tuple(row["name"] for row in rows if row["status"] == "bad")
+
+    def channels_of_type(self, channel_type):
+        """Return channels with the requested source-declared type.
+
+        Parameters
+        ----------
+        channel_type : str
+            BIDS channel type such as ``EEG``; matching ignores case.
+
+        Returns
+        -------
+        tuple of str
+            Matching names in source order. Missing types raise an error.
+        """
+        if not isinstance(channel_type, str) or not channel_type.strip():
+            raise ValueError("Supply a nonempty channel type")
+        rows = self.channels
+        if rows is None or any(
+            not row.get("type") or row["type"] == "n/a" for row in rows
+        ):
+            raise ValueError("Channel type metadata is unavailable")
+        return tuple(
+            row["name"] for row in rows if row["type"].upper() == channel_type.upper()
+        )
+
+    @property
+    def events_frame(self):
+        """Detached pandas view of source events and exact sample coordinates."""
+        import pandas as pd
+
+        return pd.DataFrame(self.events)
+
+    @property
+    def channels_frame(self):
+        """Detached pandas view of source channels, or None when absent."""
+        import pandas as pd
+
+        return None if self.channels is None else pd.DataFrame(self.channels)
 
 
 class EEGDatasetInfo:
@@ -155,7 +224,7 @@ class EEGDatasetInfo:
         may be supplied without opening any files.
     events : list of dict or None, default=None
         Source events with recording_id, bids_event_id, onset and exact
-        bids_onset_sample, or None for a known off-grid onset.
+        bids_onset_sample, or None for an unknown or off-grid onset.
 
     Attributes
     ----------
@@ -211,6 +280,16 @@ class EEGDatasetInfo:
         when unavailable. Selection does not trim the original population.
     participants_json : dict or None
         Original participant-column dictionary, or None when unavailable.
+    current_metadata : list of dict
+        Detached recording descriptors matching current arrays, with original
+        source annotations retained. Raises ValueError for constructed cases.
+    case_table : pandas.DataFrame
+        Detached table of current case identities and contributing support.
+        Requires a current view, like cases.
+    participants_frame : pandas.DataFrame or None
+        Detached complete source participant table, or None when unavailable.
+    history : list of dict
+        Retained processing records in append order, empty when unreported.
 
     Notes
     -----
@@ -303,9 +382,11 @@ class EEGDatasetInfo:
                 sample = row["bids_onset_sample"]
                 if sample is not None:
                     sample = _integer(sample, "bids_onset_sample")
-                expected = _event_sample(
-                    float(row["onset"]),
-                    by_id[recording_id]["sampling_frequency"],
+                onset = _event_onset(row["onset"])
+                expected = (
+                    None
+                    if onset is None
+                    else _event_sample(onset, by_id[recording_id]["sampling_frequency"])
                 )
                 if sample != expected:
                     raise ValueError("Event sample disagrees with its source onset")
@@ -722,6 +803,103 @@ class EEGDatasetInfo:
         )
         return selected, self[indices]
 
+    @classmethod
+    def from_classification(cls, dataset):
+        """Describe constructed cases while retaining their original source report.
+
+        Parameters
+        ----------
+        dataset : ClassificationDataset
+            Constructed cases with shared source/history provenance, usually
+            from passing this information object to the ordinary case builder.
+
+        Returns
+        -------
+        EEGDatasetInfo
+            Detached case identities, current layout, source context and history.
+        """
+        source = dataset.metadata.get("provenance", {}).get("source")
+        if source is None:
+            raise ValueError(
+                "Case metadata requires shared source provenance; pass "
+                "EEGDatasetInfo as metadata to build_classification_dataset"
+            )
+        info = cls(source)
+        report = info.to_dict()
+        from aeon_neuro.datasets._info_view import _case_view
+
+        report["view"] = _case_view(info, dataset).to_dict()
+        report["history"] = deepcopy(dataset.metadata["provenance"]["history"])
+        report["case_provenance"] = deepcopy(dataset.metadata["provenance"])
+        return cls(report)
+
+    @property
+    def current_metadata(self):
+        """Detached recording descriptors matching current arrays and event times.
+
+        Use with ``events_for_cases`` and the plain recording/case APIs after
+        supported processing or selection. Only channel names, sampling rate and
+        sample count describe the current layout; other fields retain source
+        context. Original descriptors remain in ``metadata``. Already segmented
+        cases raise because they are not recording inputs for case construction.
+        """
+        from aeon_neuro.datasets._info_view import _current_metadata
+
+        return _current_metadata(self)
+
+    def events_for_cases(
+        self, label_column="trial_type", *, group_column="participant_id"
+    ):
+        """Return event rows for make_event_cases using literal source labels/groups.
+
+        Parameters
+        ----------
+        label_column : str, default="trial_type"
+            Source event column holding literal labels.
+        group_column : str, default="participant_id"
+            Source recording field holding explicit groups.
+
+        Returns
+        -------
+        list of dict
+            Independent event rows with identities, onsets, labels and groups.
+
+        Notes
+        -----
+        Callers can edit returned rows for explicit class mappings or grouping
+        by event fields. Source rows with unknown onsets remain in ``events``
+        and are omitted here, since they cannot locate an epoch. No files are
+        opened by this convenience.
+        """
+        from aeon_neuro.datasets._info_view import _events_for_cases, _recording_inputs
+
+        metadata, events = _recording_inputs(self)
+        return _events_for_cases(events, metadata, label_column, group_column)
+
+    @property
+    def case_table(self):
+        """Detached pandas view of case identities and source support."""
+        import pandas as pd
+
+        return pd.DataFrame(self.cases)
+
+    @property
+    def participants_frame(self):
+        """Detached pandas view of the complete source participant population."""
+        import pandas as pd
+
+        table = self.participants
+        return (
+            None
+            if table is None
+            else pd.DataFrame(table["rows"], columns=table["columns"])
+        )
+
+    @property
+    def history(self):
+        """Detached processing records in append order, empty when unreported."""
+        return deepcopy(self._extra.get("history", []))
+
 
 def _selection(selector, count):
     if isinstance(selector, slice):
@@ -822,3 +1000,17 @@ def _recording_info(metadata):
             )
         info.append(item)
     return info
+
+
+def _source_provenance(info, implementation):
+    """Keep source/history independent of higher-level problem definitions."""
+    from aeon_neuro import __version__
+
+    source = info.to_dict()
+    history = source.pop("history", [])
+    return {
+        "version": 1,
+        "source": source,
+        "history": history,
+        "construction": {"implementation": implementation, "version": __version__},
+    }
