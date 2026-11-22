@@ -61,6 +61,7 @@ Collection
     :toctree: auto_generated/
     :template: class.rst
 
+    BoVWTransformer
     DownsampleCollectionTransformer
     ERPCovariances
     LogVariance
