@@ -398,10 +398,11 @@ def _recording_inputs(info, onset_column="onset"):
                     "Source event column collides with derived acquisition_event"
                 )
             event["acquisition_event"] = deepcopy(original)
-            event[onset_column] = (
-                float(event[onset_column])
-                - layout.source_origin_sample / source["sampling_frequency"]
-            )
+            onset = _event_onset(event[onset_column])
+            if onset is not None:
+                event[onset_column] = (
+                    onset - layout.source_origin_sample / source["sampling_frequency"]
+                )
             events.append(event)
     return descriptors, events
 
@@ -429,6 +430,10 @@ def _events_for_cases(events, metadata, label_column, group_column):
     lookup = {row["recording_id"]: row for row in metadata}
     rows = []
     for event in events:
+        onset = _event_onset(event["onset"])
+        if onset is None:
+            # Untimed BIDS rows remain in source metadata, but cannot locate an epoch.
+            continue
         source = lookup[event["recording_id"]]
         if label_column not in event:
             raise ValueError(f"Missing event label column: {label_column}")
@@ -441,7 +446,7 @@ def _events_for_cases(events, metadata, label_column, group_column):
                 "case_id": "event:"
                 + json.dumps([event["recording_id"], event["bids_event_id"]]),
                 "recording_id": event["recording_id"],
-                "onset": float(event["onset"]),
+                "onset": onset,
                 "label": label,
                 "group_id": group,
                 "event_id": event["bids_event_id"],
@@ -451,11 +456,18 @@ def _events_for_cases(events, metadata, label_column, group_column):
     return rows
 
 
-def _event_sample(onset, sfreq):
-    """Return an exact grid coordinate, or None without rounding source facts."""
+def _event_onset(onset):
+    """Interpret the BIDS missing value separately from malformed timing."""
+    if onset == "n/a":
+        return None
     onset = float(onset)
     if not np.isfinite(onset):
         raise ValueError("Event onset must be finite")
+    return onset
+
+
+def _event_sample(onset, sfreq):
+    """Return an exact grid coordinate, or None without rounding source facts."""
     try:
         return _samples(onset, sfreq, "event onset")
     except ValueError:

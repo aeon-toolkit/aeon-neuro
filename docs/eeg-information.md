@@ -225,6 +225,8 @@ retain original source facts; they do not describe later case transformations.
 | `channel_metadata` | list of dict or None, optional | Original channel table rows, exposed as `channels`. Missing or `None` means unavailable. |
 | `channel_units_fiff` | list of int, optional | Decoded unit codes aligned with source channels. Derived recording layouts map voltage/magnetic-field codes to `V`/`T`; unavailable or unrecognized codes give `None`. |
 | `eeg_metadata` | dict, optional | Resolved original EEG JSON fields, exposed as `eeg_json`; omission gives `{}`. `EEGReference`, if supplied, seeds a source-only layout's reference. |
+| `events_metadata` | dict, optional | Resolved event column definitions, exposed as `events_json`; omission gives `{}`. |
+| `events_metadata_origins` | dict, optional | Root-relative dictionary filenames and the effective source filename for each top-level column. |
 | `electrodes` | dict or None, optional | Original electrode table with `columns` and `rows`. |
 | `coordsystem` | dict or None, optional | Original coordinate-system fields and units, without conversion. |
 | `scan` | dict or None, optional | Matched scans entry with `row` (dict) and `row_index` (zero-based int). |
@@ -241,8 +243,8 @@ are retained without being interpreted as labels.
 | --- | --- | --- |
 | `recording_id` | str | Identity of a retained source recording. |
 | `bids_event_id` | supplied identifier | Unique within its recording; the pair identifies the original event. |
-| `onset` | float | Original onset in seconds relative to recording start. |
-| `bids_onset_sample` | int or None | Exact source-grid sample for `onset`, or `None` for an off-grid onset. Construction checks consistency without rounding. |
+| `onset` | float or str | Original onset in seconds relative to recording start, or `n/a` when unknown. TSV values retain their original text. |
+| `bids_onset_sample` | int or None | Exact source-grid sample for `onset`, or `None` for an unknown or off-grid onset. Construction checks consistency without rounding. |
 
 ### Version-1 current view
 

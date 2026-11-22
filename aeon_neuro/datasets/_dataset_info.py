@@ -13,7 +13,7 @@ from aeon_neuro.datasets._classification import (
     _required,
 )
 from aeon_neuro.datasets._info_records import _DatasetFacts, _RecordingDescriptor
-from aeon_neuro.datasets._info_view import _event_sample
+from aeon_neuro.datasets._info_view import _event_onset, _event_sample
 
 
 class RecordingInfo:
@@ -47,6 +47,8 @@ class RecordingInfo:
     events : list of dict
         Original event rows in source order, including normalized sample
         coordinates. Empty when no events were supplied.
+    events_json : dict
+        Effective source event column definitions, empty when unavailable.
     electrodes : dict or None
         Original electrode table with columns and rows, or None if unavailable.
     coordsystem : dict or None
@@ -130,6 +132,11 @@ class RecordingInfo:
     def events(self):
         """List of dict: Original event rows and normalized sample coordinates."""
         return deepcopy(self._events)
+
+    @property
+    def events_json(self):
+        """Detached source definitions of event columns and values."""
+        return deepcopy(self._source.events_metadata)
 
     @property
     def electrodes(self):
@@ -217,7 +224,7 @@ class EEGDatasetInfo:
         may be supplied without opening any files.
     events : list of dict or None, default=None
         Source events with recording_id, bids_event_id, onset and exact
-        bids_onset_sample, or None for a known off-grid onset.
+        bids_onset_sample, or None for an unknown or off-grid onset.
 
     Attributes
     ----------
@@ -375,9 +382,11 @@ class EEGDatasetInfo:
                 sample = row["bids_onset_sample"]
                 if sample is not None:
                     sample = _integer(sample, "bids_onset_sample")
-                expected = _event_sample(
-                    float(row["onset"]),
-                    by_id[recording_id]["sampling_frequency"],
+                onset = _event_onset(row["onset"])
+                expected = (
+                    None
+                    if onset is None
+                    else _event_sample(onset, by_id[recording_id]["sampling_frequency"])
                 )
                 if sample != expected:
                     raise ValueError("Event sample disagrees with its source onset")
@@ -858,7 +867,9 @@ class EEGDatasetInfo:
         Notes
         -----
         Callers can edit returned rows for explicit class mappings or grouping
-        by event fields. No files are opened by this convenience.
+        by event fields. Source rows with unknown onsets remain in ``events``
+        and are omitted here, since they cannot locate an epoch. No files are
+        opened by this convenience.
         """
         from aeon_neuro.datasets._info_view import _events_for_cases, _recording_inputs
 

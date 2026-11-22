@@ -67,11 +67,11 @@ binding column names rather than dotted lookup expressions.
 
 Event rows retain their original columns, adding `recording_id`, `bids_event_id`,
 zero-based `bids_event_row` and an exact integer `bids_onset_sample` where the
-onset lies on the decoded sample grid. These IDs identify rows of the published table,
-not recovered original acquisition trials. `onset` must be finite. Negative
-onsets are retained as valid source context, with a warning when outside the
-recording. Off-grid onsets retain `bids_onset_sample=None` and a warning; no
-rounding is inferred. Supplied sample columns must be integers, agree with one
+onset lies on the decoded sample grid. These IDs identify rows of the published
+table. Negative onsets remain source context, with a warning when outside the
+recording. Unknown `onset="n/a"` and off-grid onsets have distinct diagnostics
+and retain `bids_onset_sample=None`. `EEGDatasetInfo.events_for_cases()` omits
+unknown onsets because they cannot locate epochs. Supplied sample columns must be integers, agree with one
 another, and match onset when it has an exact grid coordinate.
 `bids_onset_sample` is computed from onset seconds and the decoded rate, measured
 from the recording's first stored sample. An exact coordinate is provided even when the published table has no sample
@@ -106,6 +106,7 @@ Each recording additionally provides:
 | `coordsystem` | Applicable coordinate-system JSON object, or `None`. Coordinates and units are neither converted nor inferred. |
 | `scan` | The matching scans-table row as `row_index` and `row`, or `None`. The row index is zero-based in the source table. Duplicate matching rows block inspection. |
 | `sidecar_paths` | Root-relative paths for channels, events, electrodes, coordsystem and scans, including `None` for absent files. |
+| `events_metadata`, `events_metadata_origins` | Effective event column definitions from `*_events.json`, with contributing files and root-relative origins by field. The recording snapshot includes each contributing dictionary. |
 
 ```python
 if report["ready"]:
