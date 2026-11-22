@@ -25,7 +25,7 @@ def test_labram_classifier_named_channels():
 
 
 def test_labram_classifier_input_errors():
-    """Missing names when pretrained, and inputs longer than 16 patches, raise."""
+    """Missing names (if pretrained), too-long inputs, bad names raise."""
     X, y = make_example_3d_numpy(n_cases=10, n_channels=3, n_timepoints=400)
 
     with pytest.raises(ValueError, match="ch_names is required"):
@@ -34,6 +34,14 @@ def test_labram_classifier_input_errors():
     X_long, y_long = make_example_3d_numpy(n_cases=10, n_channels=3, n_timepoints=3400)
     with pytest.raises(ValueError, match="at most 16 patches"):
         LabramClassifier(pretrained=False).fit(X_long, y_long)
+
+    with pytest.raises(
+        ValueError, match=r"Duplicate channel names in ch_names: \['C3'\]"
+    ):
+        LabramClassifier(ch_names=["C3", "c3", "C4"], pretrained=False).fit(X, y)
+
+    with pytest.raises(ValueError, match=r"Unknown channel names \['EMG1'\]"):
+        LabramClassifier(ch_names=["C3", "EMG1", "C4"], pretrained=False).fit(X, y)
 
 
 def test_labram_classifier_seed_is_local():
