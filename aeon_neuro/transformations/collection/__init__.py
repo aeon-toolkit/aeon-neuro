@@ -6,9 +6,11 @@ __all__ = [
     "LogVariance",
     "TimeCrop",
     "XDAWNCovariances",
+    "BoVWTransformer",
 ]
 
 
+from aeon_neuro.transformations.collection._bovw import BoVWTransformer
 from aeon_neuro.transformations.collection._downsample import (
     DownsampleCollectionTransformer,
 )
