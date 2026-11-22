@@ -90,6 +90,32 @@ def test_adapter_rejects_explicit_layout_conflicts_before_building(
         BraindecodeClassifier(**conflict).fit(X, y, info=info)
 
 
+def test_adapter_validates_by_subject_and_retains_inference_and_pickle():
+    """The shared loop keeps held-out subjects out of all optimiser batches."""
+    X, y, info = _data()
+    clf = BraindecodeClassifier(
+        n_epochs=2,
+        batch_size=4,
+        random_state=1,
+        device="cpu",
+        validation_size=0.34,
+        patience=1,
+    ).fit(X[:10], y[:10], info=info[:10])
+    subjects = np.asarray(info[:10].participant_ids)
+    assert set(subjects[clf.training_indices_]).isdisjoint(
+        set(subjects[clf.validation_indices_])
+    )
+    assert set(clf.training_indices_) | set(clf.validation_indices_) == set(range(10))
+    assert clf.validation_policy_ == "subject"
+    assert not clf.network_.training
+    loaded = pickle.loads(pickle.dumps(clf))
+    np.testing.assert_allclose(
+        loaded.predict_proba(X[10:], info=info[10:]),
+        clf.predict_proba(X[10:], info=info[10:]),
+        atol=1e-6,
+    )
+
+
 @pytest.mark.parametrize("method", ["predict", "predict_proba"])
 def test_adapter_checks_prediction_information(method):
     """A fitted network cannot silently accept reordered channel information."""
@@ -101,3 +127,73 @@ def test_adapter_checks_prediction_information(method):
     with pytest.raises(ValueError, match="channel names/order"):
         getattr(clf, method)(X, info=wrong)
     assert not hasattr(clf, "_prediction_info")
+
+
+@pytest.mark.parametrize("validation_size,expected_collections", [(None, 1), (0.25, 2)])
+def test_training_reuses_fixed_numpy_partitions_across_epochs(
+    monkeypatch, validation_size, expected_collections
+):
+    """Array-only fitting avoids a full copy and validation is assembled once."""
+    import torch
+
+    class TinyNetwork(torch.nn.Module):
+        def __init__(self, n_chans, n_outputs, n_times):
+            super().__init__()
+            self.linear = torch.nn.Linear(n_chans * n_times, n_outputs)
+
+        def forward(self, values):
+            return self.linear(values.flatten(1))
+
+    X = np.random.default_rng(1).normal(size=(12, 2, 16)).astype(np.float32)
+    y = np.tile([0, 1], 6)
+    collections = []
+    original = torch.from_numpy
+
+    def observe(values):
+        if values.ndim == 3:
+            collections.append(values)
+        return original(values)
+
+    monkeypatch.setattr(torch, "from_numpy", observe)
+    BraindecodeClassifier(
+        model=TinyNetwork,
+        n_epochs=3,
+        batch_size=4,
+        validation_size=validation_size,
+        random_state=1,
+        device="cpu",
+    ).fit(X, y)
+    assert len(collections) == expected_collections
+    if validation_size is None:
+        assert np.shares_memory(collections[0], X)
+
+
+@pytest.mark.parametrize("validation_size", [0.2, 0.8])
+@pytest.mark.parametrize("with_info", [False, True])
+def test_stratified_validation_rejects_missing_classes_before_building_network(
+    monkeypatch, validation_size, with_info
+):
+    """Rounded stratification can lose a rare class on either side of a split."""
+    X = np.zeros((100, 1, 4), dtype=np.float32)
+    y = np.array([0] * 98 + [1] * 2)
+    info = (
+        EEGDatasetInfo.from_arrays(
+            X, sfreq=100, channel_names=["C3"], subjects=["one"] * len(X)
+        )
+        if with_info
+        else None
+    )
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("Network built before checking validation class coverage")
+
+    monkeypatch.setattr(BraindecodeClassifier, "_build_network", unexpected)
+    classifier = BraindecodeClassifier(
+        validation_strategy="stratified" if with_info else "auto",
+        validation_size=validation_size,
+        n_epochs=1,
+        random_state=0,
+        device="cpu",
+    )
+    with pytest.raises(ValueError, match="all fitting classes"):
+        classifier.fit(X, y, info=info)
