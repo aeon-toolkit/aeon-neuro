@@ -79,5 +79,6 @@ Channel creation
 
     CommonSpatialPatterns
     TRCommonSpatialPatterns
+    TimeDelayEmbedding
     UMAPChannelCreator
     XDAWN
