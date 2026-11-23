@@ -252,8 +252,30 @@ def _labram_class():
     class _Labram(Labram):
         ch_names = None
 
-        def forward(self, x, *args, ch_names=None, **kwargs):
+        def __call__(self, *args, **kwargs):
+            # braindecode >= 2.1 validates the channel count in __call__,
+            # before forward runs, and accepts a subset montage only when
+            # ch_names is among the call arguments, so supply the stored
+            # names here as well as in forward below.
+            if (
+                self.ch_names is not None
+                and "ch_names" not in kwargs
+                and len(args) <= 4
+            ):
+                kwargs["ch_names"] = self.ch_names
+            return super().__call__(*args, **kwargs)
+
+        def forward(self, x, *args, return_features=False, ch_names=None, **kwargs):
+            # return_features must stay visible in the signature:
+            # braindecode >= 2.1 decides from it whether forward returns
+            # features natively instead of substituting pooled features.
             ch_names = self.ch_names if ch_names is None else ch_names
-            return super().forward(x, *args, ch_names=ch_names, **kwargs)
+            return super().forward(
+                x,
+                *args,
+                return_features=return_features,
+                ch_names=ch_names,
+                **kwargs,
+            )
 
     return _Labram
