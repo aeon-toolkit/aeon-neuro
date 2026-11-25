@@ -91,6 +91,30 @@ derived encoding, not a byte-preserving copy of XDF or a structural BIDS validat
 The source file remains unchanged. See the
 [PyXDF importer](https://github.com/xdf-modules/pyxdf) for backend options.
 
+## Continuous Micromed TRC input
+
+Install Neo with the optional readers using `pip install 'aeon-neuro[eeg_io]'`.
+
+```python
+from aeon_neuro.utils.data_io import load_eeg_to_mne
+
+raw = load_eeg_to_mne("recording.trc")
+```
+
+The TRC adapter reads a single complete, uncompressed type-4 segment at one
+sampling rate. It preserves channel order, converts calibrated voltage channels
+to volts, and represents numeric trigger codes as zero-duration MNE
+annotations at their recorded sample positions. Channel types default to EEG.
+Use the acquisition protocol to assign types such as SEEG or ECoG when needed.
+
+Subject names, recording dates, notes and the Event A/B tables stay in the
+source file. Multi-segment, partial and mixed-rate recordings raise an error.
+The result is preloaded and can use the explicit BIDS export example above.
+Supply an `event_id` mapping such as `{"21": 21, "7": 7}` for all annotations to
+keep the source numbers in the BIDS `value` column.
+Compare a representative export with the source viewer before using new TRC
+variants. [Neo Micromed reader](https://neo.readthedocs.io/en/0.14.6/rawiolist.html#neo.rawio.MicromedRawIO)
+
 ## Existing BIDS input
 
 Download the desired dataset release, including the signal and applicable
