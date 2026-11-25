@@ -128,11 +128,12 @@ Supported formats
      - ``.xdf``/``.xdfz`` via optional PyXDF; one validated continuous voltage EEG
        stream plus finite, in-bounds markers. See the ingestion guide for the
        timestamp tolerance and explicit preloaded BIDS export.
+   * - Micromed TRC
+     - ``.trc`` via optional Neo; one complete type-4 continuous segment with
+       calibrated voltage channels and numeric trigger annotations.
 
 Keep companion files together.
 
-
-.. autofunction:: aeon_neuro.utils.data_io.load_eeg_to_mne
 Metadata preparation
 ---------------------
 

@@ -9,6 +9,7 @@ from pathlib import Path
 import mne
 import numpy as np
 
+from aeon_neuro.utils._micromed import _read_micromed
 from aeon_neuro.utils._xdf import _read_xdf
 
 
@@ -60,12 +61,13 @@ def load_eeg_to_mne(path, *, preload=False, **reader_kwargs):
     path : str or os.PathLike
         EEG recording file or EGI .mff directory. Formats include BrainVision,
         EDF/BDF, continuous EEGLAB, CNT, EGI, GDF, Nicolet, Nihon Kohden, Persyst,
-        eXimia, FIF, BVRF and XDF. Keep linked files together.
+        eXimia, FIF, BVRF, XDF and continuous Micromed TRC. Keep linked files
+        together.
     preload : bool or str, default=False
         Whether to load samples into memory, or an MNE memory-map filename.
         Deferred reading lets MNE-BIDS copy supported native files unchanged.
-        BVRF, XDF and some embedded EEGLAB files are necessarily preloaded.
-        BVRF and XDF do not support memory-map filenames.
+        BVRF, XDF, TRC and some embedded EEGLAB files are necessarily preloaded.
+        BVRF, XDF and TRC do not support memory-map filenames.
     **reader_kwargs : dict
         Options passed to the selected reader, such as ``eog``, ``misc`` or
         ``uint16_codec``. Nicolet requires ``ch_type`` from the recording
@@ -81,7 +83,10 @@ def load_eeg_to_mne(path, *, preload=False, **reader_kwargs):
     ------
     ValueError
         If the filename extension is unsupported, EDF/BDF records are incomplete
-        or discontinuous, or the MNE reader rejects the recording.
+        or discontinuous, the TRC layout is unsupported, or the MNE reader
+        rejects the recording.
+    ImportError
+        If the selected reader requires an optional dependency.
 
     Notes
     -----
@@ -102,6 +107,12 @@ def load_eeg_to_mne(path, *, preload=False, **reader_kwargs):
     retained; original timestamps are checked before dejittering can hide a gap.
     Signals are not interpolated. Other signal streams and per-sample timestamps
     are not retained. BVRF requires PyBVRF.
+
+    Micromed TRC requires optional Neo and supports one complete type-4
+    segment with a common sampling rate and calibrated voltage channels.
+    Numeric triggers become annotations on the original sample grid.
+    Channels are labelled EEG for MNE. Assign specific channel types from
+    the acquisition protocol where needed.
     """
     readers = {
         ".vhdr": mne.io.read_raw_brainvision,
@@ -126,6 +137,7 @@ def load_eeg_to_mne(path, *, preload=False, **reader_kwargs):
         ".bvri": _read_bvrf,
         ".xdf": _read_xdf,
         ".xdfz": _read_xdf,
+        ".trc": _read_micromed,
     }
     path = Path(path).expanduser()
     extension = (
