@@ -1,46 +1,62 @@
-# Shared EEG information and classification cases
+# Dataset utilities
 
-`inspect_bids_eeg` reads local EDF/BDF headers and sidecars without loading signal
-samples. `load_bids_dataset` reuses the source opener to return recordings with
-`EEGDatasetInfo`, preserving dataset/participant facts, channels, events, source
-geometry and file snapshots. The existing `load_bids_data` interface remains
-available. See the [source inspection guide](../../docs/bids-problem-input.md)
-and [loaded metadata guide](../../docs/bids-dataset-info.md).
+## NEMAR acquisition
 
-The existing `make_recording_cases`, `make_fixed_length_cases`, `make_event_cases`
-and `build_classification_dataset` accept shared information as their metadata
-argument. Case labels/groups remain explicit. The builder retains detached
-source/history/construction provenance and exposes case-aligned `dataset.info`;
-no authored problem definition or JSON schema is required.
+`fetch_nemar_dataset` downloads an exact release and explicit EEG selection,
+including compatible BIDS metadata and declared signal companions. Completed
+selections are verified locally on reuse. Entity labels must match complete
+alphanumeric tokens; malformed labels are excluded from subject/task selection.
+BrainVision companion references come from the header's Common Infos section.
+See [the dataset guide](../../docs/datasets.md#nemar-bids-recordings) for installation,
+offline caches and reading EEGLAB files. Development installs include nemar-py
+so the offline provider integration tests run alongside the ordinary suite.
 
-`info.select(X, selector)` copies signals with their matching information.
-`info.process` executes supported channel selection, scaling, crop, resample,
-filter and reference operations, updating current layouts and history together.
-`with_history` records an external account without claiming an operation ran.
-Original acquisition facts remain separate from current channels, rate, units
-and sample support. Logical case-channel aliases preserve original channel picks.
+## Aligned EEG information
 
-The [EEG information guide](../../docs/eeg-information.md) covers case construction,
-optional estimator calls, subject validation, detached table views, serialization
-and `.ts` history comments. Direct `info.current_metadata` and
-`info.events_for_cases()` remain available for plain-descriptor integrations;
-pass the object itself to retain its complete source/history context.
+`EEGDatasetInfo.from_arrays` records explicit rate, ordered channels, optional
+units, subjects and groups for dense or variable-length collections. Direct
+construction accepts optional source/dataset metadata without reading files.
+Paired selection copies signals and information in the same order; `to_dict`
+provides restorable detached state. See [the information guide](../../docs/eeg-information.md).
+Both information classes list their public properties, types and optional values
+in their class docstrings. The guide's
+[dictionary reference](../../docs/eeg-information.md#dictionary-structure)
+documents source state and current views together, including their different
+selection scopes.
+Fixed internal records use named dataclass fields; public properties and the
+versioned dictionary format retain their detached values. Flexible source JSON,
+table rows and custom metadata fields remain available without schema coercion.
 
-Source events are retained before scientific selection. Negative/outside onsets
-produce warnings; off-grid events keep an unknown exact sample coordinate.
-Case extraction still requires explicit, exact bounds. EEG JSON inheritance
-uses the same parsed-byte snapshots as the other inspected metadata.
+Source participant IDs may be unknown (`None`), including in a collection with
+known IDs. Aligned rows retain these unknowns; the serialized selected-participant
+scope lists only known string/integer IDs, preserving their types through selection.
 
-Known original source support is enforced by split validation and classifier
-inner validation. Pointwise recording operations preserve exact case intervals;
-filtering/resampling retain conservative input support. Single-case subject
-lookup indexes the current row directly rather than scanning the collection.
+Source-only selection preserves omitted optional diagnostics and filters supplied
+diagnostics to the selected recordings and dataset scope. Restored sample grids
+must lie inside their half-open source support `[start, stop)`, excluding `stop`.
+Declared case participants may differ from original recording subjects, such as
+event-level actors. Unknown identities and independent groups remain supported.
+NumPy integer identities and layout numbers normalize to Python values for
+portable state. Grid checks reject overflow, and malformed diagnostics fail during construction. Empty collections
+still validate dense channel/sample axes, numeric types and supplied units.
 
-Resampling executes the requested rational rate ratio through SciPy, keeping
-the source grid independent of output-count rounding. Reduced factors above
-100,000 are rejected before filter allocation. Inner validation checks class
-coverage on both sides of stratified and subject-based splits; a rare class
-lost through rounding blocks fitting instead of changing the declared split.
+
+## Local BIDS sources
+
+`inspect_bids_eeg` inspects supported EDF/BDF source headers and sidecars.
+`load_bids_dataset` loads recordings with shared information through the verified
+source opener. Existing case helpers accept that information and retain source
+provenance in `dataset.info`. Explicitly supplied channel rows remain available
+when an unrelated sidecar path is supplied; only an explicit absent channel
+sidecar marks those rows unavailable. See [BIDS loading](../../docs/bids-dataset-info.md).
+
+## Executed EEG processing
+
+`info.process` keeps arrays, current layouts, original source support and executed
+history aligned for channel selection, scaling, crop, resampling, filtering and
+reference operations. It uses exact requested resampling ratios with bounded
+filter factors. Changing the rate requires at least two input samples per row;
+shorter rows raise `ValueError` without modifying arrays or information. See [the information guide](../../docs/eeg-information.md).
 
 ## Authored definitions and planning
 

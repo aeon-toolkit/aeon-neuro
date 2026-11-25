@@ -32,6 +32,8 @@ Deep learning
     DeepConvNetClassifier
     EEGConformerClassifier
     EEGNetClassifier
+    EEGPTClassifier
+    LabramClassifier
 
 
 Feature based
@@ -45,4 +47,5 @@ Feature based
     :template: class.rst
 
     CSPClassifier
+    SSVEPCCAClassifier
     XDAWNClassifier

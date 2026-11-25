@@ -47,16 +47,22 @@ dependencies = [
     "umap-learn",
     "torch",
     "braindecode>=2.0,<3",
+    "huggingface_hub",
+    "safetensors",
 ]
 
 [project.optional-dependencies]
+nemar = [
+    "nemar-py>=0.3.3,<0.4",
+]
 openneuro = [
     "openneuro-py>=2026.9.1",
 ]
 eeg_io = [
     "antio>=0.5",
     "mffpy>=0.11",
-    "pymatreader",
+    "pymatreader>=1.3.2",
+    "pybv>=0.7.5",
     "pyxdf",
     "pybvrf[mne]>=0.1.3,<0.1.4",
 ]
@@ -70,9 +76,12 @@ dl = [
 ]
 dev = [
     "aeon[dev]",
+    "nemar-py>=0.3.3,<0.4",
     "edfio",
     "eeglabio",
     "pybv>=0.7.5",
+    "pymatreader>=1.3.2",
+    "hdf5storage>=0.2",
 ]
 binder = [
     "aeon[binder]",

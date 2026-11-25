@@ -12,6 +12,8 @@ import pytest
 from aeon_neuro.datasets import (
     EEGDatasetInfo,
     inspect_bids_eeg,
+    load_bids_dataset,
+    make_event_cases,
     open_bids_eeg_recording,
 )
 from aeon_neuro.datasets import _bids_input as adapter
@@ -637,3 +639,66 @@ def test_eeg_json_snapshot_stays_bound_to_the_values_returned_by_its_reader(
             open_bids_eeg_recording(root, descriptor)
     else:
         assert "changed" in report["issues"][-1]["message"].lower()
+
+
+def test_unknown_onset_survives_inspection_and_saved_case_selection(bids):
+    """Unknown timing leaves other events usable and preserves source row IDs."""
+    root, paths = bids
+    events = paths[0].with_name(paths[0].name.replace("_eeg.bdf", "_events.tsv"))
+    events.write_text(
+        "onset\tduration\ttrial_type\tsample\n"
+        "1\t0\tleft\t32\nn/a\t2\tcontext\t64\n4\t1\tright\t128\n",
+        encoding="utf-8",
+    )
+    X, info = load_bids_dataset(root, subjects=["01"])
+    saved = EEGDatasetInfo(json.loads(json.dumps(info.to_dict())))
+    unknown = saved.recordings[0].events[1]
+    assert unknown["onset"] == "n/a"
+    assert unknown["sample"] == "64"
+    assert unknown["bids_onset_sample"] is None
+    assert unknown["bids_event_id"] == "row-1"
+    assert "event_onset_unknown" in {
+        issue["code"] for issue in saved.to_dict()["issues"]
+    }
+    selected = saved.events_for_cases()
+    assert [row["event_id"] for row in selected] == ["row-0", "row-2"]
+    cases = make_event_cases(X, saved, selected, tmin=0, tmax=1)
+    assert [row["start_sample"] for row in cases] == [32, 128]
+    corrupted = saved.to_dict()
+    corrupted["events"][1]["bids_onset_sample"] = 64
+    with pytest.raises(ValueError, match="sample disagrees"):
+        EEGDatasetInfo(corrupted)
+
+
+def test_inherited_event_dictionary_is_detached_and_in_source_snapshot(bids):
+    """The effective codebook and its origins follow the inspected TSV rows."""
+    root, paths = bids
+    task = root / "task-imagery_events.json"
+    task.write_text(
+        '{"trial_type":{"Description":"Task"},"value":{"Levels":{"11":"Left"}}}',
+        encoding="utf-8-sig",
+    )
+    local = paths[0].with_name(paths[0].name.replace("_eeg.bdf", "_events.json"))
+    local.write_text('{"trial_type":{"Description":"Local task"}}', encoding="utf-8")
+    report = inspect_bids_eeg(root, subjects=["01"])
+    info = EEGDatasetInfo(json.loads(json.dumps(report)))
+    recording = info.recordings[0]
+    assert recording.events_json == {
+        "trial_type": {"Description": "Local task"},
+        "value": {"Levels": {"11": "Left"}},
+    }
+    metadata = recording.metadata
+    assert metadata["events_metadata_origins"] == {
+        "sources": [task.name, local.relative_to(root).as_posix()],
+        "fields": {
+            "trial_type": local.relative_to(root).as_posix(),
+            "value": task.name,
+        },
+    }
+    recording.events_json["value"]["Levels"]["11"] = "Edited"
+    assert recording.events_json["value"]["Levels"]["11"] == "Left"
+    task.write_text('{"value":{"Levels":{"11":"Right"}}}', encoding="utf-8")
+    with pytest.raises(
+        ValueError, match="Inspected source changed: task-imagery_events.json"
+    ):
+        open_bids_eeg_recording(root, metadata)

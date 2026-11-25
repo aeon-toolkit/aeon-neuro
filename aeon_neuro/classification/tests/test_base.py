@@ -210,3 +210,114 @@ def test_validation_labels_must_match_the_current_fitting_collection(with_info, 
         classifier.validation_split(
             changed, strategy="stratified" if with_info else "auto", random_state=0
         )
+
+
+@pytest.mark.parametrize("method", ["predict", "predict_proba"])
+@pytest.mark.parametrize("change", ["rate", "channels"])
+def test_array_fitting_layout_is_not_redefined_by_later_constructor_changes(
+    method, change
+):
+    """Prediction metadata must match the layout used to fit the existing model."""
+    X, y, _ = data()
+    clf = _InfoClassifier(sfreq=32, channel_names=["C3", "C4"]).fit(X, y)
+    rate, names = 32, ["C3", "C4"]
+    if change == "rate":
+        rate = 64
+        clf.set_params(sfreq=rate)
+    else:
+        names = ["C4", "C3"]
+        clf.set_params(channel_names=names)
+    changed = EEGDatasetInfo.from_arrays(X, sfreq=rate, channel_names=names)
+    assert clf.is_fitted
+    with pytest.raises(ValueError, match="from fit"):
+        getattr(clf, method)(X, info=changed)
+    assert not hasattr(clf, "_prediction_info")
+
+
+@pytest.mark.parametrize("method", ["predict", "predict_proba"])
+@pytest.mark.parametrize("known_layout", [False, True])
+def test_prediction_info_after_array_fitting_retains_known_and_unknown_facts(
+    method, known_layout
+):
+    """Aligned prediction facts remain usable without requiring fitting metadata."""
+    X, y, info = data()
+    options = dict(sfreq=32, channel_names=["C3", "C4"]) if known_layout else {}
+    clf = _InfoClassifier(**options).fit(X, y)
+    result = getattr(clf, method)(X, info=info)
+    assert len(result) == len(X)
+    assert clf.info_ is None
+    assert not hasattr(clf, "_prediction_info")
+
+
+@pytest.mark.parametrize("method", ["predict", "predict_proba"])
+@pytest.mark.parametrize("change", ["rate", "channels"])
+@pytest.mark.parametrize("fit_mode", ["arrays", "explicit_info", "inferred_info"])
+def test_valid_prediction_info_survives_constructor_changes(method, change, fit_mode):
+    """Constructor edits describe a future fit, not the existing fitted model."""
+    X, y, info = data()
+    options = (
+        {}
+        if fit_mode == "inferred_info"
+        else dict(sfreq=32, channel_names=["C3", "C4"])
+    )
+    clf = _InfoClassifier(**options).fit(
+        X, y, info=None if fit_mode == "arrays" else info
+    )
+    expected = getattr(clf, method)(X, info=info)
+    saved_info = clf.info_.to_dict() if clf.info_ is not None else None
+    options = dict(sfreq=64) if change == "rate" else dict(channel_names=["C4", "C3"])
+    clf.set_params(**options)
+
+    np.testing.assert_array_equal(getattr(clf, method)(X, info=info), expected)
+    np.testing.assert_array_equal(getattr(clf, method)(X), expected)
+    assert clf.sfreq_ == 32
+    assert tuple(clf.channel_names_) == ("C3", "C4")
+    assert (clf.info_.to_dict() if clf.info_ is not None else None) == saved_info
+    assert not hasattr(clf, "_prediction_info")
+
+
+@pytest.mark.parametrize("method", ["predict", "predict_proba"])
+def test_refit_applies_changed_constructor_layout(method):
+    """Fit validates the new settings and replaces the retained fitting facts."""
+    X, y, info = data()
+    clf = _InfoClassifier(sfreq=32, channel_names=["C3", "C4"]).fit(X, y, info=info)
+    clf.set_params(sfreq=64, channel_names=["C4", "C3"])
+    with pytest.raises(ValueError, match="disagrees"):
+        clf.fit(X, y, info=info)
+
+    changed = EEGDatasetInfo.from_arrays(
+        X, sfreq=64, channel_names=["C4", "C3"], units=["V", "V"]
+    )
+    clf.fit(X, y, info=changed)
+    assert clf.sfreq_ == 64 and tuple(clf.channel_names_) == ("C4", "C3")
+    assert len(getattr(clf, method)(X, info=changed)) == len(X)
+    with pytest.raises(ValueError):
+        getattr(clf, method)(X, info=info)
+    assert not hasattr(clf, "_prediction_info")
+
+
+@pytest.mark.parametrize(
+    "subjects",
+    [
+        [0, "one", 2, "three", 4, "five"],
+        [1, "1"],
+    ],
+)
+def test_subject_validation_preserves_mixed_identifier_equality(subjects):
+    """Accepted integer/text identities must remain distinct, disjoint groups."""
+    X = np.random.default_rng(2).normal(size=(2 * len(subjects), 2, 32))
+    y = np.tile([0, 1], len(subjects))
+    aligned = [subject for subject in subjects for _ in range(2)]
+    info = EEGDatasetInfo.from_arrays(
+        X, sfreq=32, channel_names=["C3", "C4"], subjects=aligned
+    )
+    classifier = _InfoClassifier().fit(X, y, info=info)
+    train, validation = classifier.validation_split(
+        y, validation_size=0.5, random_state=0
+    )
+    assert set(train) | set(validation) == set(range(len(X)))
+    assert not {aligned[i] for i in train} & {aligned[i] for i in validation}
+    assert set(y[train]) == set(y[validation]) == {0, 1}
+    again = classifier.validation_split(y, validation_size=0.5, random_state=0)
+    np.testing.assert_array_equal(train, again[0])
+    np.testing.assert_array_equal(validation, again[1])

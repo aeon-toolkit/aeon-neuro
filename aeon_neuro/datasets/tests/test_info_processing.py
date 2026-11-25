@@ -16,6 +16,30 @@ from aeon_neuro.datasets.tests.test_info_view import _event_dataset, example_inf
 source = _fixtures.source
 
 
+@pytest.mark.parametrize("operation", ["reference", "resample"])
+def test_processing_serializes_new_optional_layout_facts(operation):
+    """Executing an operation records facts omitted from restored metadata."""
+    X = np.arange(32, dtype=float).reshape(1, 2, 16)
+    info = EEGDatasetInfo.from_arrays(
+        X, sfreq=8, channel_names=["C3", "C4"], units=["V", "V"]
+    )
+    state = info.to_dict()
+    state["view"]["layouts"][0].pop("reference")
+    state["view"]["layouts"][0].pop("temporal_context")
+    info = EEGDatasetInfo(state)
+    parameters = {"channels": "average"} if operation == "reference" else {"sfreq": 4}
+    Y, processed = info.process(X, operation, **parameters)
+    layout = processed.to_dict()["view"]["layouts"][0]
+    if operation == "reference":
+        assert layout["reference"] == {"method": "mean", "channels": ["C3", "C4"]}
+        np.testing.assert_array_equal(Y, X - X.mean(axis=1, keepdims=True))
+    else:
+        assert layout["temporal_context"] == "whole_row"
+        assert Y.shape == (1, 2, 8)
+    EEGDatasetInfo(processed.to_dict()).validate_layout(Y)
+    assert info.to_dict() == state
+
+
 @pytest.mark.parametrize("processed", [False, True])
 def test_current_descriptors_match_plain_event_cases_and_remain_detached(
     source, processed
@@ -146,35 +170,17 @@ def test_failed_processing_leaves_arrays_and_information_unchanged(
 
 def test_recording_processing_preserves_original_events_and_layout(source):
     """Recording-level output keeps its current grid separate from acquisition."""
+    path = source[1][0]
+    events = path.with_name(path.name.replace("_eeg.bdf", "_events.tsv"))
+    with events.open("a", encoding="utf-8") as stream:
+        stream.write("n/a\t0\tcontext\n")
     X, info = load_bids_dataset(source[0])
     Y, changed = info.process(X, "crop", tmin=0.5, tmax=2.5)
     np.testing.assert_array_equal(Y, X[:, :, 16:80])
     assert changed.layouts[0]["source_origin_sample"] == 16
     assert changed.events == info.events and changed.metadata == info.metadata
     assert changed.recordings[0].sfreq == 32 and Y.shape[-1] == 64
-
-
-def test_ts_comment_is_portable_and_accepted_by_existing_aeon_writer(tmp_path):
-    """Provenance comments preserve values and do not replace the .ts structure."""
-    from aeon.datasets import load_from_ts_file, save_to_ts_file
-
-    X, info = example_info()
-    Y, changed = info.process(X, "scale", factor=1e6, units="uV")
-    header = changed.to_ts_header()
-    assert header.startswith("# aeon-neuro-info ")
-    report = json.loads(header.removeprefix("# aeon-neuro-info "))
-    assert report == changed.to_dict()
-    save_to_ts_file(
-        Y,
-        np.array([0, 1, 0, 1]),
-        label_type="classification",
-        path=str(tmp_path),
-        problem_name="generated",
-        header=header,
-    )
-    values, labels = load_from_ts_file(tmp_path / "generated.ts")
-    np.testing.assert_array_equal(values, Y)
-    assert labels.tolist() == ["0", "1", "0", "1"]
+    assert [event["onset"] for event in changed.events_for_cases()] == [0.5, 1.5] * 2
 
 
 def test_already_segmented_cases_are_not_silently_reinterpreted_as_recordings(source):
@@ -270,3 +276,127 @@ def test_large_resampling_ratio_fails_before_allocating_a_filter(monkeypatch):
         info.process(X, "resample", sfreq=64.000001)
     np.testing.assert_array_equal(X, np.zeros_like(X))
     assert info.to_dict() == before
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "not_list",
+        "record",
+        "missing",
+        "extra",
+        "version",
+        "boolean_version",
+        "step",
+        "implementation",
+        "implementation_version",
+        "fit_scope",
+        "parameters",
+        "sources",
+        "duplicate_source",
+        "empty_source",
+    ],
+)
+def test_saved_history_records_are_validated(source, fault):
+    """Restoring a metadata view must not silently trust malformed provenance."""
+    X, info = load_bids_dataset(source[0])
+    _, info = info.process(X, "scale", factor=1.0, units="V")
+    report = info.to_dict()
+    record = report["history"][0]
+    if fault == "not_list":
+        report["history"] = None
+    elif fault == "record":
+        report["history"] = ["step"]
+    elif fault == "missing":
+        record.pop("parameters")
+    elif fault == "extra":
+        record["unknown"] = "value"
+    elif fault == "version":
+        record["version"] = 2
+    elif fault == "boolean_version":
+        record["version"] = True
+    elif fault in ("step", "implementation", "implementation_version", "fit_scope"):
+        record[fault] = ""
+    elif fault == "parameters":
+        record["parameters"] = {"value": float("nan")}
+    elif fault == "sources":
+        record["source_ids"] = "not a list"
+    elif fault == "duplicate_source":
+        record["source_ids"] *= 2
+    else:
+        record["source_ids"] = []
+    with pytest.raises(ValueError, match="history"):
+        EEGDatasetInfo(report)
+
+
+def test_executed_history_keeps_original_scope_after_selection(source):
+    """A later subset must not hide the population used by an earlier operation."""
+    X, info = load_bids_dataset(source[0])
+    X, processed = info.process(X, "scale", factor=1.0, units="V")
+    selected, subset = processed.select(X, [1])
+    assert subset.history == processed.history
+    assert subset.history[0]["source_ids"] == list(info.source_ids)
+    _, following = subset.process(selected, "channels", names=["C3"])
+    assert following.history[:-1] == processed.history
+    assert following.history[-1]["source_ids"] == [info.source_ids[1]]
+    restored = EEGDatasetInfo(json.loads(json.dumps(following.to_dict())))
+    assert restored.history == following.history
+
+
+@pytest.mark.parametrize("target", [0.5, 2.0])
+def test_singleton_resampling_raises_without_native_crash(target):
+    """A native boundary failure must not terminate the calling Python process."""
+    import os
+    import subprocess
+    import sys
+
+    # Isolate the regression so an unsafe SciPy call cannot kill the test runner.
+    code = f"""
+try:
+    import resource
+except ImportError:
+    pass
+else:
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+import numpy as np
+from aeon_neuro.datasets import EEGDatasetInfo
+X = np.ones((2, 1, 1))
+info = EEGDatasetInfo.from_arrays(X, sfreq=1, channel_names=['C3'])
+try:
+    info.process(X, 'resample', sfreq={target})
+except ValueError as exc:
+    assert 'at least two samples' in str(exc)
+else:
+    raise AssertionError('Expected a singleton input error')
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, (result.returncode, result.stderr)
+
+
+def test_singleton_resampling_preserves_inputs_after_a_later_row_fails():
+    """An unequal-length collection stays untouched when its second row fails."""
+    X = [np.ones((1, 4)), np.ones((1, 1))]
+    info = EEGDatasetInfo.from_arrays(X, sfreq=1, channel_names=["C3"])
+    before = info.to_dict()
+    arrays = [row.copy() for row in X]
+    with pytest.raises(ValueError, match="at least two samples"):
+        info.process(X, "resample", sfreq=2)
+    assert info.to_dict() == before
+    for expected, actual in zip(arrays, X, strict=True):
+        np.testing.assert_array_equal(actual, expected)
+
+
+def test_singleton_resampling_at_the_original_rate_is_safe():
+    """An unchanged sampling grid needs no reflected filter boundaries."""
+    X = np.ones((2, 1, 1))
+    info = EEGDatasetInfo.from_arrays(X, sfreq=1, channel_names=["C3"])
+    result, updated = info.process(X, "resample", sfreq=1)
+    np.testing.assert_array_equal(result, X)
+    assert updated.sfreq == 1
+    assert not np.shares_memory(result, X)

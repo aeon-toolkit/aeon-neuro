@@ -71,13 +71,7 @@ def test_info_planning_and_materialization_match_eager_after_reordering(
     """Plans reuse the same source facts, labels, grouping and reported history."""
     root, _ = source
     X, info = load_bids_dataset(root)
-    info = info.with_history(
-        "metadata review",
-        {"columns": ["trial_type", "participant.group"]},
-        implementation="example.review",
-        version="1",
-        fit_scope="none",
-    )
+    info = fixtures._restore_review_history(info)
     X, info = info.select(X, [1, 0])
     problem, binding = fixtures._info_problem_documents(mode)
     eager = make_classification_problem(X, info, problem, binding)
@@ -144,9 +138,7 @@ def test_info_plan_survives_unavailable_signals_without_sample_access(
 )
 def test_changed_info_plan_is_rejected_before_calling_reader(source, fault):
     """Replay must validate the saved object and its join with planned case rows."""
-    info = EEGDatasetInfo(inspect_bids_eeg(source[0])).with_history(
-        "review", {}, implementation="example", version="1"
-    )
+    info = fixtures._restore_review_history(EEGDatasetInfo(inspect_bids_eeg(source[0])))
     plan = plan_classification_problem(
         info, *fixtures._info_problem_documents("event_epochs")
     )
@@ -185,9 +177,7 @@ def test_info_events_cannot_be_overridden_separately(source, events):
 def test_selected_cases_open_only_needed_source_and_preserve_planning_context(source):
     """Unselected signal files may be missing while earlier history remains intact."""
     root, paths = source
-    info = EEGDatasetInfo(inspect_bids_eeg(root)).with_history(
-        "review", {"columns": ["trial_type"]}, implementation="example", version="1"
-    )
+    info = fixtures._restore_review_history(EEGDatasetInfo(inspect_bids_eeg(root)))
     plan = plan_classification_problem(
         info, *fixtures._info_problem_documents("event_epochs")
     )

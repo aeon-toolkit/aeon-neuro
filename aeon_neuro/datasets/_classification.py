@@ -502,41 +502,11 @@ def _recordings(X, metadata):
 
 
 def _recording_info(metadata):
-    # Inspecting source metadata and checking loaded arrays must use the same
-    # identity/layout rules, without requiring dummy signals for inspection.
-    if not isinstance(metadata, (list, tuple)) or not metadata:
-        raise ValueError("Supply nonempty recording descriptors.")
-    info, ids = [], set()
-    for entry in metadata:
-        item = deepcopy(dict(entry))
-        _required(item, ("channel_names", "sampling_frequency"))
-        recording_id = item.get("recording_id", item.get("filepath"))
-        if (
-            not isinstance(recording_id, str)
-            or not recording_id.strip()
-            or recording_id in ids
-        ):
-            raise ValueError(
-                "Recording metadata needs a unique nonempty recording_id or filepath."
-            )
-        ids.add(recording_id)
-        item["recording_id"] = recording_id
-        item["channel_names"] = _channels(item["channel_names"])
-        rate = item["sampling_frequency"]
-        if (
-            not isinstance(rate, Real)
-            or isinstance(rate, bool)
-            or not np.isfinite(rate)
-            or rate <= 0
-        ):
-            raise ValueError("sampling_frequency must be finite and positive.")
-        item["sampling_frequency"] = float(rate)
-        _required(item, ("n_samples",))
-        item["n_samples"] = _integer(item["n_samples"], "n_samples")
-        if item["n_samples"] < 1:
-            raise ValueError("n_samples must be positive.")
-        info.append(item)
-    return info
+    # Metadata-only inspection and loaded arrays share the core descriptor rules.
+    # Import locally because the core also reuses the array/identity helpers here.
+    from aeon_neuro.datasets._dataset_info import _recording_info as validate
+
+    return validate(metadata)
 
 
 def _required(row, keys):

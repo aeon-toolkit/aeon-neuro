@@ -1,58 +1,9 @@
-# EEG information from source recordings to estimators
+# EEG information
 
-`EEGDatasetInfo` holds source sidecars and the current layout of recording or
-case arrays. Source acquisition facts remain available after channel selection,
-cropping, scaling or resampling. All interfaces on this page are experimental.
-
-## Load, construct and select cases
-
-```python
-from aeon_neuro.datasets import (
-    load_bids_dataset, make_event_cases, build_classification_dataset,
-)
-
-recordings, source_info = load_bids_dataset("/data/study", subjects=["01", "02"])
-events = source_info.events_for_cases(label_column="trial_type")
-candidates = make_event_cases(recordings, source_info, events, tmin=0.0, tmax=1.0)
-dataset = build_classification_dataset(recordings, source_info, candidates)
-X, y, info = dataset.X, dataset.y, dataset.info
-```
-
-The ordinary case helpers keep scientific labels, grouping, intervals and channel
-choices explicit. They accept the shared object as their metadata argument and
-reuse the same case engine as plain descriptors. `dataset.info` returns detached
-case information with source/history/construction provenance. No problem schema
-is needed. Whole-recording and fixed-window helpers also accept the object.
-
-| Property | Meaning |
-| --- | --- |
-| `info.case_ids`, `info.cases`, `info.case_table` | Current row identities and a detached list/pandas table of case facts. |
-| `info.participant_ids`, `info.subject_of(i)` | One known original subject per current row; unknown identities stay `None`. |
-| `info.groups` | Declared case groups, which can differ from subjects. |
-| `info.sfreq`, `info.channel_names`, `info.units` | Current rate, ordered channels and decoded or explicitly supplied units. Heterogeneous layouts raise rather than choose an arbitrary row. |
-| `info.layouts` | One current layout per row, including sample count and its original-source grid mapping. |
-| `info.recordings`, `info.description`, `info.participants_frame` | Original recording views, dataset description and complete source participant population. |
-| `info.history` | Preserved processing records and their original scopes. |
-
-Decoded MNE EEG arrays use volts even when a BDF sidecar describes stored values
-in microvolts. Original channel-table units remain unchanged in `info.recordings`.
-Explicit case participant bindings take precedence over the recording subject;
-the original BIDS entity remains in the source recording view. Unknown units
-are never guessed. Original electrodes and their coordinate system
-remain source facts; channel names do not establish measured positions.
-
-Use paired selection for detached arrays and information:
-
-```python
-X_selected, selected_info = info.select(X, [3, 0])
-```
-
-`info[mask]` also returns detached information aligned with `X[mask]`. Select
-`y` with the same indices. Integer selectors must be unique and nonnegative;
-boolean masks must match the row count. Metadata validation cannot detect
-external permutations or edits of equal-shaped arrays.
-
-For arrays not loaded from BIDS, supply facts explicitly:
+`EEGDatasetInfo` stores metadata aligned with EEG arrays. It keeps current row
+layouts separate from optional original source facts. Construction reads no
+files and does not certify the contents or interpretation of supplied data.
+The interface is experimental.
 
 ```python
 import numpy as np
@@ -62,192 +13,341 @@ X = np.zeros((4, 2, 128))
 info = EEGDatasetInfo.from_arrays(
     X, sfreq=128, channel_names=["C3", "C4"], units=["V", "V"],
     subjects=["01", "01", "02", "02"],
-    case_ids=["01-left", "01-right", "02-left", "02-right"],
+    case_ids=["left-01", "right-01", "left-02", "right-02"],
 )
+selected_X, selected_info = info.select(X, [3, 0])
+restored = EEGDatasetInfo(selected_info.to_dict())
+restored.validate_layout(selected_X)
 ```
 
-This creates no BIDS acquisition claims. Generated default case IDs identify only
-the supplied collection. Subjects and units can remain explicitly unknown.
+## Stored information
 
-## Events and tables
-
-`source_info.events_for_cases(label_column="trial_type")` supplies rows ready
-for `make_event_cases`, using literal source labels and recording participant
-IDs. `group_column` chooses another explicit recording field. Missing labels or
-groups raise. Edit the returned event rows for explicit class mappings or event-based groups.
-No convenience infers the scientific meaning of source codes.
-
-For the plain case API, pair current descriptors with those events:
-
-```python
-from aeon_neuro.datasets import make_event_cases, build_classification_dataset
-
-metadata = source_info.current_metadata
-candidates = make_event_cases(
-    recordings, metadata, source_info.events_for_cases(), tmin=0.0, tmax=1.0,
-)
-dataset = build_classification_dataset(recordings, metadata, candidates)
-```
-
-`current_metadata` follows supported recording processing and selection, including
-cropped event origins and resampled grids. It returns detached descriptors.
-Only channel names, rate and sample count reflect the current layout; other
-fields remain source context. Original descriptors/events remain in `metadata`
-and `events`. Already segmented case views raise instead of being reused as
-recordings. Passing these descriptors alone retains the ordinary plain-input provenance.
-Pass `source_info` itself as metadata to preserve the shared source/history record.
-
-`recording.events_frame`, `recording.channels_frame` and
-`info.participants_frame` provide detached pandas views. Portable dictionaries
-and rows remain available for serialization. The existing bad-channel/type
-accessors keep their explicit missing-information behavior.
-
-## Execute and record processing
-
-```python
-X, info = info.process(X, "channels", names=["C4", "C3"])
-X, info = info.process(X, "filter", l_freq=8.0, h_freq=30.0, method="iir")
-X, info = info.process(X, "crop", tmin=0.25, tmax=0.75)
-X, info = info.process(X, "resample", sfreq=64)
-X, info = info.process(X, "scale", factor=1e6, units="uV")
-```
-
-Each successful call returns detached signals and information together. Failures
-leave both inputs unchanged. The supported operations are:
-
-| Operation | Parameters and behavior |
+| Scope | Contents |
 | --- | --- |
-| `channels` | Explicit ordered `names`; preserves source geometry and reference. |
-| `scale` | Finite nonzero `factor` and explicit output `units`. |
-| `crop` | Optional `tmin`, `tmax`, `start_time`; reuses `TimeCrop` and its exact, half-open sample-grid checks. |
-| `resample` | Positive target `sfreq`; uses SciPy polyphase resampling at the requested rate ratio, with reflected boundaries. The count is `ceil(input_count * target_rate / input_rate)`, without changing the sample grid to fit that count. |
-| `filter` | Explicit `l_freq`, `h_freq`, optional `method`; reuses `BandPassSeriesTransformer`. |
-| `reference` | `channels="average"` or an explicit name list; records the contributing channels and requires equal known units. |
+| Current row | Case identity, optional subject and group, optional original recording identity and source interval. |
+| Current layout | Ordered channel names, sampling frequency, per-channel units, sample count and source grid mapping when known. |
+| Optional dataset facts | Dataset description, README, complete participants table and participant dictionary. |
+| Optional source recording | Identity, participant, source layout and supplied channel, event, acquisition and geometry metadata. |
 
-Operations run independently within each current row. Filtering an epoch and
-filtering a continuous recording have different boundary support; choose the
-stage deliberately. Current sample origins/steps change after cropping or
-resampling. Case `source_support` retains a conservative half-open interval on
-the original recording grid, including context that earlier processing may
-have consumed. Filtering and resampling retain the complete contributing input row. Pointwise
-channel selection, scaling, referencing and crop permit exact case intervals.
-The shared split validator and inner classifier validation check this known
-original support as well as the declared identities. A narrower verified support
-map can permit more splits; dependent outputs must not be declared independent.
+`from_arrays` requires a rate and ordered channel names. Units and subjects may
+remain unknown. Groups default to supplied subjects. Default case IDs identify
+only the supplied collection; they do not establish shared physical sources.
+Original source references and intervals are meaningful only when supplied.
+Labels remain a separate `y` array.
 
-Resampling treats the decimal rates as an exact rational ratio. Its reduced
-integer numerator and denominator must each be at most 100,000, bounding SciPy's
-filter construction. Larger factors raise before resampling instead of silently
-approximating the rate. The history records SciPy's version with the executed
-operation. Current source-sample steps continue to match the requested rate,
-including when the output count requires rounding up.
+Source metadata can be supplied directly, without a reader or inspection report:
 
-The operations fit no learned transform. Learned preprocessing still belongs
-inside the training fold. `with_history` remains available for caller-reported
-operations, with no claim that those operations ran or changed the layout.
+```python
+source_info = EEGDatasetInfo(
+    dataset={"description": {"Name": "Example"}},
+    recordings=[{
+        "recording_id": "recording-01", "participant_id": "01",
+        "channel_names": ["C3", "C4"], "sampling_frequency": 128,
+        "n_samples": 1024,
+    }],
+)
+```
 
-Processed recordings can feed the ordinary case helpers. Event times are mapped
-onto the current grid, while published events remain preserved separately.
-A source column named `acquisition_event` blocks this derived route rather than
-being overwritten. Already segmented case views are rejected as recording inputs.
-Logical case channel aliases retain `source_channel_names`, so later selection
-and estimator layout checks preserve the actual source picks and units.
+`info.recordings` contains original `RecordingInfo` views. Supplied sidecar rows
+are preserved rather than rewritten to describe external transformations.
+Source participant IDs can be strings, integers or unknown (`None`). Unknowns
+stay on their recording rows, while `dataset.selected_participants` in portable
+state lists only known IDs. Selection recomputes that scope without inferring
+identities or converting integer IDs to strings.
 
-## Fit and predict with optional information
+Unknown optional facts remain absent. Names alone make no electrode-position
+claim. `info.participant_ids` and `info.groups` describe current rows;
+`info.participants` retains the full supplied source population.
+
+## Selection and portable state
+
+`info.select(X, selector)` copies arrays and matching information together.
+`info[selector]` selects information alone; apply the same selector to `X` and
+`y`. Selectors accept slices, unique nonnegative integer indices and matching
+boolean masks. Empty selections are valid. Copies can require substantial RAM.
+Current layouts can describe unequal-length rows; uniform rate/channel/unit
+accessors raise if rows disagree rather than selecting an arbitrary row.
+
+`to_dict` returns detached version-2 state with an optional version-1 current
+view. `EEGDatasetInfo(state)` validates and restores it. This encoding retains
+source context separately from selected current rows. Returned dictionaries,
+and rows are detached from stored state. Metadata contains no
+signal samples, and layout checks cannot detect equal-shaped array swaps or
+external value changes.
+
+Current cases retain their explicitly declared participant IDs, which may differ
+from original recording subjects, for example event-level actors. Original
+subjects remain available in recording metadata. Unknown identities remain
+unknown and groups stay separately configurable. NumPy integer identities
+normalize to Python integers without
+converting strings such as `"1"` to integers. Required current numeric layout and
+support fields also normalize to Python numbers; flexible annotations retain
+their supplied values.
+
+Empty dense collections still require real numeric values, nonempty channel and
+sample axes, a channel count matching the supplied names and aligned valid units.
+An empty case axis and empty variable-length lists remain supported.
+
+BIDS inspection/loading, estimator integration, processing and training-time
+validation are separate consumers of this metadata contract.
+
+## Optional information in classifiers
+
+EEG classifiers accept keyword-only `info` in `fit`, `predict` and
+`predict_proba`. `BaseEEGClassifier` validates and retains detached fitting
+information while preserving aeon's reset and validation lifecycle. Constructor
+rate/channel conflicts raise during fit. Prediction information must match the
+fitted rate, ordered names and known units. Call-specific prediction information is
+removed after success or failure. When fitting uses plain arrays, known rate and
+channel constructor settings are retained as fitting facts too. Changing a
+constructor parameter after fitting does not redefine the layout of the trained
+model. Metadata matching the original fitting layout remains valid, while
+metadata matching only the changed parameters is rejected. A subsequent fit
+validates those new parameters and replaces the retained fitting facts.
+Unknown fitting facts remain unknown. Pretrained CBraMod and LaBraM require
+200 Hz whenever a rate is supplied, including prediction after plain-array
+fitting. This fitted model requirement is independent of the unknown training
+rate and does not change when constructor parameters are later edited.
+This applies to the frozen estimator and fine-tuning paths. LaBraM can use
+ordered channel names from fitting information when `ch_names` is omitted.
 
 ```python
 from aeon_neuro.classification.deep_learning import EEGNetClassifier
 
+clf = EEGNetClassifier(n_epochs=1)
+clf.fit(X, y, info=info)
+probabilities = clf.predict_proba(X, info=info)
+```
+
+Plain arrays, cloning, sklearn pipelines and ordinary CV calls retain their
+interfaces. Automatic metadata forwarding through pipelines/CV is separate.
+Native aeon reexports keep their native interfaces. Information-derived channel
+names alone imply no positions; spatial models or explicit constructor names
+use the existing standard_1005 template policy, recorded in channel_geometry_.
+Measured source electrodes are not silently converted to model geometry.
+
+
+## BIDS sources and case construction
+
+`inspect_bids_eeg` reads supported local EDF/BDF headers and sidecars without
+reading signal samples. `load_bids_dataset` returns complete recordings and
+aligned information through an explicit verified opener. The loader is separate
+from the metadata container and closes all owned handles on success or failure.
+Original events, channels, participants, acquisition fields and source geometry
+remain available. Decoded EEG samples use volts; source sidecar units retain
+their original meaning.
+
+Ordinary recording/window/event helpers accept the information object and
+`build_classification_dataset` returns aligned `dataset.info`. Labels, grouping,
+channel choices and intervals remain explicit. No authored problem schema is
+required. See the [source guide](bids-problem-input.md) and
+[loading guide](bids-dataset-info.md) for conflicts, snapshot limits and examples.
+
+
+The source-record dataclass also retains `sidecar_paths`, a mapping from sidecar
+roles to source paths or explicit absence. An absent `channels` entry does not
+hide supplied channel rows; an explicit `channels: None` records unavailability.
+
+## Executed processing
+
+`info.process(X, operation, **parameters)` returns detached arrays and updated
+information together. It supports ordered channel selection, explicit scaling,
+exact-grid crop, polyphase resampling, band-pass filtering and referencing.
+Failures leave arrays and metadata unchanged. No operation fits a learned
+transform; learned preprocessing still belongs inside training folds.
+Operations update named layout fields and serialize the performed facts, including
+reference or temporal-context fields omitted from a restored input. Original
+source descriptors remain separate throughout the operation chain.
+
+```python
+X, info = info.process(X, "channels", names=["C4", "C3"])
+X, info = info.process(X, "crop", tmin=0.25, tmax=0.75)
+X, info = info.process(X, "resample", sfreq=64)
+```
+
+Current rate/channel/unit/grid fields change while original acquisition facts
+remain intact. Executed history records implementation versions, parameters and
+original application scopes. Selection preserves earlier scopes. Filtering and
+resampling conservatively retain the complete contributing input row as source
+support. Pointwise operations permit exact derived intervals. The ordinary
+split validator checks known original-source support across partitions.
+
+Resampling uses SciPy resample_poly with the exact decimal rate ratio, reflected
+boundaries and ceil(input_count * target_rate / input_rate) output samples. The
+sample grid does not change to fit the rounded count. Reduced numerator and
+denominator above 100,000 raise before filter allocation. Source stats and
+metadata history do not authenticate arbitrary external array edits.
+
+## Optional inner validation and early stopping
+
+BraindecodeClassifier and EEGNetClassifier accept `validation_size`, `patience`
+and `validation_strategy`. The default validation_size=None retains training on
+all supplied rows for every configured epoch and the merged training-batch policy.
+With information, auto validation holds out whole known subjects; without it,
+validation stratifies cases. Explicit stratified validation supports within-person
+questions with retained metadata. Missing subjects, class-confounded partitions
+and known source overlap raise without changing seeds or falling back silently.
+Both partitions must contain every fitting class, even when stratification
+succeeds. Label count and dimensionality must match the fitting collection.
+
+```python
 clf = EEGNetClassifier(
     n_epochs=20, validation_size=0.2, patience=5, random_state=42,
 )
 clf.fit(X_train, y_train, info=info_train)
-probabilities = clf.predict_proba(X_test, info=info_test)
 ```
 
-The EEG-specific classifiers inherit `BaseEEGClassifier`, which calls aeon's
-base methods for resetting, collection/label validation, fitting and prediction.
-Protected estimator methods retain their ordinary signatures and can access
-`info_`, `sfreq_`, `channel_names_` and `subject_ids_`. Prediction methods can
-access call-local `_prediction_info`, which is removed after success or failure.
-Constructor parameters remain unchanged, including after cloning.
+Only the collection supplied to fit is split. Realized indices, validation policy,
+loss history, best epoch and restored best weights remain available and survive
+pickling. Default training avoids a redundant full input copy; fixed validation
+tensors are built once per fit. Validation and prediction include every row.
+Subject disjointness cannot override known original signal overlap, and
+stratification alone does not establish independent trials/groups.
 
-An explicit constructor rate or ordered channel list that disagrees with `info`
-raises. Prediction information must match the fitted rate and ordered channels;
-known incompatible units also raise. Omitting prediction information retains
-ordinary shape validation but cannot verify facts absent from the call.
-
-Plain `fit(X, y)` and `predict(X)` continue to work in sklearn pipelines,
-`cross_val_score` and aeon entrypoints. Native classifiers imported from aeon
-retain their own interfaces. Passing information through arbitrary pipeline/CV
-routing is separate from the manual aligned selection shown here.
-
-`BraindecodeClassifier` and EEGNet share optional early stopping through
-`validation_size`; its default `None`
-retains training on all supplied cases. With information, validation holds out
-entire known subjects from the current fitting collection. Both partitions must
-contain every fitting class. Missing subjects, too few subjects or a
-class-confounded split raise without falling back to random cases. Without
-information, validation uses stratified cases. For a within-person question,
-explicitly set
-`validation_strategy="stratified"` to retain metadata while stratifying cases.
-`validation_strategy="subject"` requires known subjects even without the default
-inference rule. Both strategies reject overlapping known original source support.
-Both also check that labels match the fitting row count and that every fitting
-class remains on each side. Stratification can lose a rare class through rounding;
-such a realized split raises before network construction, without retrying seeds
-or changing the requested validation fraction.
-Stratification alone does not establish trial/group independence; retain an
-explicit trial-aware outer policy and use independently constructed cases.
-Array-only information has no verified original-source identity to check. The best validation-loss weights are restored. `training_indices_`,
-`validation_indices_`, `validation_policy_`,
-`validation_history_` and one-based `best_epoch_` record the realized split and
-selection. The outer test set is never supplied to this process.
-
-The merged generic Braindecode adapter uses the same base and validation loop
-as its existing wrappers. Its default 200 epochs and incomplete training-batch
-policy remain unchanged. Every validation/prediction row is included, and fitted
-information and selected weights survive pickle restoration.
-
-For ordinary models, information-derived channel names carry no position claim.
-Explicit `channel_names`, and spatial models requiring positions such as DGCNN,
-use the adapter's existing `standard_1005` template policy. These are template
-coordinates, never measured BIDS electrodes. `channel_geometry_` records
-`names_only` or `standard_1005` when the model accepts channel information.
-Supply explicit constructor channel names to request template positions for an
-ordinary model. Unknown template names raise; nonstandard information-derived
-names remain usable by models that do not require positions.
-
-Other consumers can call `BaseEEGClassifier.validation_split` inside `_fit`.
-The shared base does not add early stopping to estimators that do not use it.
-
-## Preserve provenance in saved outputs
-
-`EEGDatasetInfo(info.to_dict())` restores detached portable state, including the
-optional version-1 current view. Restoration validates identities, source support,
-channel/rate/sample layouts and history before use. Original inspection reports
-without the extension remain valid.
-
-`info.to_ts_header()` formats that state as `.ts` comment text. Pass it as the
-`header` argument to `aeon.datasets.save_to_ts_file`, which writes the structural
-header and data. Comments preserve source context and history; they do not alter
-the data format or prove unchanged array contents. The exported state includes
-source tables and paths, so choose the source context appropriate for the output.
+Subject-based validation preserves the equality of string and integer IDs,
+including mixed collections. Integer `1` and text `"1"` identify different
+subjects; all their rows stay together in the selected partition.
 
 
-## Add classifiers and source types
+## Dictionary structure
 
-A new EEG classifier inherits `BaseEEGClassifier` and implements the ordinary
-`_fit(X, y)`, `_predict(X)` and optional `_predict_proba(X)` methods. Read fitted
-`info_`, `sfreq_`, `channel_names_` and `subject_ids_` when needed. The shared base
-checks metadata and calls aeon's lifecycle; models do not reread BIDS sidecars or
-add information parameters to protected methods. New Braindecode architectures
-can use the existing generic adapter, with explicit model input requirements.
+This is the reference for portable dictionaries. Internally, fixed metadata
+structures use named dataclass fields:
 
-Regular multichannel case arrays and explicit units/identities are usable through
-`from_arrays` without BIDS. The native inspector and `RecordingInfo` remain EEG
-and EDF/BDF-specific. Additional modalities need appropriate readers, channel
-types, physical units and geometry policies; names alone must not imply EEG
-positions. Pipeline/CV metadata routing remains a separate integration boundary.
-Keep source acquisition adapters separate from the current case layout and
-estimator contract when adding those capabilities.
+| Record | Contents |
+| --- | --- |
+| `_DatasetFacts` | Dataset description, README, participant table/dictionary and selected source participants. |
+| `_RecordingDescriptor` | Original recording identity, participant, source channels/rate/length, entities and optional source annotations. |
+| `_CaseRow` | Current case, recording, participant and group identities with contributing sample support. |
+| `_SignalLayout` | Current channels, sampling rate, units, sample count, reference and source-grid mapping. |
+| `_CurrentView` | Version, kind and aligned lists of typed case rows and layouts. |
+
+`EEGDatasetInfo._dataset` holds dataset facts. `_recordings` contains
+`RecordingInfo` views, each with a typed `_source` descriptor and original event
+rows. `_view` contains typed current rows/layouts, or `None` for source-only
+information. Original events and diagnostics remain separate lists. Flexible
+EEG JSON fields, table rows and unrecognized source extensions remain dictionaries.
+
+Conversion to and from dictionaries happens at the portable-state and public
+property boundaries. Each record tracks supplied keys so omitted optional fields
+stay omitted; unrecognized fields round-trip without becoming fixed attributes.
+The outer version-2 and current-view version-1 formats are unchanged. Records are
+private mutable implementation details, not public immutable value objects.
+Construction, properties and selection retain detached ownership. Use the public
+properties and `to_dict()` rather than mutating private fields, which bypasses
+alignment checks.
+
+The following tables describe the core keys. Additional supplied source fields
+are retained; this container does not validate every source annotation or make
+arbitrary dictionaries JSON-compatible. No signal samples or target array `y`
+are stored.
+
+### Version-2 source state
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `version` | int | `2`, the outer state format. |
+| `ready` | bool | Must be `True` for construction; describes supplied metadata readiness, not source authentication. |
+| `issues` | list of dict, optional | Source diagnostics, empty for explicit construction. Omission is preserved through restoration and selection. Each diagnostic requires a nonblank text `severity`, text `message` and `recording_id` that is nonblank text or `None` for dataset scope. Malformed diagnostics raise during construction; extra fields remain intact. |
+| `dataset` | dict | Dataset facts described below. |
+| `source_ids` | list of str | Original recording identities, exactly aligned with `recordings`. Unlike the public property, this is not derived from current cases. |
+| `recordings` | list of dict | Original recording descriptors, empty for `from_arrays`. |
+| `events` | list of dict | Original event rows referencing retained recording identities, empty when unavailable. |
+| `view` | dict, optional | Version-1 current rows and layouts. Omitted for source-only information, rather than set to `None`. |
+
+The `dataset` dictionary contains:
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `description` | dict or None | Original dataset description. |
+| `readme` | str or None | Original README text. |
+| `participants` | dict or None | Complete source participant table, using `columns` and `rows`. |
+| `participants_json` | dict or None | Original participant-column dictionary. |
+| `selected_participants` | list of str or int | Known participants in the retained `recordings`, sorted with integers before strings. Unknown IDs are omitted; `1` and `"1"` remain distinct. |
+
+Selection of source-only information narrows the recording descriptors, events,
+diagnostics and selected participant scope. Selection within a current view
+narrows only its rows and layouts, retaining the full source context. Therefore
+`dataset["selected_participants"]` need not equal the participants in a selected
+case view. `participants` always retains the complete supplied source population.
+
+### Original recording descriptors and events
+
+Every recording descriptor requires the first five keys below. Optional fields
+retain original source facts; they do not describe later case transformations.
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `recording_id` | str | Unique nonempty recording identity, root-relative for BIDS sources. |
+| `participant_id` | str, int or None | Original participant identity, or unknown. |
+| `channel_names` | list of str | Unique ordered source channel names. |
+| `sampling_frequency` | float | Positive source rate in Hz. |
+| `n_samples` | int | Positive original recording length in samples. |
+| `subject`, `session`, `task`, `acq`, `run` | str or None, optional | Original BIDS entities. `RecordingInfo.entities` exposes `acq` as `acquisition`; missing entities return `None`. |
+| `channel_metadata` | list of dict or None, optional | Original channel table rows, exposed as `channels`. Missing or `None` means unavailable. |
+| `channel_units_fiff` | list of int, optional | Decoded unit codes aligned with source channels. Derived recording layouts map voltage/magnetic-field codes to `V`/`T`; unavailable or unrecognized codes give `None`. |
+| `eeg_metadata` | dict, optional | Resolved original EEG JSON fields, exposed as `eeg_json`; omission gives `{}`. `EEGReference`, if supplied, seeds a source-only layout's reference. |
+| `events_metadata` | dict, optional | Resolved event column definitions, exposed as `events_json`; omission gives `{}`. |
+| `events_metadata_origins` | dict, optional | Root-relative dictionary filenames and the effective source filename for each top-level column. |
+| `electrodes` | dict or None, optional | Original electrode table with `columns` and `rows`. |
+| `coordsystem` | dict or None, optional | Original coordinate-system fields and units, without conversion. |
+| `scan` | dict or None, optional | Matched scans entry with `row` (dict) and `row_index` (zero-based int). |
+
+Source tables use `columns` (an ordered list of column names) and `rows` (a list
+of dictionaries keyed by those names). Missing optional geometry or scan fields
+are exposed as `None`. Source-file channel units can differ from decoded array
+units; they must not be substituted for current layout units.
+
+Each original event row contains these keys. Additional original event columns
+are retained without being interpreted as labels.
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `recording_id` | str | Identity of a retained source recording. |
+| `bids_event_id` | supplied identifier | Unique within its recording; the pair identifies the original event. |
+| `onset` | float or str | Original onset in seconds relative to recording start, or `n/a` when unknown. TSV values retain their original text. |
+| `bids_onset_sample` | int or None | Exact source-grid sample for `onset`, or `None` for an unknown or off-grid onset. Construction checks consistency without rounding. |
+
+### Version-1 current view
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `version` | int | `1`, independently versioned from the source state. |
+| `kind` | str | `cases` or `recordings`. |
+| `rows` | list of dict | Current aligned row identities and contributing support. |
+| `layouts` | list of dict | One current layout per row, in exactly the same order. |
+
+Each `rows` entry contains:
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `case_id` | str | Unique nonempty identity within the current view. |
+| `recording_id` | str or None | Nonblank original source recording identity, or `None` for arrays without source context. The type is checked even when source descriptors are absent. |
+| `participant_id` | str, int or None | Declared participant for this current row, or unknown. It may differ from the original recording subject. |
+| `group_id` | str, int or None | Declared current split group, defaulting to the supplied subject in `from_arrays`. |
+| `source_support` | list of two int | Zero-based half-open contributing interval `[start, stop)` in source samples. Without source context, `from_arrays` uses the supplied row's `[0, n_samples)` interval; it establishes no physical source lineage. |
+
+Each `layouts` entry contains:
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `channel_names` | list of str | Unique current channel names in array order. |
+| `sampling_frequency` | float | Positive current rate in Hz. |
+| `units` | list of str or None | One unit per current channel; individual entries may be `None`, never the list itself. |
+| `n_samples` | int | Positive current row length. |
+| `reference` | supplied value or None | Declared current reference, unknown for `from_arrays`. |
+| `source_origin_sample` | float | Nonnegative source-grid coordinate of current sample zero. |
+| `source_sample_step` | float | Positive source-grid increment per current sample. With a known source, equals source rate divided by current rate. |
+| `temporal_context` | str, optional | `pointwise` or `whole_row`, describing whether contributing support is pointwise or spans the row. Constructors use `pointwise`; validation treats omission as `whole_row`. |
+| `source_channel_names` | list of str, optional | Ordered original channels corresponding to current names. Omission uses `channel_names`; supplied mappings must align with the current channel count. |
+
+The source coordinate for current sample `j` is
+`source_origin_sample + j * source_sample_step`. Grid points must fall inside
+the row's contributing support `[start, stop)`; a point at `stop` is outside it.
+Grid arithmetic uses normalized Python numbers and rejects nonfinite results,
+so NumPy integer overflow cannot bypass the support check.
+A source-only object has no stored current view;
+`layouts` derives recording layouts on demand, while `cases` and `case_ids`
+raise `ValueError`. Uniform `sfreq`, `channel_names` and `units` accessors also
+raise for empty collections or differing row values. Unknown units appear as
+`None` entries in a tuple, rather than a `None` tuple.

@@ -42,7 +42,6 @@ def test_shared_info_case_builders_preserve_source_and_history(
 ):
     """Source information must not depend on authored problem documents."""
     X, info = load_bids_dataset(source[0])
-    info = info.with_history("review", {}, implementation="example", version="1")
     before = info.to_dict()
     original_import = builtins.__import__
 
@@ -176,3 +175,17 @@ def test_pointwise_recording_operations_keep_exact_independent_case_support(
         disjoint_by=[("trial_id",)],
         source_fields=("recording_id", "start_sample", "stop_sample"),
     )
+
+
+def test_restored_current_recordings_keep_dictionary_descriptor_boundary():
+    """Restored current layouts feed public recording and event helpers."""
+    from aeon_neuro.datasets.tests.test_info_records import saved_state
+
+    state = saved_state()
+    state["view"]["kind"] = "recordings"
+    state["events"][0]["trial_type"] = "left"
+    info = EEGDatasetInfo(state)
+    assert info.current_metadata[0]["n_samples"] == 8
+    assert info.metadata[0]["n_samples"] == 16
+    assert info.events_for_cases()[0]["label"] == "left"
+    assert info.events_for_cases()[0]["group_id"] == 1

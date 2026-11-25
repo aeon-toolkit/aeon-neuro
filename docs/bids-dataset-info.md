@@ -42,12 +42,13 @@ Unknown optional facts stay `None`; source rows and `n/a` values retain their me
 | `info.source_ids` | Source recording IDs in signal order. |
 | `info.participant_ids` | One original `sub-` participant ID per recording, in signal order. Multiple recordings may share one participant. |
 | `info.metadata`, `info.events` | Detached original acquisition descriptors/events. |
-| `info.current_metadata`, `info.events_for_cases()` | Paired current recording descriptors and literal event targets for the plain case API, including after supported processing. |
+| `info.current_metadata`, `info.events_for_cases()` | Paired current recording descriptors and literal event targets for the plain case API, with the supplied current layout. |
 | `info.recordings` | Tuple of `RecordingInfo` views in signal order. |
 | `recording.entities` | Source subject/session/task/acquisition/run values, without prefixes. |
 | `recording.sfreq`, `recording.channel_names` | Decoded rate and ordered source channel names. |
 | `recording.channels`, `recording.eeg_json` | Original channel rows and resolved source EEG JSON. |
 | `recording.events` | Source event rows, including exact `bids_onset_sample` coordinates where available. |
+| `recording.events_json` | Effective source event column definitions such as `value.Levels`. |
 | `recording.electrodes`, `recording.coordsystem`, `recording.scan` | Optional source geometry and matched scans row. |
 
 `recording.bad_channels()` returns only channels explicitly marked `bad`, raising
@@ -129,67 +130,3 @@ separately with the existing [split validation](classification-problems.md).
 When shared provenance is present, split validation also checks its original
 source support; current nonoverlapping window bounds cannot hide dependencies
 from earlier filtering or resampling.
-
-## Record reported processing
-
-After independently performing an operation, use `with_history` to describe it.
-The method returns a new metadata view; it does not mutate the parent or perform
-the operation itself. For example, record an explicit scale conversion:
-
-```python
-import numpy as np
-
-X_scaled = [recording * 1e6 for recording in X]
-scaled_info = info.with_history(
-    "scale",
-    {"factor": 1e6, "input_units": "V", "output_units": "uV"},
-    implementation="numpy.multiply",
-    version=np.__version__,
-    fit_scope="none",
-)
-print(scaled_info.history)
-```
-
-Supply the actual implementation version and effective parameters. Each record
-uses the following version-1 schema:
-
-| Field | Meaning |
-| --- | --- |
-| `version` | Record schema version, currently integer `1`. |
-| `step` | Nonempty caller-supplied operation name. |
-| `parameters` | Dictionary of effective parameters using portable JSON values. |
-| `implementation`, `implementation_version` | Caller-supplied implementation identifier and its version. |
-| `fit_scope` | Caller-supplied description of fitting inputs, `none` for an unfitted operation, or `unspecified` when omitted. |
-| `source_ids` | Recording source identities selected when the record was appended. |
-
-Parameters accept string-keyed dictionaries, lists, strings, finite floats,
-integers, bools and `None`. Convert NumPy values explicitly. Tuples, non-string
-keys, recursive structures and nonfinite numbers raise errors instead of changing
-meaning during serialization. Names and versions must be nonempty strings.
-Records do not add a wall-clock timestamp; callers may include one in parameters
-when needed. An implementation version is required on each record.
-
-`info.history` returns detached records in append order, initially an empty list.
-`to_dict()` preserves the version-2 source report, adding the optional `history`
-list only when supplied or appended. Ordinary inspector reports are unchanged.
-`EEGDatasetInfo(json.loads(json.dumps(scaled_info.to_dict())))` validates and
-restores both source facts and history. Loading source data does not claim any
-unreported preprocessing.
-
-Save this metadata snapshot alongside derived outputs, or retain the combined
-provenance returned by `build_classification_dataset(X, info, cases)`. Passing only `info.metadata`
-and `info.events` to the older case APIs does not copy dataset-level history.
-Pass `info.to_ts_header()` explicitly to the existing aeon writer to include the complete information state as comments.
-
-Paired selection preserves complete earlier records, including source identities
-outside the new subset. Narrowing those identities could conceal that processing
-used a larger population. A later record identifies only the sources selected
-at that later step. Empty selections preserve existing history but cannot append
-a new step. The log does not automatically record selection operations.
-
-History is a caller's account, not evidence that an operation occurred or that
-fitting avoided leakage. It does not fingerprint arrays, generate derived data
-identities or detect external mutation. Source channel units, reference, rate,
-event coordinates and file snapshots remain source facts. A crop or resampling
-record does not make the original metadata describe a changed signal layout;
-`validate_layout` continues to reject incompatible shapes. Use `info.process` for supported executed operations and current-layout updates. Automatic tracking of arbitrary external transformers is not provided. The [EEG information guide](eeg-information.md) distinguishes the executed and caller-reported routes.

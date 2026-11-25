@@ -12,8 +12,8 @@ import numpy as np
 from mne_bids import get_bids_path_from_fname
 
 from aeon_neuro.datasets._bids_selection import _find_bids_paths
-from aeon_neuro.datasets._classification import _samples
-from aeon_neuro.utils._bids_json import _read_eeg_json
+from aeon_neuro.datasets._info_view import _event_onset, _event_sample
+from aeon_neuro.utils._bids_json import _read_bids_json, _read_eeg_json
 from aeon_neuro.utils.data_io import load_eeg_to_mne
 
 
@@ -269,20 +269,9 @@ def _recording_sidecars(root, bids_path, descriptor, files, issues):
         )
 
 
-def _event_sample(onset, sfreq):
-    """Return an exact grid coordinate, or None without rounding source facts."""
-    onset = float(onset)
-    if not np.isfinite(onset):
-        raise ValueError("Event onset must be finite")
-    try:
-        return _samples(onset, sfreq, "event onset")
-    except ValueError:
-        return None
-
-
 def _events(rows, recording_id, sfreq, n_samples, issues):
     events = []
-    off_grid, outside = 0, 0
+    unknown, off_grid, outside = 0, 0, 0
     for index, original in enumerate(rows):
         row = dict(original)
         reserved = {
@@ -296,8 +285,8 @@ def _events(rows, recording_id, sfreq, n_samples, issues):
                 f"Event columns shadow adapter identities: {sorted(reserved)}"
             )
         try:
-            onset = float(row["onset"])
-            sample = _event_sample(onset, sfreq)
+            onset = _event_onset(row["onset"])
+            sample = None if onset is None else _event_sample(onset, sfreq)
             duration = row["duration"]
             length = None if duration == "n/a" else float(duration)
             valid = length is None or (np.isfinite(length) and length >= 0)
@@ -326,10 +315,20 @@ def _events(rows, recording_id, sfreq, n_samples, issues):
             bids_onset_sample=sample,
         )
         events.append(row)
-        off_grid += sample is None
-        outside += not 0 <= onset < n_samples / sfreq
+        if onset is None:
+            unknown += 1
+        else:
+            off_grid += sample is None
+            outside += not 0 <= onset < n_samples / sfreq
     # BIDS permits pre-recording events and continuous-valued onsets. Retain them
     # for explicit selection; exact epoch extraction remains the case engine's job.
+    if unknown:
+        _issue(
+            issues,
+            recording_id,
+            "event_onset_unknown",
+            f"{unknown} events have unknown onsets; rows retained as source context",
+        )
     if off_grid:
         _issue(
             issues,
@@ -431,6 +430,18 @@ def _inspect(root, bids_path, issues, dataset):
             "events_missing",
             "No event table; event-epoch problems remain unresolved",
         )
+    # Resolve the codebook independently of the table. A task-level dictionary
+    # can describe this recording's local events without a matching basename.
+    events_metadata, events_origins = _read_bids_json(
+        bids_path,
+        "events",
+        read_json=lambda path: _metadata(root, path, files, _json_object),
+    )
+    if events_origins["sources"]:
+        descriptor.update(
+            events_metadata=events_metadata,
+            events_metadata_origins=events_origins,
+        )
     descriptor["sidecar_paths"].update(
         channels=(
             channels.relative_to(root).as_posix() if channels is not None else None
@@ -466,7 +477,8 @@ def _inspect(root, bids_path, issues, dataset):
             event_rows, recording_id, raw.info["sfreq"], raw.n_times, issues
         )
         if any(
-            row["duration"] != "n/a"
+            row["onset"] != "n/a"
+            and row["duration"] != "n/a"
             and float(row["onset"]) + float(row["duration"])
             > raw.n_times / raw.info["sfreq"]
             for row in events
@@ -539,12 +551,12 @@ def inspect_bids_eeg(
         Issues have severity, code, recording_id and message.
         Any blocking error sets recordings/events to None, preventing a silently
         partial catalogue. Warnings preserve unknown facts and caller decisions.
-        Successful descriptors retain header facts, EEG JSON field origins,
+        Successful descriptors retain header facts, EEG and events JSON origins,
         original tables and local file snapshots. Participant attributes use
         literal flat keys such as participant.group. Events preserve columns
         and add bids_event_id/bids_event_row, identifying published table rows,
-        plus exact integer bids_onset_sample coordinates where available. Off-grid
-        onsets retain None; negative/outside onsets remain source context.
+        plus exact integer bids_onset_sample coordinates where available. Unknown
+        and off-grid onsets retain None; negative/outside onsets remain source context.
         Recording descriptors retain optional electrodes/coordsystem sidecars,
         a matching scans row and sidecar paths. TSV values stay strings; geometry
         values and row order do not alter the decoded channel layout or units.

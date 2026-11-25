@@ -97,15 +97,22 @@ This also makes `aeon-neuro` useful beyond software alone. It is a research scaf
 building stronger baselines, reproducing studies, and understanding where different classes
 of method work well or fail.
 
-## EEG data and side information
+## EEG side information
 
-Load local BIDS recordings with aligned source metadata, construct explicit
-classification cases, and retain current channels, sampling rate, units and
-processing history through selection and supported processing operations.
-EEG classifiers accept optional aligned information at fitting and prediction;
-plain array-only workflows remain available. See the experimental
-[EEG information guide](docs/eeg-information.md) for the complete workflow,
-subject-separated validation and serialization boundaries.
+Describe EEG arrays with optional source metadata, retain aligned row identities
+through selection, save detached metadata, and pass optional information to EEG
+classifiers at fitting and prediction. Braindecode models can optionally use
+subject-aware inner validation and early stopping. See the
+experimental [EEG information guide](docs/eeg-information.md). Supplied prediction
+information must match retained fitting facts, including known constructor rate
+and channel settings when fitting received plain arrays. Later constructor edits
+configure the next fit; valid prediction information continues to describe the
+existing fitted model. Fit still rejects conflicting constructor settings.
+Pretrained CBraMod and LaBraM also enforce their 200 Hz requirement on supplied
+prediction information, even when the training sampling rate was unknown.
+
+Subject validation accepts string and integer IDs in the same collection while
+keeping distinct identities, such as `1` and `"1"`, in separate groups.
 
 ## Installation
 
@@ -126,6 +133,11 @@ pip install aeon-neuro[all_extras]
 
 To install the latest development version from GitHub, see the
 installation guide.
+
+For exact, versioned NEMAR EEG acquisition, install `aeon-neuro[nemar]` and use
+`fetch_nemar_dataset` with explicit subjects or recording paths. The
+[dataset guide](docs/datasets.md#nemar-bids-recordings) describes verified caches,
+offline reuse and the acquisition report.
 
 ## Documentation
 

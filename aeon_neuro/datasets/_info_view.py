@@ -6,13 +6,23 @@ from numbers import Real
 
 import numpy as np
 
-from aeon_neuro.datasets._classification import _channels, _identifier, _integer
+from aeon_neuro.datasets._classification import (
+    _channels,
+    _identifier,
+    _integer,
+    _samples,
+)
+from aeon_neuro.datasets._info_records import _CurrentView
 
 
 def _collection(X):
     if isinstance(X, np.ndarray):
         if X.ndim != 3:
             raise ValueError("X must have case, channel and sample axes")
+        # Empty subsets still retain a dense dtype and channel/sample axes.
+        # Per-case checks cannot validate those declarations when no rows exist.
+        if X.dtype.kind not in "fiu" or 0 in X.shape[1:]:
+            raise ValueError("X must have real numeric nonempty channel/sample axes")
     elif not isinstance(X, (list, tuple)):
         raise ValueError("X must be a real numeric collection")
     for array in X:
@@ -28,14 +38,15 @@ def _collection(X):
 
 
 def _positive(value, name):
-    if (
-        isinstance(value, (bool, np.bool_))
-        or not isinstance(value, Real)
-        or not np.isfinite(value)
-        or value <= 0
-    ):
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real):
         raise ValueError(f"{name} must be finite and positive")
-    return float(value)
+    try:
+        value = float(value)
+    except OverflowError as exc:
+        raise ValueError(f"{name} must be finite and positive") from exc
+    if not np.isfinite(value) or value <= 0:
+        raise ValueError(f"{name} must be finite and positive")
+    return value
 
 
 def _layout(names, rate, units, length, *, reference=None, origin=0.0):
@@ -64,16 +75,25 @@ def _validate_view(view, sources):
         ):
             raise ValueError("Invalid current-layout view")
         seen = set()
+        rows, layouts = [], []
         for row, layout in zip(view["rows"], view["layouts"], strict=True):
+            # Normalize only detached top-level fields. Nested annotations are
+            # copied at the record boundary, without another whole-view copy.
+            row, layout = dict(row), dict(layout)
             identity = row["case_id"]
             if not isinstance(identity, str) or not identity or identity in seen:
                 raise ValueError("Current case identities must be unique nonempty text")
             seen.add(identity)
-            if row["recording_id"] not in sources and sources:
+            recording_id = row["recording_id"]
+            if recording_id is not None and (
+                not isinstance(recording_id, str) or not recording_id.strip()
+            ):
+                raise ValueError("Current recording_id must be nonempty text or None")
+            if recording_id not in sources and sources:
                 raise ValueError("Current case refers to an unknown source")
             for key in ("participant_id", "group_id"):
                 if row[key] is not None:
-                    _identifier(row[key], key)
+                    row[key] = _identifier(row[key], key)
             bounds = row["source_support"]
             if not isinstance(bounds, list) or len(bounds) != 2:
                 raise ValueError("Source support must be a half-open sample interval")
@@ -82,9 +102,12 @@ def _validate_view(view, sources):
                 raise ValueError(
                     "Source support must have nonnegative increasing bounds"
                 )
-            source = sources.get(row["recording_id"])
+            row["source_support"] = [start, stop]
+            source = sources.get(recording_id)
             if source is not None and stop > source["n_samples"]:
                 raise ValueError("Source support exceeds its recording")
+            # A case may declare its own participant, for example an event's
+            # actor. Keep that identity separate from the recording subject.
             names = layout["channel_names"]
             if layout.get("temporal_context", "whole_row") not in (
                 "pointwise",
@@ -106,8 +129,8 @@ def _validate_view(view, sources):
                 or len(set(source_names)) != len(source_names)
             ):
                 raise ValueError("Source channel mapping must align with current names")
-            _positive(layout["sampling_frequency"], "sampling_frequency")
-            _positive(layout["source_sample_step"], "source_sample_step")
+            rate = _positive(layout["sampling_frequency"], "sampling_frequency")
+            step = _positive(layout["source_sample_step"], "source_sample_step")
             if (
                 not isinstance(layout["source_origin_sample"], Real)
                 or isinstance(layout["source_origin_sample"], bool)
@@ -118,19 +141,24 @@ def _validate_view(view, sources):
             length = _integer(layout["n_samples"], "n_samples")
             if length <= 0:
                 raise ValueError("Current n_samples must be positive")
-            first = layout["source_origin_sample"]
-            last = first + (length - 1) * layout["source_sample_step"]
-            if first < start or last >= stop + 1e-8:
+            # Use Python numeric operands so NumPy integer steps cannot wrap
+            # and make an out-of-support final coordinate appear valid.
+            first = float(layout["source_origin_sample"])
+            try:
+                last = first + (length - 1) * step
+            except OverflowError as exc:
+                raise ValueError("Current sample grid must be finite") from exc
+            if not np.isfinite(last):
+                raise ValueError("Current sample grid must be finite")
+            # The stop coordinate is excluded even for fractional sample grids;
+            # adding a tolerance here would admit samples outside the support.
+            if first < start or last >= stop:
                 raise ValueError(
                     "Current sample grid exceeds its original source support"
                 )
             if source is not None:
-                expected_step = (
-                    source["sampling_frequency"] / layout["sampling_frequency"]
-                )
-                if not np.isclose(
-                    layout["source_sample_step"], expected_step, rtol=1e-10, atol=0
-                ):
+                expected_step = source["sampling_frequency"] / rate
+                if not np.isclose(step, expected_step, rtol=1e-10, atol=0):
                     raise ValueError(
                         "Current rate disagrees with its source sample map"
                     )
@@ -145,7 +173,15 @@ def _validate_view(view, sources):
                 )
             ):
                 raise ValueError("Current units must align with channel names")
-        return deepcopy(view)
+            layout.update(
+                sampling_frequency=rate,
+                source_sample_step=step,
+                source_origin_sample=first,
+                n_samples=length,
+            )
+            rows.append(row)
+            layouts.append(layout)
+        return _CurrentView._from_dict({**view, "rows": rows, "layouts": layouts})
     except (KeyError, TypeError, IndexError) as exc:
         raise ValueError("Incomplete current-layout view") from exc
 
@@ -156,8 +192,8 @@ def _source_units(descriptor, names):
     from mne.io.constants import FIFF
 
     labels = {int(FIFF.FIFF_UNIT_V): "V", int(FIFF.FIFF_UNIT_T): "T"}
-    codes = descriptor.get("channel_units_fiff", [])
-    indices = {name: i for i, name in enumerate(descriptor["channel_names"])}
+    codes = descriptor.channel_units_fiff
+    indices = {name: i for i, name in enumerate(descriptor.channel_names)}
     return [
         labels.get(codes[indices[name]]) if indices[name] < len(codes) else None
         for name in names
@@ -170,6 +206,13 @@ def _from_arrays(X, sfreq, channel_names, units, subjects, case_ids, groups):
     count = len(arrays)
     names = _channels(channel_names)
     units = [None] * len(names) if units is None else list(units)
+    if len(units) != len(names) or any(
+        value is not None and (not isinstance(value, str) or not value)
+        for value in units
+    ):
+        raise ValueError("Current units must align with channel names")
+    if isinstance(arrays, np.ndarray) and arrays.shape[1] != len(names):
+        raise ValueError("Channel names do not match X")
     subjects = [None] * count if subjects is None else list(subjects)
     groups = subjects if groups is None else list(groups)
     ids = [f"case:{i}" for i in range(count)] if case_ids is None else list(case_ids)
@@ -200,14 +243,13 @@ def _from_arrays(X, sfreq, channel_names, units, subjects, case_ids, groups):
 
 def _case_view(info, dataset):
     sources = {row["recording_id"]: row for row in info.metadata}
+    source_records = {record.recording_id: record._source for record in info.recordings}
     current = (
         {
-            row["recording_id"]: (row, layout)
-            for row, layout in zip(
-                info._view["rows"], info._view["layouts"], strict=True
-            )
+            row.recording_id: (row, layout)
+            for row, layout in zip(info._view.rows, info._view.layouts, strict=True)
         }
-        if info._view is not None and info._view["kind"] == "recordings"
+        if info._view is not None and info._view.kind == "recordings"
         else {}
     )
     names = list(dataset.metadata["channel_names"])
@@ -234,7 +276,7 @@ def _case_view(info, dataset):
             row.setdefault(key, source.get(key, source.get("entities", {}).get(key)))
         input_row, input_layout = current.get(row["recording_id"], (None, None))
         row["source_support"] = (
-            deepcopy(input_row["source_support"])
+            deepcopy(input_row.source_support)
             if input_row is not None
             else [row["start_sample"], row["stop_sample"]]
         )
@@ -244,15 +286,15 @@ def _case_view(info, dataset):
             rate,
             (
                 [
-                    input_layout["units"][input_layout["channel_names"].index(name)]
+                    input_layout.units[input_layout.channel_names.index(name)]
                     for name in input_names
                 ]
                 if input_layout is not None
-                else _source_units(source, input_names)
+                else _source_units(source_records[row["recording_id"]], input_names)
             ),
             row["stop_sample"] - row["start_sample"],
             reference=(
-                input_layout["reference"]
+                input_layout.reference
                 if input_layout is not None
                 else source.get("eeg_metadata", {}).get("EEGReference")
             ),
@@ -264,13 +306,11 @@ def _case_view(info, dataset):
             layout["source_channel_names"] = list(input_names)
         if input_layout is not None:
             layout["source_origin_sample"] = (
-                input_layout["source_origin_sample"]
-                + row["start_sample"] * input_layout["source_sample_step"]
+                input_layout.source_origin_sample
+                + row["start_sample"] * input_layout.source_sample_step
             )
-            layout["source_sample_step"] = input_layout["source_sample_step"]
-            layout["temporal_context"] = input_layout.get(
-                "temporal_context", "whole_row"
-            )
+            layout["source_sample_step"] = input_layout.source_sample_step
+            layout["temporal_context"] = input_layout.temporal_context
             if layout["temporal_context"] == "pointwise":
                 # Pointwise operations do not mix times. Map only this case,
                 # unlike filtering/resampling which retain the full input row.
@@ -278,7 +318,7 @@ def _case_view(info, dataset):
                 stop = first + layout["n_samples"] * layout["source_sample_step"]
                 row["source_support"] = [
                     floor(first),
-                    min(ceil(stop), input_row["source_support"][1]),
+                    min(ceil(stop), input_row.source_support[1]),
                 ]
         layouts.append(layout)
     view = _validate_view(
@@ -290,45 +330,48 @@ def _case_view(info, dataset):
 
 def _recording_view(info):
     rows, layouts = [], []
-    for source in info.metadata:
+    for recording in info.recordings:
+        source = recording._source
         rows.append(
             {
-                "case_id": "recording:" + source["recording_id"],
-                "recording_id": source["recording_id"],
-                "participant_id": source["participant_id"],
-                "group_id": source["participant_id"],
-                "source_support": [0, source["n_samples"]],
+                "case_id": "recording:" + source.recording_id,
+                "recording_id": source.recording_id,
+                "participant_id": source.participant_id,
+                "group_id": source.participant_id,
+                "source_support": [0, source.n_samples],
             }
         )
         layouts.append(
             _layout(
-                source["channel_names"],
-                source["sampling_frequency"],
-                _source_units(source, source["channel_names"]),
-                source["n_samples"],
-                reference=source.get("eeg_metadata", {}).get("EEGReference"),
+                source.channel_names,
+                source.sampling_frequency,
+                _source_units(source, source.channel_names),
+                source.n_samples,
+                reference=source.eeg_metadata.get("EEGReference"),
             )
         )
-    return {"version": 1, "kind": "recordings", "rows": rows, "layouts": layouts}
+    return _CurrentView._from_dict(
+        {"version": 1, "kind": "recordings", "rows": rows, "layouts": layouts}
+    )
 
 
 def _current_metadata(info):
     if info._view is None:
         return info.metadata
-    if info._view["kind"] != "recordings":
+    if info._view.kind != "recordings":
         raise ValueError(
             "Case construction requires recordings, not already built cases"
         )
     sources = {row["recording_id"]: row for row in info.metadata}
     descriptors = []
-    for row, layout in zip(info._view["rows"], info._view["layouts"], strict=True):
-        descriptor = deepcopy(sources[row["recording_id"]])
+    for row, layout in zip(info._view.rows, info._view.layouts, strict=True):
+        descriptor = deepcopy(sources[row.recording_id])
         descriptor.update(
             # Descriptors are public detached views, so their channel list must
             # not expose the mutable layout used by later estimator checks.
-            channel_names=list(layout["channel_names"]),
-            sampling_frequency=layout["sampling_frequency"],
-            n_samples=layout["n_samples"],
+            channel_names=list(layout.channel_names),
+            sampling_frequency=layout.sampling_frequency,
+            n_samples=layout.n_samples,
         )
         descriptors.append(descriptor)
     return descriptors
@@ -342,9 +385,9 @@ def _recording_inputs(info, onset_column="onset"):
     events, grouped = [], {}
     for original in info.events:
         grouped.setdefault(original["recording_id"], []).append(original)
-    for row, layout in zip(info._view["rows"], info._view["layouts"], strict=True):
-        source = sources[row["recording_id"]]
-        for original in grouped.get(row["recording_id"], []):
+    for row, layout in zip(info._view.rows, info._view.layouts, strict=True):
+        source = sources[row.recording_id]
+        for original in grouped.get(row.recording_id, []):
             event = deepcopy(original)
             # Bound onsets remain seconds from the first current sample; retain
             # the entire published row independently for source-level joins.
@@ -355,25 +398,26 @@ def _recording_inputs(info, onset_column="onset"):
                     "Source event column collides with derived acquisition_event"
                 )
             event["acquisition_event"] = deepcopy(original)
-            event[onset_column] = (
-                float(event[onset_column])
-                - layout["source_origin_sample"] / source["sampling_frequency"]
-            )
+            onset = _event_onset(event[onset_column])
+            if onset is not None:
+                event[onset_column] = (
+                    onset - layout.source_origin_sample / source["sampling_frequency"]
+                )
             events.append(event)
     return descriptors, events
 
 
 def _check_layout(X, view):
     arrays = _collection(X)
-    if len(arrays) != len(view["rows"]):
+    if len(arrays) != len(view.rows):
         raise ValueError("X and current metadata have different case counts")
-    for array, layout in zip(arrays, view["layouts"], strict=True):
-        if array.shape != (len(layout["channel_names"]), layout["n_samples"]):
+    for array, layout in zip(arrays, view.layouts, strict=True):
+        if array.shape != (len(layout.channel_names), layout.n_samples):
             raise ValueError("X does not match its current channel/sample layout")
 
 
 def _uniform(layouts, key):
-    values = [layout[key] for layout in layouts]
+    values = [getattr(layout, key) for layout in layouts]
     if not values or any(value != values[0] for value in values[1:]):
         raise ValueError(f"Current {key} is empty or differs across rows")
     value = values[0]
@@ -386,6 +430,10 @@ def _events_for_cases(events, metadata, label_column, group_column):
     lookup = {row["recording_id"]: row for row in metadata}
     rows = []
     for event in events:
+        onset = _event_onset(event["onset"])
+        if onset is None:
+            # Untimed BIDS rows remain in source metadata, but cannot locate an epoch.
+            continue
         source = lookup[event["recording_id"]]
         if label_column not in event:
             raise ValueError(f"Missing event label column: {label_column}")
@@ -398,7 +446,7 @@ def _events_for_cases(events, metadata, label_column, group_column):
                 "case_id": "event:"
                 + json.dumps([event["recording_id"], event["bids_event_id"]]),
                 "recording_id": event["recording_id"],
-                "onset": float(event["onset"]),
+                "onset": onset,
                 "label": label,
                 "group_id": group,
                 "event_id": event["bids_event_id"],
@@ -406,3 +454,21 @@ def _events_for_cases(events, metadata, label_column, group_column):
             }
         )
     return rows
+
+
+def _event_onset(onset):
+    """Interpret the BIDS missing value separately from malformed timing."""
+    if onset == "n/a":
+        return None
+    onset = float(onset)
+    if not np.isfinite(onset):
+        raise ValueError("Event onset must be finite")
+    return onset
+
+
+def _event_sample(onset, sfreq):
+    """Return an exact grid coordinate, or None without rounding source facts."""
+    try:
+        return _samples(onset, sfreq, "event onset")
+    except ValueError:
+        return None

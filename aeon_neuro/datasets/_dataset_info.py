@@ -1,20 +1,20 @@
-"""Keep inspected BIDS source facts aligned with in-memory recordings."""
+"""Keep supplied source facts aligned with current EEG arrays."""
 
 from copy import deepcopy
 from math import isfinite
+from numbers import Real
 
 import numpy as np
 
-from aeon_neuro.datasets._bids_input import (
-    _event_sample,
-    inspect_bids_eeg,
-    open_bids_eeg_recording,
-)
 from aeon_neuro.datasets._classification import (
+    _channels,
+    _identifier,
     _integer,
-    _recording_info,
     _recordings,
+    _required,
 )
+from aeon_neuro.datasets._info_records import _DatasetFacts, _RecordingDescriptor
+from aeon_neuro.datasets._info_view import _event_onset, _event_sample
 
 
 class RecordingInfo:
@@ -23,36 +23,72 @@ class RecordingInfo:
     Parameters
     ----------
     metadata : dict
-        Source descriptor returned by ``inspect_bids_eeg``.
+        Supplied source descriptor, including its identity and layout.
     events : list of dict
-        Inspected event rows for this recording, in their source order.
+        Supplied event rows for this recording, in their source order.
+
+    Attributes
+    ----------
+    recording_id : str
+        Original recording identity, root-relative for BIDS sources.
+    metadata : dict
+        Complete original recording descriptor, including its source layout.
+    entities : dict
+        Original subject, session, task, acquisition and run identifiers.
+        Each value is a string or None when that entity was not supplied.
+    sfreq : float
+        Original recording sampling frequency in Hz, not the current case rate.
+    channel_names : tuple of str
+        Original channel names in source signal-array order.
+    channels : list of dict or None
+        Original channel table rows, or None when unavailable. Their units
+        describe the source file, not necessarily decoded or current arrays.
+    eeg_json : dict
+        Supplied original EEG JSON fields; empty when not supplied.
+    events : list of dict
+        Original event rows in source order, including normalized sample
+        coordinates. Empty when no events were supplied.
+    events_json : dict
+        Effective source event column definitions, empty when unavailable.
+    electrodes : dict or None
+        Original electrode table with columns and rows, or None if unavailable.
+    coordsystem : dict or None
+        Original coordinate-system fields and units, or None if unavailable.
+    scan : dict or None
+        Matched original scans row and its zero-based index, or None if absent.
+    channels_frame : pandas.DataFrame or None
+        Detached original channel table, or None when channel rows are unavailable.
+    events_frame : pandas.DataFrame
+        Detached original event table, empty when no events were supplied.
 
     Notes
     -----
     Usually obtained from ``EEGDatasetInfo.recordings``. Returned dictionaries
     and lists are detached copies. These source facts do not track arbitrary
     changes to external arrays or certify the correctness of source annotations.
+    The EEG information guide's "Dictionary structure" section documents the
+    descriptor and event keys shared with ``EEGDatasetInfo``.
     """
 
     def __init__(self, metadata, events):
-        self._metadata = deepcopy(metadata)
+        self._source = _RecordingDescriptor._from_dict(metadata)
         self._events = deepcopy(events)
 
     @property
     def recording_id(self):
         """Original root-relative recording identity."""
-        return self._metadata["recording_id"]
+        return self._source.recording_id
 
     @property
     def metadata(self):
         """Detached complete descriptor for the existing case APIs."""
-        return deepcopy(self._metadata)
+        return self._source.to_dict()
 
     @property
     def entities(self):
         """Published BIDS identifiers, without their entity prefixes."""
         return {
-            name: self._metadata.get(key)
+            name: getattr(self._source, key)
             for name, key in (
                 ("subject", "subject"),
                 ("session", "session"),
@@ -64,25 +100,34 @@ class RecordingInfo:
 
     @property
     def sfreq(self):
-        """Decoded source sampling frequency in Hz."""
-        return self._metadata["sampling_frequency"]
+        """Original recording sampling frequency in Hz, not the current case rate."""
+        return self._source.sampling_frequency
 
     @property
     def channel_names(self):
         """Tuple of str: Decoded source channel names in signal-array order."""
-        return tuple(self._metadata["channel_names"])
+        return tuple(self._source.channel_names)
 
     @property
     def channels(self):
-        """List of dict or None: Original channel rows, absent when unavailable."""
-        if self._metadata["sidecar_paths"]["channels"] is None:
+        """Original channel table rows, or None when unavailable.
+
+        Their units describe the source file, not necessarily decoded or
+        current arrays.
+        """
+        # Only an explicit absent channel path records sidecar absence;
+        # unrelated sidecar keys do not hide supplied channel rows.
+        if (
+            "channels" in self._source.sidecar_paths
+            and self._source.sidecar_paths["channels"] is None
+        ) or self._source.channel_metadata is None:
             return None
-        return deepcopy(self._metadata["channel_metadata"])
+        return deepcopy(self._source.channel_metadata)
 
     @property
     def eeg_json(self):
-        """Resolved EEG JSON source fields, without changing their meaning."""
-        return deepcopy(self._metadata["eeg_metadata"])
+        """Supplied original EEG JSON fields, empty when not supplied."""
+        return deepcopy(self._source.eeg_metadata)
 
     @property
     def events(self):
@@ -90,19 +135,24 @@ class RecordingInfo:
         return deepcopy(self._events)
 
     @property
+    def events_json(self):
+        """Detached source definitions of event columns and values."""
+        return deepcopy(self._source.events_metadata)
+
+    @property
     def electrodes(self):
         """Dict or None: Original electrode table as columns and rows."""
-        return deepcopy(self._metadata["electrodes"])
+        return deepcopy(self._source.electrodes)
 
     @property
     def coordsystem(self):
         """Dict or None: Source coordinate system and units, without conversion."""
-        return deepcopy(self._metadata["coordsystem"])
+        return deepcopy(self._source.coordsystem)
 
     @property
     def scan(self):
         """Dict or None: Matched scans row and its original zero-based row index."""
-        return deepcopy(self._metadata["scan"])
+        return deepcopy(self._source.scan)
 
     def bad_channels(self):
         """Return source-declared bad channels; raise if status is unavailable.
@@ -159,95 +209,226 @@ class RecordingInfo:
 
 
 class EEGDatasetInfo:
-    """Source metadata aligned with a collection of loaded BIDS recordings.
+    """Detached source facts and current layouts aligned with EEG arrays.
 
     Parameters
     ----------
-    report : dict
-        Ready version-2 report from ``inspect_bids_eeg`` or ``to_dict``. Retains
-        the complete source participant table separately from the selected
-        recording scope. An optional ``history`` list contains version-1
-        caller-reported processing records, validated on construction.
+    report : dict or None, default=None
+        Version-2 state from ``to_dict``. Its optional version-1 view describes
+        current rows separately from original source records.
+    dataset : dict or None, default=None
+        Explicit description, README, participants and participant dictionary.
+        Use only when report is omitted. Missing optional facts stay None.
+    recordings : list of dict or None, default=None
+        Explicit source descriptors with recording_id, participant_id,
+        channel_names, sampling_frequency and n_samples. Other source facts
+        may be supplied without opening any files.
+    events : list of dict or None, default=None
+        Source events with recording_id, bids_event_id, onset and exact
+        bids_onset_sample, or None for an unknown or off-grid onset.
+
+    Attributes
+    ----------
+    cases : list of dict
+        Current aligned row identities, optional subject/group/source identities
+        and contributing sample intervals. Requires a current view; raises
+        ValueError for a source-only object rather than returning None.
+    case_ids : tuple of str
+        Current case identities in signal order. Requires a current view,
+        with the same ValueError behavior as cases.
+    groups : numpy.ndarray
+        One-dimensional object array of current group IDs (str, int or None).
+        For source-only objects, uses the original recording participants.
+    layouts : list of dict
+        Current channel order, rate, units, sample count and source grid mapping,
+        one per aligned row. Source-only objects derive these from recordings.
+    sfreq : float
+        Current sampling frequency in Hz, shared by all aligned rows.
+        Raises ValueError for empty collections or differing rates.
+    channel_names : tuple of str
+        Current channel names in array order, shared by all aligned rows.
+        Raises ValueError for empty collections or differing channel orders.
+    units : tuple of (str or None)
+        Current per-channel units; each entry may be None when unknown.
+        The tuple itself is never None. Raises ValueError for empty collections
+        or differing per-row unit lists.
+    recordings : tuple of RecordingInfo
+        Retained original recording context, empty for from_arrays objects.
+        In a current view this is separate from current row order and count.
+    source_ids : tuple of str
+        Source identities in aligned recording order, or unique current-row
+        source identities in first-occurrence order for a current view.
+        Rows without a source use an array: prefix followed by their case ID.
+    participant_ids : tuple of (str, int or None)
+        One declared participant ID per case, or original recording subject
+        for source-only information. Case and source identities may differ.
+        Unknown identities remain None; integer and string IDs stay distinct.
+    metadata : list of dict
+        Retained original recording descriptors, in recordings order, rather
+        than current case layouts. Empty when source facts were not supplied.
+    events : list of dict
+        Original events for the retained recording context, not one per case.
+        Empty when no events were supplied.
+    dataset : dict
+        Original dataset facts and known selected source participants. In a
+        current view, that scope belongs to the retained source context.
+    description : dict or None
+        Original dataset description, or None when unavailable.
+    readme : str or None
+        Original dataset README text, or None when unavailable.
+    participants : dict or None
+        Complete original participant table with columns and rows, or None
+        when unavailable. Selection does not trim the original population.
+    participants_json : dict or None
+        Original participant-column dictionary, or None when unavailable.
+    current_metadata : list of dict
+        Detached recording descriptors matching current arrays, with original
+        source annotations retained. Raises ValueError for constructed cases.
+    case_table : pandas.DataFrame
+        Detached table of current case identities and contributing support.
+        Requires a current view, like cases.
+    participants_frame : pandas.DataFrame or None
+        Detached complete source participant table, or None when unavailable.
+    history : list of dict
+        Retained processing records in append order, empty when unreported.
 
     Notes
     -----
-    Construction copies metadata, validates source/event alignment and performs
-    no signal reads. Use ``load_bids_dataset`` for verified source loading.
-    Source tables have portable row and optional pandas views. A case-level view
-    additionally records current layouts and original contributing support.
-    ``process`` executes supported operations and updates that view with history;
-    ``with_history`` only records a caller's account. Neither changes original
-    acquisition facts or detects arbitrary external array edits.
+    Construction validates supplied metadata and reads no files. It does not
+    authenticate source contents. ``from_arrays`` describes current case arrays
+    without inventing acquisition facts. Selection returns detached values;
+    equal-shaped external array permutations cannot be detected by layout checks.
+    No signal arrays or labels are stored. Dictionary/list properties return
+    detached copies; public properties have no setters. The EEG information
+    guide's "Dictionary structure" section is the reference for internal keys,
+    their scopes and the portable representation returned by ``to_dict``.
     """
 
-    def __init__(self, report):
+    def __init__(self, report=None, *, dataset=None, recordings=None, events=None):
+        if report is not None and any(
+            value is not None for value in (dataset, recordings, events)
+        ):
+            raise ValueError("Supply saved state or explicit metadata, not both")
+        if report is None:
+            if recordings is not None and (
+                not isinstance(recordings, list)
+                or any(not isinstance(row, dict) for row in recordings)
+                or any(
+                    not {"recording_id", "participant_id"} <= row.keys()
+                    for row in recordings
+                )
+            ):
+                raise ValueError(
+                    "Supply source records with recording and participant IDs"
+                )
+            if dataset is not None and not isinstance(dataset, dict):
+                raise ValueError("Dataset metadata must be a dictionary")
+            recordings = [] if recordings is None else deepcopy(recordings)
+            dataset = {} if dataset is None else deepcopy(dataset)
+            defaults = dict(
+                description=None,
+                readme=None,
+                participants=None,
+                participants_json=None,
+                selected_participants=_participant_scope(recordings),
+            )
+            defaults.update(dataset)
+            # Share the portable encoding with source adapters. Readiness here
+            # means usable supplied metadata, not inspected or verified files.
+            report = dict(
+                version=2,
+                ready=True,
+                issues=[],
+                dataset=defaults,
+                source_ids=[row["recording_id"] for row in recordings],
+                recordings=recordings,
+                events=[] if events is None else events,
+            )
         if (
             not isinstance(report, dict)
             or type(report.get("version")) is not int
             or report["version"] != 2
         ):
-            raise ValueError("Supply a version-2 inspection report")
+            raise ValueError("Supply version-2 information state")
+        # Both readiness reporting and later selection rely on these fields.
+        # Reject malformed diagnostics here instead of failing on first use.
+        _validate_issues(report.get("issues", []))
         if report.get("ready") is not True:
             messages = "; ".join(
                 issue["message"]
                 for issue in report.get("issues", [])
                 if issue.get("severity") == "error"
             )
-            raise ValueError(
-                f"The inspection report must be ready before loading: {messages}"
-            )
-        self._report = deepcopy(report)
-        _validate_history(self._report.get("history", []))
+            raise ValueError(f"The supplied metadata must be ready: {messages}")
+        report = deepcopy(report)
+        _validate_history(report.get("history", []))
         try:
-            entries = self._report["recordings"]
+            entries = report["recordings"]
             if not isinstance(entries, list):
                 raise ValueError("Recording descriptors must be a list")
             entries = _recording_info(entries) if entries else []
             ids = [entry["recording_id"] for entry in entries]
-            if self._report["source_ids"] != ids:
+            if report["source_ids"] != ids:
                 raise ValueError("Source IDs and recording descriptors are not aligned")
-            participants = sorted({entry["participant_id"] for entry in entries})
-            if self._report["dataset"]["selected_participants"] != participants:
+            participants = _participant_scope(entries)
+            if report["dataset"]["selected_participants"] != participants:
                 raise ValueError("Selected participants do not match recording scope")
+            report["dataset"]["selected_participants"] = participants
             grouped = {entry["recording_id"]: [] for entry in entries}
             by_id = {entry["recording_id"]: entry for entry in entries}
             seen = set()
-            for row in self._report["events"]:
+            for row in report["events"]:
                 recording_id = row["recording_id"]
                 if recording_id not in grouped:
                     raise ValueError("Event refers to an unselected recording")
                 sample = row["bids_onset_sample"]
                 if sample is not None:
                     sample = _integer(sample, "bids_onset_sample")
-                expected = _event_sample(
-                    float(row["onset"]),
-                    by_id[recording_id]["sampling_frequency"],
+                onset = _event_onset(row["onset"])
+                expected = (
+                    None
+                    if onset is None
+                    else _event_sample(onset, by_id[recording_id]["sampling_frequency"])
                 )
                 if sample != expected:
                     raise ValueError("Event sample disagrees with its source onset")
                 identity = (recording_id, row["bids_event_id"])
                 if identity in seen:
-                    raise ValueError("Duplicate event identity in inspection report")
+                    raise ValueError("Duplicate event identity in supplied metadata")
                 seen.add(identity)
                 grouped[recording_id].append(row)
         except (KeyError, TypeError) as exc:
-            raise ValueError("Incomplete inspection report metadata") from exc
-        self._report["recordings"] = entries
+            raise ValueError("Incomplete supplied metadata") from exc
         self._recordings = tuple(
             RecordingInfo(entry, grouped[entry["recording_id"]]) for entry in entries
         )
         from aeon_neuro.datasets._info_view import _validate_view
 
-        self._view = (
-            _validate_view(self._report["view"], by_id)
-            if "view" in self._report
-            else None
-        )
+        self._dataset = _DatasetFacts._from_dict(report["dataset"])
+        self._events = report["events"]
+        self._issues = report.get("issues", [])
+        self._has_issues = "issues" in report
+        # Keep free-form extensions separately from the named core. Adapters
+        # can retain source manifests without making them part of row layouts.
+        self._extra = {
+            key: value
+            for key, value in report.items()
+            if key
+            not in {
+                "version",
+                "ready",
+                "dataset",
+                "recordings",
+                "source_ids",
+                "events",
+                "issues",
+                "view",
+            }
+        }
+        self._view = _validate_view(report["view"], by_id) if "view" in report else None
 
     def __len__(self):
-        return (
-            len(self._view["rows"]) if self._view is not None else len(self._recordings)
-        )
+        return len(self._view.rows) if self._view is not None else len(self._recordings)
 
     def __getitem__(self, selector):
         """Select detached information in the same order as X[selector]."""
@@ -261,14 +442,17 @@ class EEGDatasetInfo:
             report["events"] = [
                 row for i in indices for row in self._recordings[i].events
             ]
-            report["dataset"]["selected_participants"] = sorted(
-                {row["participant_id"] for row in report["recordings"]}
+            report["dataset"]["selected_participants"] = _participant_scope(
+                report["recordings"]
             )
-            report["issues"] = [
-                issue
-                for issue in report["issues"]
-                if issue["recording_id"] is None or issue["recording_id"] in ids
-            ]
+            # Legacy state may omit diagnostics. Selection must preserve that
+            # absence rather than inventing an empty diagnostic collection.
+            if "issues" in report:
+                report["issues"] = [
+                    issue
+                    for issue in report["issues"]
+                    if issue["recording_id"] is None or issue["recording_id"] in ids
+                ]
         else:
             report = self.to_dict()
             # to_dict already detached the whole view. Copying it again for
@@ -337,9 +521,289 @@ class EEGDatasetInfo:
             },
             "view": _from_arrays(
                 X, sfreq, channel_names, units, subjects, case_ids, groups
-            ),
+            ).to_dict(),
         }
         return cls(report)
+
+    @property
+    def cases(self):
+        """Current row identities and contributing sample intervals.
+
+        Each row includes optional subject, group and source identities.
+        Requires a current view; raises ValueError for source-only information
+        rather than returning None. Returned rows are detached copies.
+        """
+        if self._view is None:
+            raise ValueError("This object describes recordings, not constructed cases")
+        return [row.to_dict() for row in self._view.rows]
+
+    @property
+    def case_ids(self):
+        """Current case identities in signal order, requiring a current view.
+
+        Raises ValueError for source-only information, like cases.
+        """
+        if self._view is None:
+            raise ValueError("This object describes recordings, not constructed cases")
+        return tuple(row.case_id for row in self._view.rows)
+
+    @property
+    def groups(self):
+        """Aligned current groups, or original participants for source-only data.
+
+        Returns a one-dimensional object array of str, int or None values.
+        """
+        return np.asarray(
+            (
+                [row.group_id for row in self._view.rows]
+                if self._view is not None
+                else self.participant_ids
+            ),
+            dtype=object,
+        )
+
+    def subject_of(self, index):
+        """Return a known subject identity for one aligned row, or None.
+
+        Parameters
+        ----------
+        index : int
+            Nonnegative index within the current view.
+
+        Returns
+        -------
+        str, int or None
+            Declared case participant or original recording subject, or None
+            when not supplied.
+        """
+        index = _integer(index, "subject index")
+        if not 0 <= index < len(self):
+            raise ValueError("Subject index is outside the information view")
+        # A single lookup must not rebuild the identities for every case.
+        row = (
+            self._view.rows[index]
+            if self._view is not None
+            else self._recordings[index]._source
+        )
+        return row.participant_id
+
+    @property
+    def layouts(self):
+        """Detached current layouts, separate from original source descriptors."""
+        return [layout.to_dict() for layout in self._current_layouts()]
+
+    def _current_layouts(self):
+        if self._view is None:
+            from aeon_neuro.datasets._info_view import _recording_view
+
+            return _recording_view(self).layouts
+        return self._view.layouts
+
+    @property
+    def sfreq(self):
+        """Current sampling frequency in Hz when all aligned rows agree.
+
+        Raises ValueError for empty collections or differing rates.
+        """
+        from aeon_neuro.datasets._info_view import _uniform
+
+        return _uniform(self._current_layouts(), "sampling_frequency")
+
+    @property
+    def channel_names(self):
+        """Current channel names in array order when all aligned rows agree.
+
+        Raises ValueError for empty collections or differing channel orders.
+        """
+        from aeon_neuro.datasets._info_view import _uniform
+
+        return _uniform(self._current_layouts(), "channel_names")
+
+    @property
+    def units(self):
+        """Current per-channel units, with None entries for unknown units.
+
+        Returns a tuple, never None. Raises ValueError for empty collections
+        or differing per-row unit lists.
+        """
+        from aeon_neuro.datasets._info_view import _uniform
+
+        return _uniform(self._current_layouts(), "units")
+
+    @property
+    def recordings(self):
+        """Original source recording views retained by this information context.
+
+        Before case construction these align with loaded recordings. Case-level
+        views retain the source context separately from current case row order.
+        The tuple is empty for from_arrays objects.
+        """
+        return self._recordings
+
+    @property
+    def source_ids(self):
+        """Source identities in recording order or first current-row occurrence.
+
+        Current views deduplicate recording identities in first-occurrence
+        order. Rows without a source use an array: prefix plus their case ID.
+        This property can differ from retained original source_ids in to_dict.
+        """
+        if self._view is not None:
+            return tuple(
+                dict.fromkeys(
+                    row.recording_id or "array:" + row.case_id
+                    for row in self._view.rows
+                )
+            )
+        return tuple(record.recording_id for record in self._recordings)
+
+    @property
+    def participant_ids(self):
+        """Declared case participants, or original subjects for source-only data.
+
+        Unknown identities remain None; integer and string IDs stay distinct.
+        Original recording subjects remain available in recordings metadata.
+        """
+        if self._view is not None:
+            return tuple(row.participant_id for row in self._view.rows)
+        return tuple(record._source.participant_id for record in self._recordings)
+
+    @property
+    def metadata(self):
+        """Original recording descriptors, separate from current case layouts.
+
+        Returns detached dictionaries in recordings order; empty without source
+        facts, including for from_arrays objects.
+        """
+        return [record.metadata for record in self._recordings]
+
+    @property
+    def events(self):
+        """Original events for retained recordings, rather than one per case.
+
+        Returns detached rows, empty when no events were supplied.
+        """
+        return deepcopy(self._events)
+
+    @property
+    def dataset(self):
+        """Original dataset facts and known retained source participants.
+
+        In a current view, selected_participants belongs to the retained source
+        context; it need not match participants in the selected current rows.
+        """
+        return self._dataset.to_dict()
+
+    @property
+    def description(self):
+        """Dict or None: Original dataset description."""
+        return deepcopy(self._dataset.description)
+
+    @property
+    def readme(self):
+        """Str or None: Original dataset README text."""
+        return self._dataset.readme
+
+    @property
+    def participants(self):
+        """Complete original participant table, or None when unavailable.
+
+        The table has columns and rows. Selection does not trim the original
+        source population.
+        """
+        return deepcopy(self._dataset.participants)
+
+    @property
+    def participants_json(self):
+        """Dict or None: Original participant-column dictionary."""
+        return deepcopy(self._dataset.participants_json)
+
+    def to_dict(self):
+        """Return detached version-2 metadata for restoration with EEGDatasetInfo.
+
+        Returns
+        -------
+        dict
+            Source context and the optional current view, without signal arrays.
+            This is metadata serialization, not a certificate of signal contents.
+        """
+        report = deepcopy(self._extra)
+        report.update(
+            version=2,
+            ready=True,
+            dataset=self._dataset.to_dict(),
+            source_ids=[record.recording_id for record in self._recordings],
+            recordings=self.metadata,
+            events=self.events,
+        )
+        if self._has_issues:
+            report["issues"] = deepcopy(self._issues)
+        if self._view is not None:
+            report["view"] = self._view.to_dict()
+        return report
+
+    def validate_layout(self, X):
+        """Check the collection count, shapes and numeric types against metadata.
+
+        Parameters
+        ----------
+        X : np.ndarray or list of np.ndarray
+            Recording collection in this metadata's order.
+
+        Notes
+        -----
+        Layout checks cannot detect an external permutation or value mutation
+        when array shapes remain the same. Keep the returned X/info pair together.
+        """
+        if self._view is not None:
+            from aeon_neuro.datasets._info_view import _check_layout
+
+            _check_layout(X, self._view)
+            return
+        if not isinstance(X, (list, tuple, np.ndarray)):
+            raise ValueError("Supply a collection of recordings")
+        if isinstance(X, np.ndarray) and (
+            X.ndim != 3 or X.dtype.kind not in "fiu" or 0 in X.shape[1:]
+        ):
+            raise ValueError(
+                "Dense recordings must be real numeric arrays with three axes"
+            )
+        if len(X) != len(self):
+            raise ValueError(
+                "X and metadata must contain the same number of recordings"
+            )
+        if len(self):
+            _recordings(X, self.metadata)
+
+    def select(self, X, selector):
+        """Copy recordings and matching metadata together in the requested order.
+
+        Parameters
+        ----------
+        X : np.ndarray or list of np.ndarray
+            Loaded recordings in this metadata's order.
+        selector : slice or one-dimensional sequence of int or bool
+            Unique nonnegative recording indices, or a mask matching the count.
+            Empty selections are allowed. Negative/duplicate indices are rejected.
+
+        Returns
+        -------
+        X_selected : np.ndarray or list of np.ndarray
+            Detached signals, retaining the recording axis. Dense arrays remain
+            arrays; list/tuple inputs produce a list of separate arrays.
+        info_selected : EEGDatasetInfo
+            Matching source descriptors, events, scope and relevant diagnostics.
+        """
+        self.validate_layout(X)
+        indices = _selection(selector, len(self))
+        # Detach both sides: later array or metadata edits must not mutate a
+        # parent selection that may already be used by another experiment.
+        selected = (
+            np.take(X, indices, axis=0)
+            if isinstance(X, np.ndarray)
+            else [X[i].copy() for i in indices]
+        )
+        return selected, self[indices]
 
     @classmethod
     def from_classification(cls, dataset):
@@ -366,105 +830,24 @@ class EEGDatasetInfo:
         report = info.to_dict()
         from aeon_neuro.datasets._info_view import _case_view
 
-        report["view"] = _case_view(info, dataset)
+        report["view"] = _case_view(info, dataset).to_dict()
         report["history"] = deepcopy(dataset.metadata["provenance"]["history"])
         report["case_provenance"] = deepcopy(dataset.metadata["provenance"])
         return cls(report)
 
     @property
-    def cases(self):
-        """Detached case-level identities and original contributing sample support."""
-        if self._view is None:
-            raise ValueError("This object describes recordings, not constructed cases")
-        return deepcopy(self._view["rows"])
+    def current_metadata(self):
+        """Detached recording descriptors matching current arrays and event times.
 
-    @property
-    def case_ids(self):
-        """Case identities in exactly the current signal order."""
-        return tuple(row["case_id"] for row in self.cases)
-
-    @property
-    def groups(self):
-        """Aligned declared case groups, or source participants for recordings."""
-        return np.asarray(
-            (
-                [row["group_id"] for row in self.cases]
-                if self._view is not None
-                else self.participant_ids
-            ),
-            dtype=object,
-        )
-
-    def subject_of(self, index):
-        """Return a known subject identity for one aligned row, or None.
-
-        Parameters
-        ----------
-        index : int
-            Nonnegative index within the current view.
-
-        Returns
-        -------
-        str, int or None
-            Original known subject identity, or None when not supplied.
+        Use with ``events_for_cases`` and the plain recording/case APIs after
+        supported processing or selection. Only channel names, sampling rate and
+        sample count describe the current layout; other fields retain source
+        context. Original descriptors remain in ``metadata``. Already segmented
+        cases raise because they are not recording inputs for case construction.
         """
-        index = _integer(index, "subject index")
-        if not 0 <= index < len(self):
-            raise ValueError("Subject index is outside the information view")
-        # A single lookup must not rebuild the identities for every case.
-        rows = (
-            self._view["rows"] if self._view is not None else self._report["recordings"]
-        )
-        return rows[index]["participant_id"]
+        from aeon_neuro.datasets._info_view import _current_metadata
 
-    @property
-    def layouts(self):
-        """Detached current layouts, separate from original source descriptors."""
-        if self._view is None:
-            from aeon_neuro.datasets._info_view import _recording_view
-
-            return _recording_view(self)["layouts"]
-        return deepcopy(self._view["layouts"])
-
-    @property
-    def sfreq(self):
-        """Current sampling frequency when all aligned rows agree."""
-        from aeon_neuro.datasets._info_view import _uniform
-
-        return _uniform(self.layouts, "sampling_frequency")
-
-    @property
-    def channel_names(self):
-        """Current ordered channels when all aligned rows agree."""
-        from aeon_neuro.datasets._info_view import _uniform
-
-        return _uniform(self.layouts, "channel_names")
-
-    @property
-    def units(self):
-        """Current per-channel units when all aligned rows agree."""
-        from aeon_neuro.datasets._info_view import _uniform
-
-        return _uniform(self.layouts, "units")
-
-    @property
-    def case_table(self):
-        """Detached pandas view of case identities and source support."""
-        import pandas as pd
-
-        return pd.DataFrame(self.cases)
-
-    @property
-    def participants_frame(self):
-        """Detached pandas view of the complete source participant population."""
-        import pandas as pd
-
-        table = self.participants
-        return (
-            None
-            if table is None
-            else pd.DataFrame(table["rows"], columns=table["columns"])
-        )
+        return _current_metadata(self)
 
     def events_for_cases(
         self, label_column="trial_type", *, group_column="participant_id"
@@ -486,7 +869,9 @@ class EEGDatasetInfo:
         Notes
         -----
         Callers can edit returned rows for explicit class mappings or grouping
-        by event fields. No files are opened by this convenience.
+        by event fields. Source rows with unknown onsets remain in ``events``
+        and are omitted here, since they cannot locate an epoch. No files are
+        opened by this convenience.
         """
         from aeon_neuro.datasets._info_view import _events_for_cases, _recording_inputs
 
@@ -494,88 +879,62 @@ class EEGDatasetInfo:
         return _events_for_cases(events, metadata, label_column, group_column)
 
     @property
-    def recordings(self):
-        """Original source recording views retained by this information context.
+    def case_table(self):
+        """Detached pandas view of case identities and source support."""
+        import pandas as pd
 
-        Before case construction these align with loaded recordings. Case-level
-        views retain the source context separately from current case row order.
-        """
-        return self._recordings
+        return pd.DataFrame(self.cases)
 
     @property
-    def source_ids(self):
-        """Tuple of str: Selected source identities in signal order."""
-        if self._view is not None:
-            return tuple(
-                dict.fromkeys(
-                    row["recording_id"] or "array:" + row["case_id"]
-                    for row in self._view["rows"]
-                )
-            )
-        return tuple(self._report["source_ids"])
+    def participants_frame(self):
+        """Detached pandas view of the complete source participant population."""
+        import pandas as pd
 
-    @property
-    def participant_ids(self):
-        """Source participant identities, one per aligned recording or case."""
-        if self._view is not None:
-            return tuple(row["participant_id"] for row in self._view["rows"])
-        return tuple(entry["participant_id"] for entry in self._report["recordings"])
-
-    @property
-    def current_metadata(self):
-        """Detached recording descriptors matching current arrays and event times.
-
-        Use with ``events_for_cases`` and the plain recording/case APIs after
-        supported processing or selection. Only channel names, sampling rate and
-        sample count describe the current layout; other fields retain source
-        context. Original descriptors remain in ``metadata``. Already segmented
-        cases raise because they are not recording inputs for case construction.
-        """
-        from aeon_neuro.datasets._info_view import _current_metadata
-
-        return _current_metadata(self)
-
-    @property
-    def metadata(self):
-        """List of dict: Detached original acquisition descriptors."""
-        return deepcopy(self._report["recordings"])
-
-    @property
-    def events(self):
-        """List of dict: Detached events for the selected recordings."""
-        return deepcopy(self._report["events"])
-
-    @property
-    def dataset(self):
-        """Dataset source facts and the current selected participant scope."""
-        return deepcopy(self._report["dataset"])
-
-    @property
-    def description(self):
-        """Dict or None: Original dataset description."""
-        return deepcopy(self._report["dataset"]["description"])
-
-    @property
-    def readme(self):
-        """Str or None: Original dataset README text."""
-        return self._report["dataset"]["readme"]
-
-    @property
-    def participants(self):
-        """Dict or None: Complete source participant table as columns and rows."""
-        return deepcopy(self._report["dataset"]["participants"])
-
-    @property
-    def participants_json(self):
-        """Dict or None: Original participant-column dictionary."""
-        return deepcopy(self._report["dataset"]["participants_json"])
+        table = self.participants
+        return (
+            None
+            if table is None
+            else pd.DataFrame(table["rows"], columns=table["columns"])
+        )
 
     @property
     def history(self):
         """Detached processing records in append order, empty when unreported."""
-        return deepcopy(self._report.get("history", []))
+        return deepcopy(self._extra.get("history", []))
 
-    def with_history(
+    def process(self, X, operation, **parameters):
+        """Execute a supported operation and return detached signals and information.
+
+        Parameters
+        ----------
+        X : np.ndarray or list of np.ndarray
+            Finite real arrays aligned with this information view.
+        operation : str
+            One of channels, scale, crop, resample, filter or reference.
+        **parameters : dict
+            Explicit operation parameters, documented in the EEG information guide.
+
+        Returns
+        -------
+        X_processed : np.ndarray or list of np.ndarray
+            Detached processed arrays in the original row order.
+        info_processed : EEGDatasetInfo
+            Updated current layouts, original support and executed history.
+
+        Notes
+        -----
+        Operations are ``channels`` (names), ``scale`` (factor, units), ``crop``
+        (tmin/tmax, optional start_time), ``resample`` (sfreq), ``filter``
+        (l_freq/h_freq, optional method), and ``reference`` (channels).
+        Original source metadata and coordinates are preserved. Current layouts,
+        conservative contributing support and an executed history record change
+        together. Operations run independently per aligned row, without fitting.
+        """
+        from aeon_neuro.datasets._info_processing import _process
+
+        return _process(X, self, operation, parameters)
+
+    def _with_history(
         self, step, parameters, *, implementation, version, fit_scope="unspecified"
     ):
         """Return a detached metadata view with one reported processing step.
@@ -629,156 +988,106 @@ class EEGDatasetInfo:
         report["history"] = self.history + [record]
         return EEGDatasetInfo(report)
 
-    def to_dict(self):
-        """Return detached source metadata and optional reported history.
 
-        Returns
-        -------
-        dict
-            Version-2 source report including original snapshots. A view with
-            reported steps also includes the optional ``history`` extension.
-            Pass this dictionary to ``EEGDatasetInfo`` to restore both.
-        """
-        return deepcopy(self._report)
+def _selection(selector, count):
+    if isinstance(selector, slice):
+        return np.asarray(list(range(count))[selector], dtype=int)
+    if isinstance(selector, (list, tuple)):
+        booleans = [isinstance(value, (bool, np.bool_)) for value in selector]
+        if any(booleans) and not all(booleans):
+            raise ValueError("Do not mix boolean masks and integer indices")
+    indices = np.asarray(selector)
+    if indices.ndim != 1:
+        raise ValueError("Selection must be a one-dimensional index sequence or mask")
+    if indices.dtype.kind == "b":
+        if len(indices) != count:
+            raise ValueError("Selection mask must match the recording count")
+        return np.flatnonzero(indices)
+    if indices.size == 0:
+        return np.asarray([], dtype=int)
+    if (
+        indices.dtype.kind not in "iu"
+        or np.any(indices < 0)
+        or np.any(indices >= count)
+        or len(np.unique(indices)) != len(indices)
+    ):
+        raise ValueError("Recording indices must be unique integers within bounds")
+    return indices.astype(int)
 
-    def process(self, X, operation, **parameters):
-        """Execute a supported operation and return detached signals and information.
 
-        Parameters
-        ----------
-        X : np.ndarray or list of np.ndarray
-            Finite real arrays aligned with this information view.
-        operation : str
-            One of channels, scale, crop, resample, filter or reference.
-        **parameters : dict
-            Explicit operation parameters, documented in the EEG information guide.
+def _participant_scope(recordings):
+    # Unknown identities stay on aligned rows, not in the known source scope.
+    # Separate identifier types when ordering so integer 1 and text "1" survive.
+    participants = {
+        _identifier(row["participant_id"], "participant_id")
+        for row in recordings
+        if row["participant_id"] is not None
+    }
+    return sorted(participants, key=lambda value: (isinstance(value, str), value))
 
-        Returns
-        -------
-        X_processed : np.ndarray or list of np.ndarray
-            Detached processed arrays in the original row order.
-        info_processed : EEGDatasetInfo
-            Updated current layouts, original support and executed history.
 
-        Notes
-        -----
-        Operations are ``channels`` (names), ``scale`` (factor, units), ``crop``
-        (tmin/tmax, optional start_time), ``resample`` (sfreq), ``filter``
-        (l_freq/h_freq, optional method), and ``reference`` (channels).
-        Original source metadata and coordinates are preserved. Current layouts,
-        conservative contributing support and an executed history record change
-        together. Operations run independently per aligned row, without fitting.
-        """
-        from aeon_neuro.datasets._info_processing import _process
+def _validate_issues(issues):
+    if not isinstance(issues, list):
+        raise ValueError("Source diagnostics must be a list of dictionaries")
+    for issue in issues:
+        if not isinstance(issue, dict):
+            raise ValueError("Source diagnostics must be dictionaries")
+        _required(issue, ("recording_id", "severity", "message"))
+        identity = issue["recording_id"]
+        if identity is not None and (
+            not isinstance(identity, str) or not identity.strip()
+        ):
+            raise ValueError("Diagnostic recording_id must be nonempty text or None")
+        if (
+            not isinstance(issue["severity"], str)
+            or not issue["severity"].strip()
+            or not isinstance(issue["message"], str)
+        ):
+            raise ValueError("Diagnostic severity and message must be text")
 
-        return _process(X, self, operation, parameters)
 
-    def to_ts_header(self):
-        """Format portable source, current-layout and history metadata as .ts comments.
-
-        Returns
-        -------
-        str
-            Portable information formatted as comment text for an aeon .ts writer.
-
-        Notes
-        -----
-        These comment lines precede the ordinary .ts structural header. They do
-        not replace its problem/class declarations and contain no signal values.
-        """
-        import json
-
-        return (
-            "# aeon-neuro-info "
-            + json.dumps(
-                self.to_dict(),
-                sort_keys=True,
-                ensure_ascii=True,
-                allow_nan=False,
-                separators=(",", ":"),
-            )
-            + "\n"
-        )
-
-    def validate_layout(self, X):
-        """Check the collection count, shapes and numeric types against metadata.
-
-        Parameters
-        ----------
-        X : np.ndarray or list of np.ndarray
-            Recording collection in this metadata's order.
-
-        Notes
-        -----
-        Layout checks cannot detect an external permutation or value mutation
-        when array shapes remain the same. Keep the returned X/info pair together.
-        """
-        if self._view is not None:
-            from aeon_neuro.datasets._info_view import _check_layout
-
-            _check_layout(X, self._view)
-            return
-        if not isinstance(X, (list, tuple, np.ndarray)):
-            raise ValueError("Supply a collection of recordings")
-        if isinstance(X, np.ndarray) and (
-            X.ndim != 3 or X.dtype.kind not in "fiu" or 0 in X.shape[1:]
+def _recording_info(metadata):
+    # Inspecting source metadata and checking loaded arrays must use the same
+    # identity/layout rules, without requiring dummy signals for inspection.
+    if not isinstance(metadata, (list, tuple)) or not metadata:
+        raise ValueError("Supply nonempty recording descriptors.")
+    info, ids = [], set()
+    for entry in metadata:
+        item = deepcopy(dict(entry))
+        _required(item, ("channel_names", "sampling_frequency"))
+        recording_id = item.get("recording_id", item.get("filepath"))
+        if (
+            not isinstance(recording_id, str)
+            or not recording_id.strip()
+            or recording_id in ids
         ):
             raise ValueError(
-                "Dense recordings must be real numeric arrays with three axes"
+                "Recording metadata needs a unique nonempty recording_id or filepath."
             )
-        if len(X) != len(self):
-            raise ValueError(
-                "X and metadata must contain the same number of recordings"
+        ids.add(recording_id)
+        item["recording_id"] = recording_id
+        item["channel_names"] = _channels(item["channel_names"])
+        rate = item["sampling_frequency"]
+        if (
+            not isinstance(rate, Real)
+            or isinstance(rate, bool)
+            or not np.isfinite(rate)
+            or rate <= 0
+        ):
+            raise ValueError("sampling_frequency must be finite and positive.")
+        item["sampling_frequency"] = float(rate)
+        _required(item, ("n_samples",))
+        item["n_samples"] = _integer(item["n_samples"], "n_samples")
+        if item["n_samples"] < 1:
+            raise ValueError("n_samples must be positive.")
+        if item.get("participant_id") is not None:
+            # Keep the descriptor as portable as its normalized participant
+            # scope, including when callers supply NumPy integral identities.
+            item["participant_id"] = _identifier(
+                item["participant_id"], "participant_id"
             )
-        if len(self):
-            _recordings(X, self._report["recordings"])
-
-    def select(self, X, selector):
-        """Copy recordings and matching metadata together in the requested order.
-
-        Parameters
-        ----------
-        X : np.ndarray or list of np.ndarray
-            Loaded recordings in this metadata's order.
-        selector : slice or one-dimensional sequence of int or bool
-            Unique nonnegative recording indices, or a mask matching the count.
-            Empty selections are allowed. Negative/duplicate indices are rejected.
-
-        Returns
-        -------
-        X_selected : np.ndarray or list of np.ndarray
-            Detached signals, retaining the recording axis. Dense arrays remain
-            arrays; list/tuple inputs produce a list of separate arrays.
-        info_selected : EEGDatasetInfo
-            Matching source descriptors, events, scope and relevant diagnostics.
-        """
-        self.validate_layout(X)
-        indices = _selection(selector, len(self))
-        # Detach both sides: later array or metadata edits must not mutate a
-        # parent selection that may already be used by another experiment.
-        selected = (
-            np.take(X, indices, axis=0)
-            if isinstance(X, np.ndarray)
-            else [X[i].copy() for i in indices]
-        )
-        if self._view is not None:
-            return selected, self[indices]
-        report = self.to_dict()
-        # Retain complete earlier processing scopes: narrowing their source IDs
-        # could hide that an operation was fitted on a larger population.
-        report["recordings"] = [report["recordings"][i] for i in indices]
-        report["source_ids"] = [entry["recording_id"] for entry in report["recordings"]]
-        ids = set(report["source_ids"])
-        report["events"] = [row for i in indices for row in self._recordings[i].events]
-        report["issues"] = [
-            issue
-            for issue in report["issues"]
-            if issue["recording_id"] is None or issue["recording_id"] in ids
-        ]
-        report["dataset"]["selected_participants"] = sorted(
-            {entry["participant_id"] for entry in report["recordings"]}
-        )
-        return selected, EEGDatasetInfo(report)
+        info.append(item)
+    return info
 
 
 def _source_provenance(info, implementation):
@@ -854,81 +1163,3 @@ def _json_history_value(value):
             _json_history_value(item)
         return
     raise ValueError("Nonportable processing parameter")
-
-
-def _selection(selector, count):
-    if isinstance(selector, slice):
-        return np.asarray(list(range(count))[selector], dtype=int)
-    if isinstance(selector, (list, tuple)):
-        booleans = [isinstance(value, (bool, np.bool_)) for value in selector]
-        if any(booleans) and not all(booleans):
-            raise ValueError("Do not mix boolean masks and integer indices")
-    indices = np.asarray(selector)
-    if indices.ndim != 1:
-        raise ValueError("Selection must be a one-dimensional index sequence or mask")
-    if indices.dtype.kind == "b":
-        if len(indices) != count:
-            raise ValueError("Selection mask must match the recording count")
-        return np.flatnonzero(indices)
-    if indices.size == 0:
-        return np.asarray([], dtype=int)
-    if (
-        indices.dtype.kind not in "iu"
-        or np.any(indices < 0)
-        or np.any(indices >= count)
-        or len(np.unique(indices)) != len(indices)
-    ):
-        raise ValueError("Recording indices must be unique integers within bounds")
-    return indices.astype(int)
-
-
-def load_bids_dataset(
-    root, *, subjects=None, sessions=None, tasks=None, acqs=None, runs=None
-):
-    """Load supported BIDS recordings with their inspected source metadata.
-
-    Parameters
-    ----------
-    root : path-like
-        Local BIDS root containing EDF/BDF sources. No acquisition occurs.
-    subjects, sessions, tasks, acqs, runs : str, list of str or None, default=None
-        Exact BIDS selections passed to ``inspect_bids_eeg``.
-
-    Returns
-    -------
-    X : np.ndarray or list of np.ndarray
-        Complete recordings in source order. Equal shapes, channel names/order
-        and sampling rates produce a 3D array; otherwise a list of 2D arrays.
-    info : EEGDatasetInfo
-        Aligned metadata, source facts and events, without inferring a target.
-
-    Notes
-    -----
-    This explicit operation reads complete signals into memory and closes each
-    owned source handle on success or failure. It reuses inspected snapshots and
-    the source opener. It does not modify the legacy ``load_bids_data`` loader,
-    expand companion-file support or apply preprocessing/montage corrections.
-    """
-    info = EEGDatasetInfo(
-        inspect_bids_eeg(
-            root,
-            subjects=subjects,
-            sessions=sessions,
-            tasks=tasks,
-            acqs=acqs,
-            runs=runs,
-        )
-    )
-    recordings = []
-    for descriptor in info.metadata:
-        with open_bids_eeg_recording(root, descriptor) as raw:
-            recordings.append(raw.get_data())
-    info.validate_layout(recordings)
-    reference = info.recordings[0]
-    compatible = all(
-        values.shape == recordings[0].shape
-        and recording.channel_names == reference.channel_names
-        and recording.sfreq == reference.sfreq
-        for values, recording in zip(recordings, info.recordings, strict=True)
-    )
-    return (np.stack(recordings) if compatible else recordings), info

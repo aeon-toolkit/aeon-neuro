@@ -8,15 +8,33 @@ import numpy as np
 import pytest
 
 from aeon_neuro import __version__
-from aeon_neuro.datasets import _dataset_info as module
 from aeon_neuro.datasets import (
+    EEGDatasetInfo,
     load_bids_dataset,
     load_classification_problem,
     make_classification_problem,
 )
+from aeon_neuro.datasets import _bids_dataset as module
 from aeon_neuro.datasets.tests import test_dataset_info as fixtures
 
 source = fixtures.source
+
+
+def _restore_review_history(info):
+    # A saved report can contain caller-reported history without changing signals.
+    report = info.to_dict()
+    report["history"] = [
+        {
+            "version": 1,
+            "step": "metadata review",
+            "parameters": {"columns": ["trial_type", "participant.group"]},
+            "implementation": "example.review",
+            "implementation_version": "1",
+            "fit_scope": "none",
+            "source_ids": list(info.source_ids),
+        }
+    ]
+    return EEGDatasetInfo(report)
 
 
 def test_selected_info_feeds_the_existing_problem_loader(source):
@@ -99,13 +117,7 @@ def test_object_builder_matches_existing_cases_and_keeps_unified_provenance(
 ):
     """The object route must preserve case semantics, source joins and history."""
     X, info = load_bids_dataset(source[0])
-    info = info.with_history(
-        "metadata review",
-        {"columns": ["trial_type", "participant.group"]},
-        implementation="example.review",
-        version="1",
-        fit_scope="none",
-    )
+    info = _restore_review_history(info)
     X, info = info.select(X, [1, 0])
     problem, binding = _info_problem_documents(mode)
     expected = load_classification_problem(
@@ -147,12 +159,7 @@ def test_object_builder_matches_existing_cases_and_keeps_unified_provenance(
 def test_object_builder_detaches_signals_source_history_and_documents(source):
     """Changing an output must not change another problem or its original inputs."""
     X, info = load_bids_dataset(source[0])
-    info = info.with_history(
-        "metadata review",
-        {"columns": ["trial_type"]},
-        implementation="example.review",
-        version="1",
-    )
+    info = _restore_review_history(info)
     problem, binding = _info_problem_documents("event_epochs")
     before = deepcopy((X, info.to_dict(), problem, binding))
     result = make_classification_problem(X, info, problem, binding)
