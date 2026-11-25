@@ -8,13 +8,13 @@ import numpy as np
 import pytest
 
 from aeon_neuro import __version__
-from aeon_neuro.datasets import _bids_dataset as module
 from aeon_neuro.datasets import (
     EEGDatasetInfo,
     load_bids_dataset,
     load_classification_problem,
     make_classification_problem,
 )
+from aeon_neuro.datasets import _bids_dataset as module
 from aeon_neuro.datasets.tests import test_dataset_info as fixtures
 
 source = fixtures.source
