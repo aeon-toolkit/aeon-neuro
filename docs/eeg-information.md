@@ -126,6 +126,89 @@ names alone imply no positions; spatial models or explicit constructor names
 use the existing standard_1005 template policy, recorded in channel_geometry_.
 Measured source electrodes are not silently converted to model geometry.
 
+
+## BIDS sources and case construction
+
+`inspect_bids_eeg` reads supported local EDF/BDF headers and sidecars without
+reading signal samples. `load_bids_dataset` returns complete recordings and
+aligned information through an explicit verified opener. The loader is separate
+from the metadata container and closes all owned handles on success or failure.
+Original events, channels, participants, acquisition fields and source geometry
+remain available. Decoded EEG samples use volts; source sidecar units retain
+their original meaning.
+
+Ordinary recording/window/event helpers accept the information object and
+`build_classification_dataset` returns aligned `dataset.info`. Labels, grouping,
+channel choices and intervals remain explicit. No authored problem schema is
+required. See the [source guide](bids-problem-input.md) and
+[loading guide](bids-dataset-info.md) for conflicts, snapshot limits and examples.
+
+
+The source-record dataclass also retains `sidecar_paths`, a mapping from sidecar
+roles to source paths or explicit absence. An absent `channels` entry does not
+hide supplied channel rows; an explicit `channels: None` records unavailability.
+
+## Executed processing
+
+`info.process(X, operation, **parameters)` returns detached arrays and updated
+information together. It supports ordered channel selection, explicit scaling,
+exact-grid crop, polyphase resampling, band-pass filtering and referencing.
+Failures leave arrays and metadata unchanged. No operation fits a learned
+transform; learned preprocessing still belongs inside training folds.
+Operations update named layout fields and serialize the performed facts, including
+reference or temporal-context fields omitted from a restored input. Original
+source descriptors remain separate throughout the operation chain.
+
+```python
+X, info = info.process(X, "channels", names=["C4", "C3"])
+X, info = info.process(X, "crop", tmin=0.25, tmax=0.75)
+X, info = info.process(X, "resample", sfreq=64)
+```
+
+Current rate/channel/unit/grid fields change while original acquisition facts
+remain intact. Executed history records implementation versions, parameters and
+original application scopes. Selection preserves earlier scopes. Filtering and
+resampling conservatively retain the complete contributing input row as source
+support. Pointwise operations permit exact derived intervals. The ordinary
+split validator checks known original-source support across partitions.
+
+Resampling uses SciPy resample_poly with the exact decimal rate ratio, reflected
+boundaries and ceil(input_count * target_rate / input_rate) output samples. The
+sample grid does not change to fit the rounded count. Reduced numerator and
+denominator above 100,000 raise before filter allocation. Source stats and
+metadata history do not authenticate arbitrary external array edits.
+
+## Optional inner validation and early stopping
+
+BraindecodeClassifier and EEGNetClassifier accept `validation_size`, `patience`
+and `validation_strategy`. The default validation_size=None retains training on
+all supplied rows for every configured epoch and the merged training-batch policy.
+With information, auto validation holds out whole known subjects; without it,
+validation stratifies cases. Explicit stratified validation supports within-person
+questions with retained metadata. Missing subjects, class-confounded partitions
+and known source overlap raise without changing seeds or falling back silently.
+Both partitions must contain every fitting class, even when stratification
+succeeds. Label count and dimensionality must match the fitting collection.
+
+```python
+clf = EEGNetClassifier(
+    n_epochs=20, validation_size=0.2, patience=5, random_state=42,
+)
+clf.fit(X_train, y_train, info=info_train)
+```
+
+Only the collection supplied to fit is split. Realized indices, validation policy,
+loss history, best epoch and restored best weights remain available and survive
+pickling. Default training avoids a redundant full input copy; fixed validation
+tensors are built once per fit. Validation and prediction include every row.
+Subject disjointness cannot override known original signal overlap, and
+stratification alone does not establish independent trials/groups.
+
+Subject-based validation preserves the equality of string and integer IDs,
+including mixed collections. Integer `1` and text `"1"` identify different
+subjects; all their rows stay together in the selected partition.
+
+
 ## Dictionary structure
 
 This is the reference for portable dictionaries. Internally, fixed metadata
@@ -204,6 +287,8 @@ retain original source facts; they do not describe later case transformations.
 | `channel_metadata` | list of dict or None, optional | Original channel table rows, exposed as `channels`. Missing or `None` means unavailable. |
 | `channel_units_fiff` | list of int, optional | Decoded unit codes aligned with source channels. Derived recording layouts map voltage/magnetic-field codes to `V`/`T`; unavailable or unrecognized codes give `None`. |
 | `eeg_metadata` | dict, optional | Resolved original EEG JSON fields, exposed as `eeg_json`; omission gives `{}`. `EEGReference`, if supplied, seeds a source-only layout's reference. |
+| `events_metadata` | dict, optional | Resolved event column definitions, exposed as `events_json`; omission gives `{}`. |
+| `events_metadata_origins` | dict, optional | Root-relative dictionary filenames and the effective source filename for each top-level column. |
 | `electrodes` | dict or None, optional | Original electrode table with `columns` and `rows`. |
 | `coordsystem` | dict or None, optional | Original coordinate-system fields and units, without conversion. |
 | `scan` | dict or None, optional | Matched scans entry with `row` (dict) and `row_index` (zero-based int). |
@@ -220,8 +305,8 @@ are retained without being interpreted as labels.
 | --- | --- | --- |
 | `recording_id` | str | Identity of a retained source recording. |
 | `bids_event_id` | supplied identifier | Unique within its recording; the pair identifies the original event. |
-| `onset` | float | Original onset in seconds relative to recording start. |
-| `bids_onset_sample` | int or None | Exact source-grid sample for `onset`, or `None` for an off-grid onset. Construction checks consistency without rounding. |
+| `onset` | float or str | Original onset in seconds relative to recording start, or `n/a` when unknown. TSV values retain their original text. |
+| `bids_onset_sample` | int or None | Exact source-grid sample for `onset`, or `None` for an unknown or off-grid onset. Construction checks consistency without rounding. |
 
 ### Version-1 current view
 

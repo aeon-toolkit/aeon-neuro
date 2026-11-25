@@ -11,11 +11,11 @@ Shared EEG information
 ----------------------
 
 .. autoclass:: aeon_neuro.classification.BaseEEGClassifier
-   :members: fit, predict, predict_proba
+   :members: fit, predict, predict_proba, validation_split
    :no-inherited-members:
 
 See :doc:`../eeg-information` for optional side information, current layout
-validation.
+validation and subject-separated early stopping.
 
 Deep learning
 -------------
